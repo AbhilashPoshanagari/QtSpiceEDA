@@ -9,7 +9,8 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QUrl
 from PySide6.QtQml import QQmlApplicationEngine
 
-import bridge.simulator  # noqa: F401  registers the QtSpice types
+import bridge.diagram_controller  # noqa: F401  registers the QtSpice QML types
+import bridge.simulator  # noqa: F401
 import bridge.waveform_model  # noqa: F401
 
 QML_DIR = Path(__file__).resolve().parents[2] / "ui" / "qml"
