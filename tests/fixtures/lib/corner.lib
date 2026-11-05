@@ -1,0 +1,16 @@
+* Hand-written corner library (QtSpice test fixture)
+* Use: .lib corner.lib tt
+.lib tt
+.param rsheet=100
+.model dcorner D(IS=1e-14 N=1.0 RS=10)
+.endl tt
+
+.lib ff
+.param rsheet=80
+.model dcorner D(IS=2e-14 N=0.98 RS=8)
+.endl ff
+
+.lib ss
+.param rsheet=120
+.model dcorner D(IS=5e-15 N=1.02 RS=12)
+.endl ss

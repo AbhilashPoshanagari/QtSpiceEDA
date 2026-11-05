@@ -1,0 +1,7 @@
+* Hand-written placeholder op-amp (QtSpice test fixture)
+* Pins: in+ in- vcc vee out  (matches opamp5.asy SpiceOrder 1-5)
+.subckt opamp5 inp inn vcc vee out
+Rin inp inn 10Meg
+E1 int 0 inp inn 100k
+Rout int out 75
+.ends opamp5

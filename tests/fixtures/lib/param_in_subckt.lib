@@ -1,0 +1,7 @@
+* .param inside .subckt (QtSpice test fixture)
+.subckt rdiv in out gnd
+.param rtop=10k ratio=0.5
+.param rbot={rtop*ratio/(1-ratio)}
+R1 in out {rtop}
+R2 out gnd {rbot}
+.ends rdiv

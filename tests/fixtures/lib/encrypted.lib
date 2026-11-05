@@ -1,0 +1,8 @@
+* Fake encrypted model (QtSpice test fixture). The hex below is random filler.
+.subckt secret_amp in out
+* Begin:
+* 3A9F0C11E2B47D885AC3F1029E7B64D0
+* C55E8A13F7D2096B4E1A3C8F7702D9B1
+* 08E4F6A2195C3B7DD0A41E66F28C9B53
+* End
+.ends secret_amp
