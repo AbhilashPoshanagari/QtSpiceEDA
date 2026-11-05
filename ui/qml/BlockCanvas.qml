@@ -69,6 +69,17 @@ Item {
         DiagramController.run(Number(tEndField.text), Number(dtField.text))
     }
 
+    // A project was opened: show its end time and step.
+    Connections {
+        target: DiagramController
+        function onRunSettingsChanged() {
+            if (Number(tEndField.text) !== DiagramController.tEnd)
+                tEndField.text = String(DiagramController.tEnd)
+            if (Number(dtField.text) !== DiagramController.dt)
+                dtField.text = String(DiagramController.dt)
+        }
+    }
+
     Shortcut {
         sequences: [StandardKey.Delete, "Backspace"]
         enabled: root.visible
@@ -98,7 +109,12 @@ Item {
                 TextField {
                     id: tEndField
                     objectName: "tEndField"
-                    text: "1"
+                    text: String(DiagramController.tEnd)
+                    onTextChanged: {
+                        const v = Number(text)
+                        if (text.trim() !== "" && isFinite(v) && v > 0)
+                            DiagramController.tEnd = v
+                    }
                     Layout.preferredWidth: 64
                     validator: DoubleValidator { bottom: 0 }
                     selectByMouse: true
@@ -107,7 +123,12 @@ Item {
                 TextField {
                     id: dtField
                     objectName: "dtField"
-                    text: "0.001"
+                    text: String(DiagramController.dt)
+                    onTextChanged: {
+                        const v = Number(text)
+                        if (text.trim() !== "" && isFinite(v) && v > 0)
+                            DiagramController.dt = v
+                    }
                     Layout.preferredWidth: 64
                     validator: DoubleValidator { bottom: 0 }
                     selectByMouse: true

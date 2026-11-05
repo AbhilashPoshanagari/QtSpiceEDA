@@ -21,11 +21,11 @@ def test_main_window_loads(qapp: object) -> None:
 
     for name in ("openButton", "saveButton", "checkButton", "runButton", "stopButton"):
         assert window.findChild(QObject, name) is not None, name
-    # Save arrives with projects (Phase 6); Stop is enabled only while running.
+    # Stop is enabled only while running.
     for name, enabled in (
         ("openButton", True),
         ("checkButton", True),
-        ("saveButton", False),
+        ("saveButton", True),
         ("runButton", True),
         ("stopButton", False),
     ):

@@ -69,6 +69,14 @@ Item {
         font: editor.font
     }
 
+    // A project was opened: show the code of its first document.
+    Connections {
+        target: DiagramController
+        function onDocumentReplaced(code) {
+            root.setTextQuietly(code)
+        }
+    }
+
     Timer {
         id: applyTimer
         interval: 300

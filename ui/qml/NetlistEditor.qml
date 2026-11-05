@@ -61,6 +61,17 @@ Item {
         font: editor.font
     }
 
+    // A project was opened (or a new one started): show its netlist.
+    Connections {
+        target: Simulator
+        function onNetlistTextChanged() {
+            if (editor.text !== Simulator.netlistText) {
+                editor.text = Simulator.netlistText
+                root.check()
+            }
+        }
+    }
+
     Timer {
         id: checkTimer
         interval: 300
@@ -165,7 +176,10 @@ Item {
                     persistentSelection: true
                     placeholderText: qsTr("Type or paste a SPICE netlist, or drop a "
                                           + ".cir / .net / .sp file here")
-                    onTextChanged: checkTimer.restart()
+                    onTextChanged: {
+                        Simulator.netlistText = text
+                        checkTimer.restart()
+                    }
                     Component.onCompleted: Simulator.attachHighlighter(textDocument)
                 }
 

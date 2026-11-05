@@ -79,6 +79,19 @@ Pane {
             if (root.followNetlist)
                 root.loadCard(Simulator.netlistAnalysis)
         }
+        // A project was opened: show its card (or follow the netlist again).
+        function onAnalysisCardChanged() {
+            const card = Simulator.analysisCard
+            if (card === "") {
+                if (!root.followNetlist) {
+                    root.followNetlist = true
+                    root.loadCard(Simulator.netlistAnalysis)
+                }
+            } else if (card !== root.card.split(/\s+/).join(" ").trim()) {
+                root.followNetlist = false
+                root.loadCard(card)
+            }
+        }
     }
 
     component Field: TextField {
