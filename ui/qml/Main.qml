@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtSpice
 
 ApplicationWindow {
     id: window
@@ -9,6 +10,20 @@ ApplicationWindow {
     height: 800
     visible: true
     title: qsTr("QtSpice")
+
+    Component.onCompleted: Simulator.attachWaveforms(WaveformModel)
+
+    function runSimulation() {
+        if (Simulator.run(netlistEditor.text))
+            bottomTabs.currentIndex = 2  // Console while it runs
+    }
+
+    Connections {
+        target: Simulator
+        function onResultReady() {
+            bottomTabs.currentIndex = WaveformModel.hasAxis ? 0 : 2
+        }
+    }
 
     // Placeholder pane: replaced by the real views in later phases.
     component Placeholder: Rectangle {
@@ -38,9 +53,37 @@ ApplicationWindow {
                 text: qsTr("Check")
                 onClicked: netlistEditor.check()
             }
-            ToolButton { objectName: "runButton"; text: qsTr("Run"); enabled: false }
-            ToolButton { objectName: "stopButton"; text: qsTr("Stop"); enabled: false }
-            Item { Layout.fillWidth: true }
+            ToolButton {
+                objectName: "runButton"
+                text: qsTr("Run")
+                enabled: !Simulator.running
+                onClicked: window.runSimulation()
+            }
+            ToolButton {
+                objectName: "stopButton"
+                text: qsTr("Stop")
+                enabled: Simulator.running
+                onClicked: Simulator.stop()
+            }
+            ProgressBar {
+                objectName: "runProgress"
+                Layout.preferredWidth: 120
+                visible: Simulator.running
+                from: 0
+                to: 100
+                value: Simulator.progress
+                indeterminate: Simulator.progress <= 0
+            }
+            Label {
+                objectName: "runStatus"
+                Layout.fillWidth: true
+                leftPadding: 8
+                elide: Text.ElideRight
+                text: Simulator.statusText
+                color: Simulator.statusText.startsWith("Failed")
+                       || Simulator.statusText.startsWith("Not started") ? "#d73a49"
+                                                                          : palette.windowText
+            }
         }
     }
 
@@ -74,9 +117,9 @@ ApplicationWindow {
                 }
             }
 
-            Placeholder {
+            AnalysisPanel {
                 SplitView.fillWidth: true
-                text: qsTr("Analysis settings (Phase 3)")
+                SplitView.minimumWidth: 220
             }
         }
 
@@ -97,9 +140,9 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 currentIndex: bottomTabs.currentIndex
-                Placeholder { text: qsTr("Waveform viewer (Phase 3)") }
-                Placeholder { text: qsTr("Deck sent to ngspice (Phase 3)") }
-                Placeholder { text: qsTr("ngspice console (Phase 3)") }
+                WaveformView {}
+                DeckView {}
+                ConsoleView {}
             }
         }
     }
