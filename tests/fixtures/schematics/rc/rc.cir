@@ -1,0 +1,6 @@
+AC RC filter (hand-written netlist for rc.json)
+V1 IN 0 PULSE(0 5 10m 1u 1u 10m 20m) AC 1
+C1 OUT 0 .1u
+R2 IN OUT 10k
+.ac dec 100 1 1MEG
+.end

@@ -1,6 +1,18 @@
 """Schematic -> SPICE. Qt-free.
 
-First part (L7): one placed symbol -> one SPICE element line.
+``netlist_schematic`` (S3) turns a whole Schematic into a Circuit and a deck:
+
+1. ``connect`` (S2) finds the net of every pin;
+2. each instance becomes one SPICE line through ``netlist_part`` (L7, below);
+3. ModelFile includes (each once), the part lines and the directive texts are put
+   into one netlist text, title first (the schematic title, or "QtSpice schematic");
+4. that text goes through the same ``parse`` and ``validate`` as the netlist editor,
+   and the deck is made by the same ``build``.
+
+So a schematic is only another way to write a netlist (rule 8): ``text`` can be handed
+to the Simulator unchanged. Diagnostics name the part or directive they come from.
+
+One placed symbol -> one SPICE element line (L7):
 
     <letter><InstName> <nets in SpiceOrder> <model or value> [Value2] [SpiceLine] [SpiceLine2]
 
@@ -22,14 +34,20 @@ values and node counts) are exactly the ones the netlist editor uses.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from core.netlist.model import ERROR, Diagnostic, Element
-from core.netlist.parser import ELEMENT_KINDS, parse
-from core.schematic.model import PartInstance
+from core.netlist.builder import build
+from core.netlist.model import ERROR, Circuit, Diagnostic, Element
+from core.netlist.parser import ELEMENT_KINDS, FIX_INSERT_TITLE, parse
+from core.netlist.validate import validate
+from core.schematic.connectivity import NetMap, connect
+from core.schematic.model import PartInstance, Schematic
+from core.symbols.asy import Symbol
 
 NET_FLAG_SYMBOLS = frozenset({"ground", "label"})
+DEFAULT_TITLE = "QtSpice schematic"
 # Valid SPICE letters that ngspice has but QtSpice's netlist does not handle yet.
 _QTSPICE_UNSUPPORTED = "BJKNOPSTUWYZ"
 _MODEL_KINDS = "XDQM"
@@ -122,3 +140,92 @@ def _include(model_file: str, symbol_path: Path | None) -> str:
             path = beside
     text = str(path)
     return f'.include "{text}"' if any(c.isspace() for c in text) else f".include {text}"
+
+
+@dataclass
+class NetlistedSchematic:
+    """``text`` is the netlist (title first, ``.end`` last); ``deck`` is ``build(circuit)``
+    when there are no errors, else ""."""
+
+    text: str = ""
+    circuit: Circuit = field(default_factory=Circuit)
+    deck: str = ""
+    nets: NetMap = field(default_factory=NetMap)
+    parts: list[NetlistedPart] = field(default_factory=list)
+    diagnostics: list[Diagnostic] = field(default_factory=list)
+
+    @property
+    def ok(self) -> bool:
+        return not any(d.severity == ERROR for d in self.diagnostics)
+
+
+def netlist_schematic(
+    schematic: Schematic,
+    lookup: Callable[[str], Symbol | None],
+    base_dir: str | Path | None = None,
+) -> NetlistedSchematic:
+    """Netlist ``schematic``. ``lookup`` gives the Symbol for a symbol name; ``base_dir``
+    resolves relative include paths. Never raises."""
+    out = NetlistedSchematic()
+    try:
+        _netlist(schematic, lookup, base_dir, out)
+    except Exception as exc:  # never raise on a bad schematic
+        out.diagnostics.append(Diagnostic(0, 0, ERROR, f"internal netlister error: {exc!r}"))
+        out.deck = ""
+    return out
+
+
+def _netlist(
+    schematic: Schematic,
+    lookup: Callable[[str], Symbol | None],
+    base_dir: str | Path | None,
+    out: NetlistedSchematic,
+) -> None:
+    out.nets = connect(schematic, lookup)
+    out.diagnostics += out.nets.diagnostics
+
+    title = " ".join(schematic.title.split()) or DEFAULT_TITLE
+    lines: list[str] = [title]
+    origin: list[str] = ["schematic"]  # what each line of ``text`` comes from
+    part_lines: set[int] = set()
+    includes: dict[str, list[str]] = {}
+    body: list[tuple[str, str]] = []
+    for inst, nets in zip(schematic.instances, out.nets.pins, strict=True):
+        symbol = lookup(inst.symbol)
+        if symbol is None:
+            continue  # connect() already reported it
+        part = netlist_part(PartInstance(inst.name, symbol, list(nets), dict(inst.attrs)))
+        out.parts.append(part)
+        out.diagnostics += part.diagnostics
+        for include in part.includes:
+            includes.setdefault(include, []).append(inst.name)
+        if part.line and part.ok:
+            body.append((part.line, inst.name))
+    for include, users in includes.items():
+        lines.append(include)
+        origin.append(", ".join(users))
+    for line, name in body:
+        part_lines.add(len(lines))
+        lines.append(line)
+        origin.append(name)
+    for i, text in enumerate(t for t in schematic.texts if t.directive):
+        for line in text.text.splitlines():
+            if line.strip():
+                lines.append(line.strip())
+                origin.append(f"directive {i + 1}")
+    lines.append(".end")
+    origin.append("end")
+    out.text = "\n".join(lines) + "\n"
+
+    result = parse(out.text, base_dir)
+    out.circuit = result.circuit
+    found = result.diagnostics + validate(result.circuit, require_analysis=False)
+    for d in sorted(found, key=lambda d: (d.line, d.col)):
+        index = d.line - 1
+        if d.fix == FIX_INSERT_TITLE:
+            continue  # the title is generated, not typed
+        if index in part_lines and d in result.diagnostics:
+            continue  # netlist_part already reported what parse says about its line
+        where = origin[index] if 0 <= index < len(origin) else "schematic"
+        out.diagnostics.append(Diagnostic(0, 0, d.severity, f"{where}: {d.message}"))
+    out.deck = build(out.circuit) if out.ok else ""
