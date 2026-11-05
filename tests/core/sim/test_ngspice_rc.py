@@ -101,3 +101,14 @@ def test_several_adapters_share_one_ngspice() -> None:
     assert second.results() is not None
     assert len(first.console) == lines_before  # output of second's run went to second only
     assert any("transient" in line.lower() for line in second.console)
+
+
+@pytest.mark.ngspice
+def test_stop_before_run_is_not_lost(adapter: NgspiceAdapter) -> None:
+    adapter.load(RC_DECK)
+    adapter.stop()
+    with pytest.raises(SimulationError, match="stopped"):
+        adapter.run()
+    adapter.load(RC_DECK)  # a new load clears the request
+    adapter.run()
+    assert adapter.results() is not None

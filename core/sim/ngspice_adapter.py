@@ -252,6 +252,7 @@ class NgspiceAdapter(SimulatorBackend):
         if lib.ngSpice_running():
             raise SimulationError("ngspice is still running another simulation")
         _SESSION.owner = self
+        self._stop_requested.clear()
         self._result = None
         self._loaded = False
         self.console.clear()
@@ -271,18 +272,25 @@ class NgspiceAdapter(SimulatorBackend):
         lib = self._require()
         if not self._loaded or _SESSION.owner is not self:
             raise SimulationError("no deck loaded")
-        self._stop_requested.clear()
+        if self._stop_requested.is_set():  # stop() arrived before the run started
+            raise SimulationError("simulation stopped")
         errors_before = self._error_count()
         self._bg_calls = 0
         self._bg_done.clear()
         started = time.monotonic()
+        halted = False
         self._command("bg_run")
         # bg_run returns before the background thread reports it is running, so
         # ngSpice_running() alone is racy. ngspice calls BGThreadRunning once when the
         # thread starts and once when it ends; wait for the second call. If no thread
         # ever starts (e.g. bg_run refused), fall back after a short grace period.
+        # A stop request is turned into bg_halt here, on the thread that sent bg_run.
         while not self._bg_done.wait(0.02):
-            no_thread = self._bg_calls == 0 and not lib.ngSpice_running()
+            running = lib.ngSpice_running()
+            if self._stop_requested.is_set() and running and not halted:
+                self._command("bg_halt")
+                halted = True
+            no_thread = self._bg_calls == 0 and not running
             if no_thread and time.monotonic() - started > 2.0:
                 break
         if self._stop_requested.is_set():
@@ -297,11 +305,8 @@ class NgspiceAdapter(SimulatorBackend):
         return self._result
 
     def stop(self) -> None:
-        if self._lib is None or _SESSION.owner is not self:
-            return
+        # Only sets a flag: run() sends bg_halt from its own thread within ~20 ms.
         self._stop_requested.set()
-        if self._lib.ngSpice_running():
-            self._command("bg_halt")
 
     # --- internals -----------------------------------------------------------
 
