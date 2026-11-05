@@ -31,6 +31,7 @@ files = [
     "app/__main__.py",
     "bridge/__init__.py",
     "bridge/highlighter.py",
+    "bridge/simulator.py",
     "core/__init__.py",
     "core/netlist/__init__.py",
     "core/netlist/builder.py",
@@ -52,6 +53,7 @@ files = [
     "tests/netlists/__init__.py",
     "tests/ui/test_highlighter.py",
     "tests/ui/test_main_window.py",
+    "tests/ui/test_simulator.py",
     "CLAUDE.md",
 ]
 

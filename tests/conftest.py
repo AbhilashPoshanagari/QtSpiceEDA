@@ -1,8 +1,13 @@
 from __future__ import annotations
 
-import pytest
+import os
 
-from core.sim.ngspice_adapter import NgspiceAdapter
+# UI tests run without a display.
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+import pytest  # noqa: E402
+
+from core.sim.ngspice_adapter import NgspiceAdapter  # noqa: E402
 
 
 def _ngspice_status() -> tuple[bool, str]:
