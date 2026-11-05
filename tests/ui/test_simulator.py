@@ -227,3 +227,20 @@ def test_gui_stays_responsive_during_million_point_run(real_sim: Simulator, qtbo
     gaps = np.diff(ticks)
     assert len(ticks) > 50
     assert gaps.max() < 0.25, f"GUI thread blocked for {gaps.max():.3f} s"
+
+
+def test_panel_card_makes_netlist_without_analysis_runnable(fake_sim, qtbot) -> None:
+    sim, backend = fake_sim
+    text = "t\nV1 a 0 1\nR1 a 0 1k\n.end\n"
+    assert sim.check(text) is False  # editor shows "no analysis card"
+
+    with qtbot.waitSignal(sim.diagnosticsChanged):  # re-checked when the card is set
+        sim.setProperty("analysisCard", ".op")
+    assert sim.property("diagnostics") == []
+    with qtbot.waitSignal(sim.resultReady, timeout=3000):
+        assert sim.run(text) is True
+    assert backend.loaded.splitlines()[-2:] == [".op", ".end"]
+
+    sim.setProperty("analysisCard", "")  # back to the netlist: error again
+    assert "no analysis" in sim.property("diagnostics")[0]["message"]
+    assert sim.run(text) is False

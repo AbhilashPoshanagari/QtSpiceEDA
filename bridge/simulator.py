@@ -63,7 +63,8 @@ class Simulator(QObject):
     ``run(text)`` checks first and refuses to start if there are errors. One analysis
     runs at a time: ``analysisCard`` (set by the AnalysisPanel) replaces the netlist's
     analysis cards in the deck that is sent, through ``build``; when it is empty the
-    netlist's first card (``netlistAnalysis``) is used. ``sentDeck`` is the deck that
+    netlist's first card (``netlistAnalysis``) is used. While ``analysisCard`` is set,
+    a netlist without analysis cards is not an error. ``sentDeck`` is the deck that
     was sent and ``consoleText`` the ngspice output of the last run.
     """
 
@@ -102,6 +103,7 @@ class Simulator(QObject):
         self._analysis_card = ""
         self._netlist_analysis = ""
         self._result: SimulationResult | None = None
+        self._last_text: str | None = None
         self._waveforms: QObject | None = None
         app = QCoreApplication.instance()
         if app is not None:
@@ -142,8 +144,13 @@ class Simulator(QObject):
     def _set_analysis_card(self, card: str) -> None:
         card = " ".join(card.split())
         if card != self._analysis_card:
+            had_card = bool(self._analysis_card)
             self._analysis_card = card
             self.analysisCardChanged.emit()
+            # A panel card makes a netlist without analysis cards valid (and back):
+            # re-check so the editor's diagnostics follow.
+            if had_card != bool(card) and self._last_text is not None:
+                self._check(self._last_text)
 
     def _get_netlist_analysis(self) -> str:
         return self._netlist_analysis
@@ -207,10 +214,12 @@ class Simulator(QObject):
         return self._check(text)[0]
 
     def _check(self, text: str) -> tuple[bool, Circuit]:
+        self._last_text = text
         base_dir = Path(self._file_path).parent if self._file_path else None
         result = parse(text, base_dir)
         found: list[Diagnostic] = sorted(
-            result.diagnostics + validate(result.circuit), key=lambda d: (d.line, d.col)
+            result.diagnostics + validate(result.circuit, require_analysis=not self._analysis_card),
+            key=lambda d: (d.line, d.col),
         )
         ok = not any(d.severity == ERROR for d in found)
         self._diagnostics = [asdict(d) for d in found]
