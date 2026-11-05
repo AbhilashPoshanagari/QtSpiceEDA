@@ -238,7 +238,7 @@ def read_source(code: str) -> tuple[list[BlockSpec], list[Diagnostic]]:
             continue
         seen[spec.name] = node.lineno
         specs.append(spec)
-    if not specs and not diagnostics:
+    if not specs and not diagnostics and code.strip():
         diagnostics.append(Diagnostic(1, 1, WARNING, "no @block function or class found"))
     return specs, diagnostics
 

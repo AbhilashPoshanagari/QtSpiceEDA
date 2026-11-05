@@ -71,6 +71,10 @@ def test_no_block_is_a_warning() -> None:
     assert d.severity == WARNING
 
 
+def test_blank_code_has_no_diagnostics() -> None:
+    assert read_source("  \n\n") == ([], [])
+
+
 def test_plain_functions_are_ignored() -> None:
     code = "def helper(x):\n    return x\n\n" + ADD_SUB
     specs, _ = read_source(code)

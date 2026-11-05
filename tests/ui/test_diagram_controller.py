@@ -84,8 +84,8 @@ def test_clearing_document_removes_its_blocks(controller: DiagramController) -> 
     controller.apply(ADD_SUB)
     assert controller.apply("") is True
     assert entry(controller, "add_sub") is None
-    [diag] = controller.property("diagnostics")
-    assert diag["severity"] == "warning"
+    assert controller.property("diagnostics") == []
+    assert "removed blocks: add_sub" in controller.property("statusText")
 
 
 def test_builtin_name_clash(controller: DiagramController) -> None:
