@@ -20,6 +20,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from core.netlist.libindex import encrypted_block_line
 from core.netlist.model import (
     ERROR,
     WARNING,
@@ -324,6 +325,13 @@ class _Parser:
         except OSError as exc:
             reason = exc.strerror or type(exc).__name__
             self.error(line, line.tokens[1], f"cannot read include file '{name}': {reason}")
+            return []
+        if encrypted_block_line(text) is not None:
+            self.error(
+                line,
+                line.tokens[1],
+                f"'{name}' is an encrypted model file: not supported (QtSpice never decrypts it)",
+            )
             return []
         if line.site is None:
             site = _Site(card.line, card.col, path.name)

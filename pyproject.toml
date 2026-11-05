@@ -149,4 +149,5 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM"]
 testpaths = ["tests"]
 markers = [
     "ngspice: test needs the ngspice shared library (skipped when it is missing)",
+    "benchmark: timing test (skipped when the CI environment variable is set)",
 ]
