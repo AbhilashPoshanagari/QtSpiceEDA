@@ -19,6 +19,7 @@ import bridge.diagram_controller  # noqa: F401  registers the QtSpice QML types
 import bridge.project_manager  # noqa: F401
 import bridge.simulator  # noqa: F401
 import bridge.waveform_model  # noqa: F401
+from app import __version__
 
 ROOT = Path(__file__).resolve().parents[1]  # the bundle folder in a packaged app
 QML_DIR = ROOT / "ui" / "qml"
@@ -57,6 +58,7 @@ def main(argv: list[str] | None = None) -> int:
     app = QGuiApplication([argv[0], *qt_args])
     app.setApplicationName("QtSpice")
     app.setOrganizationName("QtSpice")
+    app.setApplicationVersion(__version__)
     engine = create_engine()
     if not engine.rootObjects():
         return 1
