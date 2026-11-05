@@ -23,6 +23,12 @@ ports that are gone, placed blocks whose function is gone, and settings that are
 are removed in one undo step; undo brings back only what is valid again. Because the
 library itself is not on the undo stack, every undo step skips what no longer exists.
 
+Projects: ``export_state()`` gives the user block code, the diagram and the run
+settings (``tEnd``, ``dt``) for saving; ``load_state(...)`` replaces all of them, clears
+the undo stack and sends ``documentReplaced(code)`` so the function editor shows the
+loaded code. Loading only reads the code, like ``apply``; nothing is executed.
+``sourcesChanged`` is sent whenever the saved code of a document changes.
+
 Canvas geometry (block size, port positions, wire bends) is computed here, in canvas
 units, so QML only draws it and hit-testing (``portAt``, ``wireAt``) uses the same
 numbers. Positions snap to a ``GRID`` unit grid.
@@ -32,9 +38,10 @@ from __future__ import annotations
 
 import ast
 import math
+import re
 import threading
 import weakref
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 
 from PySide6.QtCore import (
     Property,
@@ -66,6 +73,19 @@ PORT_PITCH = 20
 MIN_SIDE = 60
 PORT_RADIUS = 10  # hit radius of a port, in canvas units
 SCOPE = "Scope"
+DEFAULT_T_END = 1.0
+DEFAULT_DT = 0.001
+_DOCUMENT_ID = re.compile(r"^function(\d+)$")
+
+
+@dataclass
+class DiagramState:
+    """What a project stores of the block side: code, canvas and run settings."""
+
+    sources: list[tuple[str, str]] = field(default_factory=list)  # (document, code)
+    diagram: dict = field(default_factory=lambda: {"blocks": [], "wires": []})
+    t_end: float = DEFAULT_T_END
+    dt: float = DEFAULT_DT
 
 
 def spec_to_dict(spec: BlockSpec, builtin: bool) -> dict[str, object]:
@@ -466,6 +486,10 @@ class DiagramController(QObject):
     runningChanged = Signal()
     runStatusChanged = Signal()
     resultReady = Signal()
+    sourcesChanged = Signal()
+    runSettingsChanged = Signal()
+    diagramEdited = Signal()  # an undo-stack step was done, undone or redone
+    documentReplaced = Signal(str)  # code of the current document after load_state
     _runDone = Signal(object)  # RunOutcome, emitted from the run thread
 
     def __init__(self, parent: QObject | None = None) -> None:
@@ -498,6 +522,9 @@ class DiagramController(QObject):
             self._undo.redoTextChanged,
         ):
             signal.connect(self.undoStateChanged)
+        # Relayed, not exposed: the stack outlives this object's connections while it
+        # is destroyed, and its last indexChanged must not reach other objects.
+        self._undo.indexChanged.connect(self.diagramEdited)
 
         self._runner: BlockRunner | None = None
         self._running = False
@@ -505,6 +532,8 @@ class DiagramController(QObject):
         self._run_details = ""
         self._waveforms: QObject | None = None
         self._result = None
+        self._t_end = DEFAULT_T_END
+        self._dt = DEFAULT_DT
         self.timeout = DEFAULT_TIMEOUT
         self._runDone.connect(self._on_run_done, Qt.ConnectionType.QueuedConnection)
         app = QCoreApplication.instance()
@@ -571,6 +600,22 @@ class DiagramController(QObject):
     def _get_grid(self) -> int:
         return GRID
 
+    def _get_t_end(self) -> float:
+        return self._t_end
+
+    def _set_t_end(self, value: float) -> None:
+        if value != self._t_end:
+            self._t_end = float(value)
+            self.runSettingsChanged.emit()
+
+    def _get_dt(self) -> float:
+        return self._dt
+
+    def _set_dt(self, value: float) -> None:
+        if value != self._dt:
+            self._dt = float(value)
+            self.runSettingsChanged.emit()
+
     def _get_selected_block(self) -> dict[str, object]:
         """The one selected block as {id, spec, settings: [{name, value, text}]}, or {}."""
         if len(self._selected_blocks) != 1 or self._selected_wires:
@@ -601,6 +646,8 @@ class DiagramController(QObject):
     runStatus = Property(str, _get_run_status, notify=runStatusChanged)  # noqa: N815
     runDetails = Property(str, _get_run_details, notify=runStatusChanged)  # noqa: N815
     grid = Property(int, _get_grid, constant=True)
+    tEnd = Property(float, _get_t_end, _set_t_end, notify=runSettingsChanged)  # noqa: N815
+    dt = Property(float, _get_dt, _set_dt, notify=runSettingsChanged)
     selectedBlock = Property(  # noqa: N815
         "QVariantMap", _get_selected_block, notify=selectionChanged
     )
@@ -633,6 +680,8 @@ class DiagramController(QObject):
     @Slot(str, result=bool)
     def apply(self, code: str) -> bool:
         """Make ``code`` the current document's code if it has no errors."""
+        had_document = self._document in self._registry.documents()
+        before = self._registry.source(self._document)
         result = self._registry.add_source(code, self._document)
         self._set_diagnostics(result)
         if not result.ok:
@@ -642,6 +691,8 @@ class DiagramController(QObject):
         self._refresh_library()
         self._set_status(self._describe(result))
         self._sync_with_library()
+        if code != before or not had_document:
+            self.sourcesChanged.emit()
         return True
 
     def _sync_with_library(self) -> None:
@@ -902,6 +953,94 @@ class DiagramController(QObject):
                 if d <= best_d:
                     best, best_d = f"{row['blockId']}.{port['name']}", d
         return best
+
+    # ---- projects
+
+    def export_state(self) -> DiagramState:
+        """The user block code, the diagram and the run settings, for saving."""
+        return DiagramState(
+            sources=[(d, self._registry.source(d)) for d in self._registry.documents()],
+            diagram=self._diagram.to_dict(),
+            t_end=self._t_end,
+            dt=self._dt,
+        )
+
+    def load_state(self, state: DiagramState) -> list[str]:
+        """Replace the user blocks, the canvas and the run settings with ``state``.
+
+        Not undoable: the undo stack is cleared. Code with errors, blocks of unknown
+        types and wires that break a rule are skipped; the returned warnings say
+        which. Must not be called while a diagram runs.
+        """
+        if self._running:
+            raise RuntimeError("cannot load a diagram while it is running")
+        warnings: list[str] = []
+        self._set_selection(set(), set())
+        self._set_loop(set())
+        while self._wires.rowCount():
+            self._wires.remove(self._wires.rowCount() - 1)
+        while self._blocks.rowCount():
+            self._blocks.remove(self._blocks.rowCount() - 1)
+        self._geometry.clear()
+        self._specs_of.clear()
+        self._diagram = Diagram(self._registry.get)
+
+        for document in self._registry.documents():
+            self._registry.remove_document(document)
+        for document, code in state.sources:
+            result = self._registry.add_source(code, document)
+            if not result.ok:
+                first = result.diagnostics[0]
+                warnings.append(
+                    f"block code {document!r} was not loaded (line {first.line}: {first.message})"
+                )
+        self._refresh_library()
+        documents = self._registry.documents()
+        numbers = [int(m.group(1)) for d in documents if (m := _DOCUMENT_ID.match(d))]
+        self._next_document = max(numbers, default=0) + 1
+        self._set_document(documents[0] if documents else self._new_document_id())
+        self._clear_feedback()
+
+        for item in state.diagram.get("blocks", []):
+            block_id = item.get("id")
+            if self._registry.get(item.get("spec", "")) is None:
+                warnings.append(f"block {block_id} was not loaded: unknown type {item.get('spec')}")
+                continue
+            try:
+                inst = self._diagram.add_block(
+                    item["spec"], item["x"], item["y"], item["settings"], block_id=block_id
+                )
+            except (DiagramError, KeyError, TypeError) as err:
+                warnings.append(f"block {block_id} was not loaded: {err}")
+                continue
+            self._diagram.remove_block(inst.id)
+            self._insert_block(inst)
+        for item in state.diagram.get("wires", []):
+            try:
+                (sb, sp), (db, dp) = _split(item.get("src")), _split(item.get("dst"))
+            except DiagramError as err:
+                warnings.append(f"wire was not loaded: {err}")
+                continue
+            wire = Wire(sb, sp, db, dp)
+            self._insert_wire(wire)
+            if wire not in self._diagram.wires:
+                warnings.append(f"wire {wire.src} -> {wire.dst} was not loaded")
+
+        self._undo.clear()
+        self._undo.setClean()
+        self._set_t_end(state.t_end)
+        self._set_dt(state.dt)
+        self._result = None
+        self._set_hint("")
+        self._run_details = ""
+        self._set_run_status("")
+        self.documentReplaced.emit(self._registry.source(self._document))
+        self.sourcesChanged.emit()
+        return warnings
+
+    def restore_result(self, result: object) -> None:
+        """Make ``result`` the last diagram result (a project was loaded)."""
+        self._result = result
 
     # ---- running
 

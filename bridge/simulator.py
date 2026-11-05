@@ -66,6 +66,10 @@ class Simulator(QObject):
     netlist's first card (``netlistAnalysis``) is used. While ``analysisCard`` is set,
     a netlist without analysis cards is not an error. ``sentDeck`` is the deck that
     was sent and ``consoleText`` the ngspice output of the last run.
+
+    ``netlistText`` mirrors the netlist editor's text (the editor writes it on every
+    edit, and follows it when a project is loaded), so a project can be saved
+    without asking QML for it.
     """
 
     diagnosticsChanged = Signal()
@@ -79,6 +83,7 @@ class Simulator(QObject):
     statusTextChanged = Signal()
     analysisCardChanged = Signal()
     netlistAnalysisChanged = Signal()
+    netlistTextChanged = Signal()
     resultReady = Signal()
     _start = Signal(str)
 
@@ -102,6 +107,7 @@ class Simulator(QObject):
         self._status_text = ""
         self._analysis_card = ""
         self._netlist_analysis = ""
+        self._netlist_text = ""
         self._result: SimulationResult | None = None
         self._last_text: str | None = None
         self._waveforms: QObject | None = None
@@ -158,6 +164,14 @@ class Simulator(QObject):
     def _get_available(self) -> bool:
         return self._get_backend().available()
 
+    def _get_netlist_text(self) -> str:
+        return self._netlist_text
+
+    def _set_netlist_text(self, text: str) -> None:
+        if text != self._netlist_text:
+            self._netlist_text = text
+            self.netlistTextChanged.emit()
+
     diagnostics = Property("QVariantList", _get_diagnostics, notify=diagnosticsChanged)
     deck = Property(str, _get_deck, notify=deckChanged)
     filePath = Property(str, _get_file_path, notify=filePathChanged)  # noqa: N815
@@ -174,11 +188,30 @@ class Simulator(QObject):
         str, _get_netlist_analysis, notify=netlistAnalysisChanged
     )
     available = Property(bool, _get_available, constant=True)
+    netlistText = Property(  # noqa: N815
+        str, _get_netlist_text, _set_netlist_text, notify=netlistTextChanged
+    )
 
     @property
     def result(self) -> SimulationResult | None:
         """Result of the last successful run."""
         return self._result
+
+    def restore_result(self, result: SimulationResult | None) -> None:
+        """Make ``result`` the last result (a project was loaded) and show it."""
+        self._result = result
+        if result is None:
+            if self._waveforms is not None:
+                getattr(self._waveforms, "set_result", lambda _r: None)(None)
+        else:
+            self._push_result()
+
+    def set_file_path(self, path: str) -> None:
+        """Set the file that relative ``.include`` paths are resolved against."""
+        resolved = str(Path(path).resolve()) if path else ""
+        if resolved != self._file_path:
+            self._file_path = resolved
+            self.filePathChanged.emit()
 
     def _set_error_string(self, text: str) -> None:
         if text != self._error_string:
