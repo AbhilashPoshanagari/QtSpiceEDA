@@ -67,6 +67,19 @@ files = [
     "core/symbols/__init__.py",
     "core/symbols/asy.py",
     "core/symbols/library.py",
+    "core/symbols/builtin/cap.asy",
+    "core/symbols/builtin/current.asy",
+    "core/symbols/builtin/diode.asy",
+    "core/symbols/builtin/ground.asy",
+    "core/symbols/builtin/ind.asy",
+    "core/symbols/builtin/label.asy",
+    "core/symbols/builtin/nmos.asy",
+    "core/symbols/builtin/npn.asy",
+    "core/symbols/builtin/opamp.asy",
+    "core/symbols/builtin/pmos.asy",
+    "core/symbols/builtin/pnp.asy",
+    "core/symbols/builtin/res.asy",
+    "core/symbols/builtin/voltage.asy",
     "ui/qml/AnalysisPanel.qml",
     "ui/qml/Block.qml",
     "ui/qml/BlockCanvas.qml",
@@ -101,6 +114,7 @@ files = [
     "tests/core/sim/test_rc_example.py",
     "tests/core/sim/test_result.py",
     "tests/core/symbols/test_asy.py",
+    "tests/core/symbols/test_builtin.py",
     "tests/core/symbols/test_library.py",
     "tests/netlists/__init__.py",
     "tests/ui/fakes.py",
@@ -141,6 +155,7 @@ include = ["app*", "core*", "bridge*"]
 
 [tool.setuptools.package-data]
 "core.project" = ["schema.json"]
+"core.symbols" = ["builtin/*.asy"]
 
 [tool.ruff]
 target-version = "py312"

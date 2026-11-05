@@ -28,6 +28,7 @@ APP_NAME = "QtSpice"
 DATAS = [
     (str(ROOT / "ui" / "qml"), "ui/qml"),
     (str(ROOT / "examples"), "examples"),
+    (str(ROOT / "core" / "symbols" / "builtin"), "core/symbols/builtin"),
 ]
 HIDDEN_IMPORTS = ["app.smoke"]
 EXCLUDES = ["tkinter", "pytest", "pytestqt", "ruff", "jsonschema", "PyInstaller"]

@@ -1,0 +1,24 @@
+Version 4
+SymbolType CELL
+LINE Normal 16 0 16 16
+LINE Normal 16 16 4 20
+LINE Normal 4 20 28 28
+LINE Normal 28 28 4 36
+LINE Normal 4 36 28 44
+LINE Normal 28 44 4 52
+LINE Normal 4 52 28 60
+LINE Normal 28 60 4 68
+LINE Normal 4 68 28 76
+LINE Normal 28 76 16 80
+LINE Normal 16 80 16 96
+WINDOW 0 36 32 Left 2
+WINDOW 3 36 64 Left 2
+SYMATTR Value R
+SYMATTR Prefix R
+SYMATTR Description Resistor (QtSpice built-in)
+PIN 16 0 NONE 0
+PINATTR PinName A
+PINATTR SpiceOrder 1
+PIN 16 96 NONE 0
+PINATTR PinName B
+PINATTR SpiceOrder 2

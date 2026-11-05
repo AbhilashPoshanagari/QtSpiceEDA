@@ -1,0 +1,19 @@
+Version 4
+SymbolType CELL
+LINE Normal 16 0 16 16
+LINE Normal 16 80 16 96
+ARC Normal 8 16 24 32 16 32 16 16
+ARC Normal 8 32 24 48 16 48 16 32
+ARC Normal 8 48 24 64 16 64 16 48
+ARC Normal 8 64 24 80 16 80 16 64
+WINDOW 0 36 32 Left 2
+WINDOW 3 36 64 Left 2
+SYMATTR Value L
+SYMATTR Prefix L
+SYMATTR Description Inductor (QtSpice built-in)
+PIN 16 0 NONE 0
+PINATTR PinName A
+PINATTR SpiceOrder 1
+PIN 16 96 NONE 0
+PINATTR PinName B
+PINATTR SpiceOrder 2
