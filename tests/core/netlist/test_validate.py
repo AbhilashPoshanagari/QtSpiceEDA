@@ -92,3 +92,9 @@ def test_subcircuit_scope() -> None:
 def test_unconnected_subcircuit_port() -> None:
     messages = check("t\n.subckt s a b c\nR1 a b 1k\n.ends\nX1 1 0 2 s\nR2 1 2 1\nV1 1 0 1\n.op\n")
     assert (2, "port 'c' of subcircuit s is not connected inside it") in messages
+
+
+def test_missing_analysis_allowed_when_caller_supplies_one() -> None:
+    circuit = parse("t\nV1 a 0 1\nR1 a 0 1k\n.end\n").circuit
+    assert [d.message for d in validate(circuit)] == ["no analysis card (.op, .dc, .ac or .tran)"]
+    assert validate(circuit, require_analysis=False) == []

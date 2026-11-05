@@ -12,15 +12,19 @@ from collections import Counter
 from core.netlist.model import ERROR, GROUND_NODES, Circuit, Diagnostic, Element, Subcircuit
 
 
-def validate(circuit: Circuit) -> list[Diagnostic]:
-    """Return the problems found in ``circuit``, sorted by line and column."""
+def validate(circuit: Circuit, require_analysis: bool = True) -> list[Diagnostic]:
+    """Return the problems found in ``circuit``, sorted by line and column.
+
+    With ``require_analysis=False`` a netlist without an analysis card is accepted
+    (the caller supplies the analysis, e.g. from the analysis panel).
+    """
     found: list[Diagnostic] = []
     _check_ground(circuit, found)
     _check_scope(circuit.elements, None, found)
     for sub in circuit.subcircuits:
         _check_scope(sub.elements, sub, found)
     _check_references(circuit, found)
-    if not circuit.analyses:
+    if require_analysis and not circuit.analyses:
         found.append(
             Diagnostic(circuit.end_line, 1, ERROR, "no analysis card (.op, .dc, .ac or .tran)")
         )
