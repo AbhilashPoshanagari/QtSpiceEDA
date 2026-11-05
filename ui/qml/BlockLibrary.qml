@@ -55,7 +55,7 @@ Item {
             radius: tile.shape === "circle" ? width / 2 : 6
             color: Qt.lighter(tile.modelData.color, 1.6)
             border.color: tile.modelData.color
-            border.width: hover.containsMouse ? 3 : 2
+            border.width: hover.hovered ? 3 : 2
 
             Repeater {
                 model: tile.inputNames
@@ -122,14 +122,60 @@ Item {
             font.bold: !tile.builtin
         }
 
-        MouseArea {
+        HoverHandler {
             id: hover
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: tile.builtin ? Qt.ArrowCursor : Qt.PointingHandCursor
-            onClicked: if (!tile.builtin) root.editBlock(tile.blockName)
+            cursorShape: tile.builtin ? Qt.OpenHandCursor : Qt.PointingHandCursor
         }
-        ToolTip.visible: hover.containsMouse
+        TapHandler {
+            onTapped: if (!tile.builtin) root.editBlock(tile.blockName)
+        }
+        // Drag a tile onto the block canvas to place the block.
+        DragHandler {
+            id: libraryDrag
+            target: null
+            onActiveChanged: {
+                if (active) {
+                    tile.moveProxy(centroid.scenePosition)
+                    dragProxy.Drag.active = true
+                } else {
+                    dragProxy.Drag.drop()
+                    dragProxy.Drag.active = false
+                }
+            }
+            onCentroidChanged: if (active) tile.moveProxy(centroid.scenePosition)
+        }
+
+        function moveProxy(scenePos) {
+            const p = dragProxy.parent.mapFromItem(null, scenePos.x, scenePos.y)
+            dragProxy.x = p.x - dragProxy.width / 2
+            dragProxy.y = p.y - dragProxy.height / 2
+        }
+
+        // What follows the cursor while dragging; lives in the window overlay so it can
+        // leave the library's scroll area.
+        Rectangle {
+            id: dragProxy
+            objectName: "dragProxy"
+            readonly property string blockName: tile.blockName
+            parent: Overlay.overlay
+            visible: libraryDrag.active
+            width: tile.bodyWidth
+            height: tile.bodyHeight
+            radius: tile.shape === "circle" ? width / 2 : 6
+            color: Qt.lighter(tile.modelData.color, 1.6)
+            border.color: tile.modelData.color
+            border.width: 2
+            opacity: 0.85
+            Drag.keys: ["qtspice/block"]
+            Drag.hotSpot.x: width / 2
+            Drag.hotSpot.y: height / 2
+            Label {
+                anchors.centerIn: parent
+                text: tile.blockName
+                font.bold: true
+            }
+        }
+        ToolTip.visible: hover.hovered
         ToolTip.delay: 400
         ToolTip.text: {
             const lines = [tile.blockName + (tile.modelData.stateful ? qsTr(" (stateful)") : "")]
@@ -138,8 +184,8 @@ Item {
             const settings = tile.modelData.settings.map(s => s.name + " = " + JSON.stringify(s.value))
             if (settings.length > 0)
                 lines.push(qsTr("Settings: ") + settings.join(", "))
-            if (!tile.builtin)
-                lines.push(qsTr("Click to edit"))
+            lines.push(tile.builtin ? qsTr("Drag onto the canvas to place it")
+                                    : qsTr("Click to edit, drag onto the canvas to place it"))
             return lines.join("\n")
         }
     }

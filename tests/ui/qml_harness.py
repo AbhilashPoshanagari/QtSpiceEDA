@@ -21,14 +21,25 @@ def qml_window(
     tmp_path: Path, component: str, width: int = 1000, height: int = 600
 ) -> Iterator[tuple[QQmlApplicationEngine, QObject, QObject]]:
     """Yield (engine, window, item) with ``component`` filling a visible window."""
+    body = f'{component} {{ objectName: "underTest"; anchors.fill: parent }}'
+    with qml_scene(tmp_path, body, width, height) as (engine, window):
+        yield engine, window, window.findChild(QObject, "underTest")
+
+
+@contextmanager
+def qml_scene(
+    tmp_path: Path, body: str, width: int = 1000, height: int = 600
+) -> Iterator[tuple[QQmlApplicationEngine, QObject]]:
+    """Yield (engine, window) for an ApplicationWindow holding the QML ``body``."""
     wrapper = tmp_path / "Harness.qml"
     wrapper.write_text(
         f"""import QtQuick
 import QtQuick.Controls
+import QtQuick.Layouts
 import "{QML_DIR.as_uri()}"
 ApplicationWindow {{
     width: {width}; height: {height}; visible: true
-    {component} {{ objectName: "underTest"; anchors.fill: parent }}
+    {body}
 }}
 """,
         encoding="utf-8",
@@ -37,14 +48,14 @@ ApplicationWindow {{
     engine.addImportPath(str(QML_DIR))
     engine.load(QUrl.fromLocalFile(str(wrapper)))
     roots = engine.rootObjects()
-    assert roots, f"{component} failed to load"
+    assert roots, "the test scene failed to load"
     window = roots[0]
-    item = window.findChild(QObject, "underTest")
     try:
-        yield engine, window, item
+        yield engine, window
     finally:
-        simulator = engine.singletonInstance("QtSpice", "Simulator")
-        if simulator is not None:
-            simulator.shutdown()
+        for name in ("Simulator", "DiagramController"):
+            singleton = engine.singletonInstance("QtSpice", name)
+            if singleton is not None:
+                singleton.shutdown()
         window.close()
         engine.deleteLater()
