@@ -28,7 +28,7 @@ from core.netlist.builder import build
 from core.netlist.model import ERROR, Analysis, Circuit, Diagnostic
 from core.netlist.parser import parse
 from core.netlist.validate import validate
-from core.sim.backend import SimulatorBackend
+from core.sim.backend import DEFAULT_COMPAT_MODE, SimulatorBackend, valid_compat_mode
 from core.sim.ngspice_adapter import NgspiceAdapter
 from core.sim.result import SimulationResult
 
@@ -85,6 +85,7 @@ class Simulator(QObject):
     analysisCardChanged = Signal()
     netlistAnalysisChanged = Signal()
     netlistTextChanged = Signal()
+    compatModeChanged = Signal()
     resultReady = Signal()
     _start = Signal(str)
 
@@ -109,6 +110,7 @@ class Simulator(QObject):
         self._analysis_card = ""
         self._netlist_analysis = ""
         self._netlist_text = ""
+        self._compat_mode = DEFAULT_COMPAT_MODE
         self._skipped_note = ""
         self._result: SimulationResult | None = None
         self._last_text: str | None = None
@@ -169,6 +171,18 @@ class Simulator(QObject):
     def _get_netlist_text(self) -> str:
         return self._netlist_text
 
+    def _get_compat_mode(self) -> str:
+        return self._compat_mode
+
+    def _set_compat_mode(self, mode: str) -> None:
+        mode = mode.strip().lower()
+        if not valid_compat_mode(mode):
+            self._set_status(f"Ignored invalid compatibility mode {mode!r}")
+            return
+        if mode != self._compat_mode:
+            self._compat_mode = mode
+            self.compatModeChanged.emit()
+
     def _set_netlist_text(self, text: str) -> None:
         if text != self._netlist_text:
             self._netlist_text = text
@@ -192,6 +206,10 @@ class Simulator(QObject):
     available = Property(bool, _get_available, constant=True)
     netlistText = Property(  # noqa: N815
         str, _get_netlist_text, _set_netlist_text, notify=netlistTextChanged
+    )
+    # ngspice compatibility mode ("ltpsa" by default, "" = off); stored in the project.
+    compatMode = Property(  # noqa: N815
+        str, _get_compat_mode, _set_compat_mode, notify=compatModeChanged
     )
 
     @property
@@ -296,6 +314,8 @@ class Simulator(QObject):
             self._set_status(f"Not started: {card}: {card_errors[0].message}")
             return False
         backend = self._get_backend()
+        if hasattr(backend, "compat_mode"):
+            backend.compat_mode = self._compat_mode  # type: ignore[attr-defined]
         if not backend.available():
             reason = getattr(backend, "last_error", "") or "library not found"
             self._set_status(f"Not started: ngspice is not available ({reason})")

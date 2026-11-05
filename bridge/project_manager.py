@@ -43,6 +43,7 @@ from core.project.io import (
     NetlistEntry,
     Project,
     ProjectError,
+    SimulationSettings,
     load_project,
     save_project,
 )
@@ -142,6 +143,7 @@ class ProjectManager(QObject):
         for signal in (
             simulator.netlistTextChanged,
             simulator.analysisCardChanged,
+            simulator.compatModeChanged,
             simulator.resultReady,
             diagram.sourcesChanged,
             diagram.runSettingsChanged,
@@ -168,6 +170,7 @@ class ProjectManager(QObject):
             diagrams=[DiagramEntry(self._diagram_name, state.diagram)] + self._extra_diagrams,
             block_sources=[BlockSource(d, c) for d, c in state.sources],
             analysis=AnalysisSettings(sim.property("analysisCard"), state.t_end, state.dt),
+            simulation=SimulationSettings(sim.property("compatMode")),
             results=results,
         )
 
@@ -285,6 +288,7 @@ class ProjectManager(QObject):
         )
         sim.set_file_path(path)
         sim.setProperty("analysisCard", project.analysis.card)
+        sim.setProperty("compatMode", project.simulation.compat_mode)
         sim.setProperty("netlistText", project.netlists[0].text if project.netlists else "")
         netlist_result = project.results.get(NETLIST_RESULT)
         diagram_result = project.results.get(DIAGRAM_RESULT)

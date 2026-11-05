@@ -71,6 +71,7 @@ def build_project(app: App) -> None:
     """Fill every part of a project, as a user would."""
     app.sim.setProperty("netlistText", RC)
     app.sim.setProperty("analysisCard", ".tran 10u 1m")
+    app.sim.setProperty("compatMode", "")  # L3: compatibility off
     assert app.diagram.apply(CODE)
     for spec, x in (("Sine", 0), ("double", 120), ("Scope", 240)):
         assert app.diagram.addBlock(spec, x, 40)
@@ -126,6 +127,7 @@ def test_save_quit_reopen_gives_an_identical_project(
     # The bridge objects show the loaded state.
     assert second.sim.property("netlistText") == RC
     assert second.sim.property("analysisCard") == ".tran 10u 1m"
+    assert second.sim.property("compatMode") == ""
     assert second.diagram.blocks.rowCount() == 3
     assert second.diagram.wires.rowCount() == 2
     assert any(b["name"] == "double" for b in second.diagram.property("library"))

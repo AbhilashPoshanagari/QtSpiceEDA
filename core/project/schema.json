@@ -1,14 +1,17 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://qtspice.invalid/schema/project-1.json",
-  "title": "QtSpice project (.qsp), format version 1",
+  "$id": "https://qtspice.invalid/schema/project-2.json",
+  "title": "QtSpice project (.qsp), format version 2 (version 1 files are also valid)",
   "description": "Results are not stored here: each entry of 'results' names an .npz file in the '<project stem>_results' folder next to the .qsp file.",
   "type": "object",
   "required": ["format", "version", "netlists", "diagrams", "block_sources", "analysis", "results"],
   "additionalProperties": false,
+  "if": { "properties": { "version": { "const": 1 } } },
+  "then": { "not": { "required": ["simulation"] } },
+  "else": { "required": ["simulation"] },
   "properties": {
     "format": { "const": "qtspice-project" },
-    "version": { "const": 1 },
+    "version": { "enum": [1, 2] },
     "netlists": {
       "type": "array",
       "items": {
@@ -56,6 +59,19 @@
         },
         "diagram_t_end": { "type": "number", "exclusiveMinimum": 0 },
         "diagram_dt": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "simulation": {
+      "description": "Format version 2. ngspice settings; version 1 files have none (defaults apply).",
+      "type": "object",
+      "required": ["compat_mode"],
+      "additionalProperties": false,
+      "properties": {
+        "compat_mode": {
+          "type": "string",
+          "pattern": "^[a-z]{0,16}$",
+          "description": "Sent as 'set ngbehavior=<mode>' before each circuit load; empty = off. Default 'ltpsa'."
+        }
       }
     },
     "results": {

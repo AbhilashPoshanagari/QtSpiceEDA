@@ -11,6 +11,18 @@ MessageCallback = Callable[[str], None]
 ProgressCallback = Callable[[int], None]
 
 
+# ngspice compatibility mode sent before every circuit load (Spike A): "ltpsa" makes
+# ngspice accept LTspice and PSpice syntax; "" switches compatibility off.
+DEFAULT_COMPAT_MODE = "ltpsa"
+_COMPAT_LETTERS = frozenset("abcdefghijklmnopqrstuvwxyz")
+
+
+def valid_compat_mode(mode: object) -> bool:
+    """True for "" or a short lower-case word such as "ltpsa" (nothing else can be
+    smuggled into the ngspice command)."""
+    return isinstance(mode, str) and len(mode) <= 16 and set(mode) <= _COMPAT_LETTERS
+
+
 class SimulationError(RuntimeError):
     """Raised when a deck cannot be loaded or a run fails."""
 

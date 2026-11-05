@@ -25,16 +25,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from core.sim.backend import DEFAULT_COMPAT_MODE, valid_compat_mode
 from core.sim.result import SimulationResult
 
 FORMAT = "qtspice-project"
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 SUFFIX = ".qsp"
 DEFAULT_T_END = 1.0
 DEFAULT_DT = 0.001
 
 _NAME = re.compile(r"^[A-Za-z0-9_-]+$")
-_KEYS = ("format", "version", "netlists", "diagrams", "block_sources", "analysis", "results")
+_KEYS_V1 = ("format", "version", "netlists", "diagrams", "block_sources", "analysis", "results")
+_KEYS = (*_KEYS_V1, "simulation")  # version 2
 
 
 class ProjectError(Exception):
@@ -74,11 +76,20 @@ class AnalysisSettings:
 
 
 @dataclass
+class SimulationSettings:
+    """ngspice settings. ``compat_mode`` is the ``ngbehavior`` value ("" = off).
+    Version 1 files have none and get the defaults."""
+
+    compat_mode: str = DEFAULT_COMPAT_MODE
+
+
+@dataclass
 class Project:
     netlists: list[NetlistEntry] = field(default_factory=list)
     diagrams: list[DiagramEntry] = field(default_factory=list)
     block_sources: list[BlockSource] = field(default_factory=list)
     analysis: AnalysisSettings = field(default_factory=AnalysisSettings)
+    simulation: SimulationSettings = field(default_factory=SimulationSettings)
     results: dict[str, SimulationResult] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -95,6 +106,7 @@ class Project:
                 "diagram_dt": self.analysis.diagram_dt,
             },
             "results": [{"name": name, "file": f"{name}.npz"} for name in self.results],
+            "simulation": {"compat_mode": self.simulation.compat_mode},
         }
 
     def to_json(self) -> str:
@@ -141,6 +153,8 @@ def save_project(path: str | Path, project: Project) -> None:
     for value in (project.analysis.diagram_t_end, project.analysis.diagram_dt):
         if not (math.isfinite(value) and value > 0):
             raise ProjectError("the diagram end time and time step must be positive numbers")
+    if not valid_compat_mode(project.simulation.compat_mode):
+        raise ProjectError("the compatibility mode must be lower-case letters, e.g. 'ltpsa'")
     text = project.to_json()  # before touching the disk: fails on NaN etc.
 
     folder = results_dir(path)
@@ -198,6 +212,8 @@ def load_project(path: str | Path) -> LoadResult:
             float(data["analysis"]["diagram_dt"]),
         ),
     )
+    if "simulation" in data:
+        project.simulation = SimulationSettings(data["simulation"]["compat_mode"])
     warnings: list[str] = []
     folder = results_dir(path)
     for entry in data["results"]:
@@ -227,11 +243,12 @@ def _check_header(data: object) -> list[str]:
 
 def _check_body(data: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    for key in _KEYS:
+    keys = _KEYS_V1 if data["version"] == 1 else _KEYS
+    for key in keys:
         if key not in data:
             errors.append(f"missing field {key!r}")
     for key in data:
-        if key not in _KEYS:
+        if key not in keys:
             errors.append(f"unknown field {key!r}")
     if errors:
         return errors
@@ -277,6 +294,12 @@ def _check_body(data: dict[str, Any]) -> list[str]:
         errors.append("block_sources need distinct, non-empty document names")
     for i, entry in enumerate(data["diagrams"]):
         errors += _check_diagram(entry["diagram"], f"diagrams[{i}].diagram")
+
+    simulation = data.get("simulation", {"compat_mode": DEFAULT_COMPAT_MODE})
+    if not isinstance(simulation, dict) or set(simulation) != {"compat_mode"}:
+        errors.append("'simulation' must be an object with exactly the field 'compat_mode'")
+    elif not valid_compat_mode(simulation["compat_mode"]):
+        errors.append("simulation.compat_mode must be '' or lower-case letters, e.g. 'ltpsa'")
 
     analysis = data["analysis"]
     if not isinstance(analysis, dict):

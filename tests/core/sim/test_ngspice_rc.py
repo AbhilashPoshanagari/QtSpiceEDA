@@ -112,3 +112,58 @@ def test_stop_before_run_is_not_lost(adapter: NgspiceAdapter) -> None:
     adapter.load(RC_DECK)  # a new load clears the request
     adapter.run()
     assert adapter.results() is not None
+
+
+# ---- L3: compatibility mode (Spike A)
+
+# PSpice if() in a B-source: "no such function" unless ngbehavior includes ps.
+PSPICE_IF_DECK = """PSpice if() needs compatibility mode
+V1 in 0 1
+B1 out 0 V=if(V(in)>0.5, 2, 0)
+R1 out 0 1k
+.op
+.end
+"""
+
+
+@pytest.mark.parametrize(
+    ("mode", "command"),
+    [("ltpsa", "set ngbehavior=ltpsa"), ("", "unset ngbehavior"), ("psa", "set ngbehavior=psa")],
+)
+def test_compat_command(mode: str, command: str) -> None:
+    assert ngspice_adapter.compat_command(mode) == command
+
+
+@pytest.mark.parametrize("mode", ["lt psa", "ltpsa;quit", "LTPSA", "x" * 17, None])
+def test_compat_command_rejects_bad_modes(mode: object) -> None:
+    with pytest.raises(SimulationError, match="compatibility mode"):
+        ngspice_adapter.compat_command(mode)  # type: ignore[arg-type]
+
+
+def test_default_compat_mode() -> None:
+    assert NgspiceAdapter().compat_mode == "ltpsa"
+
+
+@pytest.mark.ngspice
+def test_compat_mode_on_runs_pspice_if(adapter: NgspiceAdapter) -> None:
+    adapter.load(PSPICE_IF_DECK)
+    adapter.run()
+    result = adapter.results()
+    assert result is not None
+    assert result.vectors["V(out)"][0] == pytest.approx(2.0)
+    assert any("Compatibility modes selected" in line for line in adapter.console)
+
+
+@pytest.mark.ngspice
+def test_compat_mode_off_rejects_pspice_if_then_on_again(adapter: NgspiceAdapter) -> None:
+    adapter.compat_mode = ""
+    with pytest.raises(SimulationError):
+        adapter.load(PSPICE_IF_DECK)
+        adapter.run()
+    # Applied per load: switching it back on works without restarting ngspice.
+    adapter.compat_mode = "ltpsa"
+    adapter.load(PSPICE_IF_DECK)
+    adapter.run()
+    result = adapter.results()
+    assert result is not None
+    assert result.vectors["V(out)"][0] == pytest.approx(2.0)

@@ -15,6 +15,7 @@ from core.project.io import (
     NetlistEntry,
     Project,
     ProjectError,
+    SimulationSettings,
     load_project,
     results_dir,
     save_project,
@@ -166,7 +167,12 @@ def test_bad_json(tmp_path: Path) -> None:
         ({"format": "something-else"}, "not a QtSpice project file"),
         ({"version": "1"}, "version must be a whole number"),
         ({"version": 0}, "version must be a whole number"),
-        ({"version": FORMAT_VERSION + 1}, "saved by a newer QtSpice (format version 2)"),
+        (
+            {"version": FORMAT_VERSION + 1},
+            f"saved by a newer QtSpice (format version {FORMAT_VERSION + 1})",
+        ),
+        ({"simulation": {"compat_mode": "ltpsa; quit"}}, "simulation.compat_mode must be"),
+        ({"simulation": {}}, "exactly the field 'compat_mode'"),
         ({"netlists": {}}, "'netlists' must be a list"),
         ({"netlists": [{"name": "a"}]}, "missing field netlists[0].text"),
         ({"netlists": [{"name": "a", "text": 3}]}, "netlists[0].text has the wrong type"),
@@ -203,3 +209,44 @@ def test_missing_and_damaged_results_are_warnings(tmp_path: Path) -> None:
     assert len(result.warnings) == 2
     assert "netlist.npz is missing" in result.warnings[0]
     assert "diagram.npz" in result.warnings[1]
+
+
+# ---- L3: format version 2 adds simulation.compat_mode
+
+
+def test_compat_mode_round_trip(tmp_path: Path) -> None:
+    path = tmp_path / "p.qsp"
+    save_project(path, Project(simulation=SimulationSettings("")))
+    data = json.loads(path.read_text("utf-8"))
+    assert data["version"] == 2
+    assert data["simulation"] == {"compat_mode": ""}
+    loaded = load_project(path)
+    assert loaded.ok and loaded.project is not None
+    assert loaded.project.simulation.compat_mode == ""
+    assert Project().simulation.compat_mode == "ltpsa"
+
+
+def test_version_1_file_opens_with_default_compat_mode(tmp_path: Path) -> None:
+    data = valid_dict()
+    data["version"] = 1
+    del data["simulation"]
+    jsonschema.validate(data, SCHEMA)
+    result = load_project(write(tmp_path, data))
+    assert result.ok and result.project is not None
+    assert result.project.simulation.compat_mode == "ltpsa"
+
+
+def test_version_rules_for_simulation(tmp_path: Path) -> None:
+    v1 = valid_dict() | {"version": 1}
+    assert "unknown field 'simulation'" in load_project(write(tmp_path, v1)).errors
+    v2 = valid_dict()
+    del v2["simulation"]
+    assert load_project(write(tmp_path, v2)).errors == ["missing field 'simulation'"]
+    for bad in (v1, v2):
+        with pytest.raises(jsonschema.ValidationError):
+            jsonschema.validate(bad, SCHEMA)
+
+
+def test_save_rejects_bad_compat_mode(tmp_path: Path) -> None:
+    with pytest.raises(ProjectError, match="compatibility mode"):
+        save_project(tmp_path / "p.qsp", Project(simulation=SimulationSettings("LT PS")))

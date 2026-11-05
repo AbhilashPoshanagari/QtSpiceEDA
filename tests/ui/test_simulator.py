@@ -259,3 +259,25 @@ def test_panel_card_makes_netlist_without_analysis_runnable(fake_sim, qtbot) -> 
     sim.setProperty("analysisCard", "")  # back to the netlist: error again
     assert "no analysis" in sim.property("diagnostics")[0]["message"]
     assert sim.run(text) is False
+
+
+# ---- L3: compatibility mode
+
+
+def test_compat_mode_is_passed_to_the_backend(fake_sim, qtbot) -> None:
+    sim, backend = fake_sim
+    backend.compat_mode = "unset-by-test"
+    assert sim.property("compatMode") == "ltpsa"
+    with qtbot.waitSignal(sim.compatModeChanged):
+        sim.setProperty("compatMode", " PSA ")
+    assert sim.property("compatMode") == "psa"
+    with qtbot.waitSignal(sim.resultReady, timeout=3000):
+        assert sim.run(RC_EXAMPLE.read_text()) is True
+    assert backend.compat_mode == "psa"
+
+
+def test_invalid_compat_mode_is_ignored(fake_sim) -> None:
+    sim, _ = fake_sim
+    sim.setProperty("compatMode", "lt; quit")
+    assert sim.property("compatMode") == "ltpsa"
+    assert "invalid compatibility mode" in sim.property("statusText")

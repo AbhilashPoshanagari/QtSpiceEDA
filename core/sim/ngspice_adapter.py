@@ -20,10 +20,12 @@ from pathlib import Path
 import numpy as np
 
 from core.sim.backend import (
+    DEFAULT_COMPAT_MODE,
     MessageCallback,
     ProgressCallback,
     SimulationError,
     SimulatorBackend,
+    valid_compat_mode,
 )
 from core.sim.result import SimulationResult
 
@@ -210,6 +212,13 @@ def _declare(lib: ctypes.CDLL) -> None:
     lib.ngSpice_running.restype = ctypes.c_bool
 
 
+def compat_command(mode: str) -> str:
+    """The ngspice command that selects compatibility ``mode`` ("" = off)."""
+    if not valid_compat_mode(mode):
+        raise SimulationError(f"invalid ngspice compatibility mode {mode!r}")
+    return f"set ngbehavior={mode}" if mode else "unset ngbehavior"
+
+
 def _decode(raw: bytes | None) -> str:
     return raw.decode("utf-8", errors="replace") if raw else ""
 
@@ -229,14 +238,18 @@ class NgspiceAdapter(SimulatorBackend):
     ngspice keeps one circuit per process, so use one adapter at a time; the adapter
     that last loaded a deck receives ngspice's callbacks.
     Console lines are collected in ``console`` and also sent to ``on_message``.
+    ``compat_mode`` is sent as ``set ngbehavior=<mode>`` before each load ("" sends
+    ``unset ngbehavior``); ngspice reads it on every circuit load.
     """
 
     def __init__(
         self,
         on_message: MessageCallback | None = None,
         on_progress: ProgressCallback | None = None,
+        compat_mode: str = DEFAULT_COMPAT_MODE,
     ) -> None:
         super().__init__(on_message, on_progress)
+        self.compat_mode = compat_mode
         self.console: list[str] = []
         self.last_error = ""
         self._lib: ctypes.CDLL | None = None
@@ -269,6 +282,7 @@ class NgspiceAdapter(SimulatorBackend):
         if not lines or not lines[-1].strip().lower().startswith(".end"):
             lines.append(".end")
         self._command("destroy all")
+        self._command(compat_command(self.compat_mode))
         errors_before = self._error_count()
         array = (ctypes.c_char_p * (len(lines) + 1))(
             *[line.encode("utf-8") for line in lines], None
