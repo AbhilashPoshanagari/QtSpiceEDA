@@ -48,6 +48,17 @@ def items_of(schematic: Schematic, kind: str) -> list:
     return getattr(schematic, _LIST_OF[kind])
 
 
+def turn(rotation: int, mirror: bool, by: int, flip: bool) -> tuple[int, bool]:
+    """The orientation after turning a part ``by`` degrees clockwise on screen, then
+    (``flip``) mirroring it left-right, both about its own origin."""
+    for _ in range((by // 90) % 4):
+        # R90 after M^m R_r: R(r+90) unmirrored; M R(r-90) when mirrored.
+        rotation = (rotation + (270 if mirror else 90)) % 360
+    if flip:
+        mirror = not mirror
+    return rotation, mirror
+
+
 def snap(value: float, grid: int = GRID) -> int:
     return int(math.floor(value / grid + 0.5)) * grid
 

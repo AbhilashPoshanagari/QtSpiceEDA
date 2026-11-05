@@ -96,6 +96,7 @@ files = [
     "ui/qml/LibraryBrowser.qml",
     "ui/qml/Main.qml",
     "ui/qml/NetlistEditor.qml",
+    "ui/qml/PartPicker.qml",
     "ui/qml/Port.qml",
     "ui/qml/PropertiesPanel.qml",
     "ui/qml/SchematicCanvas.qml",

@@ -346,11 +346,8 @@ ApplicationWindow {
                             SplitView.minimumHeight: 120
                         }
                     }
-                    Label {
-                        objectName: "schematicSidePlaceholder"
-                        text: qsTr("Parts are placed from the part picker (S6).")
-                        wrapMode: Text.WordWrap
-                        padding: 8
+                    PartPicker {
+                        onPlace: name => schematicCanvas.startPlace(name)
                     }
                 }
             }
@@ -374,7 +371,7 @@ ApplicationWindow {
                         SplitView.minimumWidth: 160
                     }
                 }
-                SchematicCanvas {}
+                SchematicCanvas { id: schematicCanvas }
             }
         }
 

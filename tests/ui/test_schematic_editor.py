@@ -163,3 +163,78 @@ def test_missing_symbol_part_still_shows(ctrl: SchematicController) -> None:
     ctrl.load_schematic(Schematic(instances=[Instance("nosuch", "X1", 0, 0)]))
     row = ctrl.instances.row(0)
     assert row["missing"] is True and row["texts"][0]["text"] == "X1: nosuch?"
+
+
+# ---------------------------------------------------------------- S6: placing parts
+
+
+def test_next_name_uses_the_prefix_and_skips_used_numbers(ctrl: SchematicController) -> None:
+    assert ctrl.nextName("res") == "R1"  # R2 exists, R1 is free
+    assert ctrl.nextName("cap") == "C2"
+    assert ctrl.nextName("opamp") == "U1"  # Prefix X parts are U1, U2...
+    assert ctrl.nextName("voltage") == "V2"
+    assert "ground" not in ctrl.placeableSymbols() and "label" not in ctrl.placeableSymbols()
+    assert "res" in ctrl.placeableSymbols()
+    assert "Resistor" in ctrl.symbolDescription("res")
+
+
+def test_each_placed_part_is_one_undo_step(ctrl: SchematicController) -> None:
+    ctrl.load_schematic(None)
+    assert ctrl.beginPlace("res", 100, 100) == "R1"
+    assert ctrl.property("placing") == "res" and ctrl.instances.count == 1  # floating
+    assert ctrl.property("canUndo") is False
+    assert ctrl.placeCommit(100, 100) == "R2"  # R1 dropped, R2 floats
+    ctrl.placeMoveTo(300, 100)
+    assert ctrl.placeCommit(300, 100) == "R3"
+    ctrl.stopPlacing()
+    s = ctrl.schematic()
+    assert [i.name for i in s.instances] == ["R1", "R2"]
+    assert ctrl.undo_stack().count() == 2 and ctrl.property("undoText") == "place R2"
+    # Origins are on the grid, with the part's box centred near the pointer.
+    for inst in s.instances:
+        assert inst.x % 16 == 0 and inst.y % 16 == 0
+    assert (s.instances[0].x, s.instances[0].y) == (80, 48)
+    assert s.instances[1].x == 288  # 300 - 16 (box centre) snaps to 288
+    ctrl.undo()
+    assert [i.name for i in ctrl.schematic().instances] == ["R1"]
+    ctrl.redo()
+    assert [i.name for i in ctrl.schematic().instances] == ["R1", "R2"]
+
+
+def test_esc_while_placing_leaves_nothing_behind(ctrl: SchematicController) -> None:
+    before = ctrl.schematic()
+    ctrl.beginPlace("cap", 0, 0)
+    ctrl.placeMoveTo(64, 64)
+    ctrl.stopPlacing()
+    assert ctrl.schematic() == before and ctrl.property("placing") == ""
+
+
+def test_rotate_and_mirror_while_placing_carry_over(ctrl: SchematicController) -> None:
+    ctrl.load_schematic(None)
+    ctrl.beginPlace("res", 0, 0)
+    assert ctrl.placeRotate() and ctrl.placeMirror()
+    ctrl.placeCommit(0, 0)
+    s = ctrl.schematic()
+    assert (s.instances[0].rotation, s.instances[0].mirror) == (90, True)  # LTspice M90
+    assert (s.instances[1].rotation, s.instances[1].mirror) == (90, True)  # next one too
+    ctrl.stopPlacing()
+    assert ctrl.placeRotate() is False  # not placing
+
+
+def test_pending_library_part_is_placed_with_its_model(ctrl: SchematicController) -> None:
+    ctrl.load_schematic(None)
+    ctrl._pending = {"symbol": "diode", "attrs": {"SpiceModel": "1N4148", "ModelFile": "d.lib"}}
+    ctrl.beginPlace("diode", 0, 0)
+    ctrl.placeCommit(0, 0)
+    ctrl.stopPlacing()
+    [d1] = ctrl.schematic().instances
+    assert d1.attrs == {"SpiceModel": "1N4148", "ModelFile": "d.lib"}
+    assert ctrl.property("pendingPart") == {}
+    ctrl.beginPlace("diode", 0, 0)
+    assert ctrl.schematic().instances[-1].attrs == {}
+    ctrl.stopPlacing()
+
+
+def test_unknown_symbol_is_not_placed(ctrl: SchematicController) -> None:
+    assert ctrl.beginPlace("nosuch", 0, 0) == ""
+    assert ctrl.property("live") is False

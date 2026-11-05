@@ -10,6 +10,8 @@ import QtSpice
 //
 // Mouse: wheel zooms around the pointer; middle- or right-drag pans; in select mode
 // a click selects (Ctrl+click toggles) and a drag on empty space is a rubber band.
+// Tools: "place" (S6: each click drops a part, Ctrl+R / Ctrl+E turn it). Esc or a
+// right-click without dragging leaves a tool.
 // The model, hit-testing and undo live in SchematicController.
 Item {
     id: root
@@ -26,8 +28,16 @@ Item {
     readonly property real penWidth: 1.5 / settledZoom
     readonly property real pickTolerance: 6 / zoom   // sheet units for ~6 px
 
-    // "select" here; the part, wire, label, ground and paste tools add their own.
+    // "select", or a tool: "place" (S6).
     property string mode: "select"
+    property string placeSymbol: ""
+    property point pointer: Qt.point(0, 0)   // last pointer position, sheet units
+    readonly property string hint: {
+        if (mode === "place")
+            return qsTr("Placing %1: click to place, Ctrl+R rotate, Ctrl+E mirror, Esc to stop")
+                   .arg(SchematicController.placing)
+        return ""
+    }
 
     // Rubber band in viewport pixels.
     property bool banding: false
@@ -61,6 +71,62 @@ Item {
         panY = (viewport.height - (b[3] - b[1]) * zoom) / 2 - b[1] * zoom
     }
 
+    // ---- tools
+
+    function startPlace(name) {
+        stopTool()
+        const at = viewport.containsPointer ? pointer
+                                            : toSheet(viewport.width / 2, viewport.height / 2)
+        if (SchematicController.beginPlace(name, at.x, at.y) !== "") {
+            placeSymbol = name
+            mode = "place"
+            root.forceActiveFocus()
+        }
+    }
+
+    function stopTool() {
+        if (mode === "place")
+            SchematicController.stopPlacing()
+        mode = "select"
+        placeSymbol = ""
+    }
+
+    function rotate() {
+        if (mode === "place")
+            SchematicController.placeRotate()
+    }
+
+    function mirror() {
+        if (mode === "place")
+            SchematicController.placeMirror()
+    }
+
+    // "Use with symbol..." in the Library Browser: place that symbol with its model.
+    Connections {
+        target: SchematicController
+        function onPendingPartChanged() {
+            const pending = SchematicController.pendingPart
+            if (pending.symbol !== undefined && root.mode !== "place")
+                root.startPlace(pending.symbol)
+        }
+    }
+
+    Shortcut {
+        sequence: "Esc"
+        enabled: root.visible
+        onActivated: root.mode !== "select" ? root.stopTool() : SchematicController.clearSelection()
+    }
+    Shortcut {
+        sequence: "Ctrl+R"
+        enabled: root.visible
+        onActivated: root.rotate()
+    }
+    Shortcut {
+        sequence: "Ctrl+E"
+        enabled: root.visible
+        onActivated: root.mirror()
+    }
+
     onZoomChanged: settleTimer.restart()
     Timer {
         id: settleTimer
@@ -92,7 +158,12 @@ Item {
                     text: Math.round(root.zoom * 100) + " %"
                     Layout.preferredWidth: 56
                 }
-                Item { Layout.fillWidth: true }
+                Label {
+                    objectName: "toolHint"
+                    text: root.hint
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
+                }
             }
         }
 
@@ -102,6 +173,7 @@ Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
+            readonly property bool containsPointer: mouse.containsMouse
 
             Rectangle { anchors.fill: parent; color: "#fbfbf7" }
 
@@ -273,6 +345,7 @@ Item {
                 acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
                 hoverEnabled: true
                 property bool panning: false
+                property bool panned: false
                 property real lastX
                 property real lastY
 
@@ -280,13 +353,19 @@ Item {
                     root.forceActiveFocus()
                     lastX = ev.x
                     lastY = ev.y
+                    const p = root.toSheet(ev.x, ev.y)
+                    root.pointer = p
                     if (ev.button === Qt.MiddleButton || ev.button === Qt.RightButton) {
                         panning = true
+                        panned = false
+                        return
+                    }
+                    if (root.mode === "place") {
+                        SchematicController.placeCommit(p.x, p.y)
                         return
                     }
                     if (root.mode !== "select")
                         return
-                    const p = root.toSheet(ev.x, ev.y)
                     const add = (ev.modifiers & Qt.ControlModifier) !== 0
                     const hit = SchematicController.itemAt(p.x, p.y, root.pickTolerance)
                     if (hit.kind !== undefined) {
@@ -300,11 +379,17 @@ Item {
                     }
                 }
                 onPositionChanged: ev => {
+                    const p = root.toSheet(ev.x, ev.y)
+                    root.pointer = p
                     if (panning) {
+                        if (Math.abs(ev.x - lastX) + Math.abs(ev.y - lastY) > 0)
+                            panned = true
                         root.panX += ev.x - lastX
                         root.panY += ev.y - lastY
                         lastX = ev.x
                         lastY = ev.y
+                    } else if (root.mode === "place") {
+                        SchematicController.placeMoveTo(p.x, p.y)
                     } else if (root.banding) {
                         root.bandEnd = Qt.point(ev.x, ev.y)
                     }
@@ -312,6 +397,8 @@ Item {
                 onReleased: ev => {
                     if (panning) {
                         panning = false
+                        if (!panned && ev.button === Qt.RightButton && root.mode !== "select")
+                            root.stopTool()
                         return
                     }
                     if (root.banding) {

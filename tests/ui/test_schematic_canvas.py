@@ -9,9 +9,10 @@ from pathlib import Path
 import pytest
 from PySide6.QtCore import QObject, QPoint, QPointF, Qt
 from PySide6.QtQuick import QQuickItem
+from PySide6.QtTest import QTest
 
 from core.schematic.model import Schematic
-from tests.ui.mouse import click, drag, find_item, find_items, wheel
+from tests.ui.mouse import click, drag, find_item, find_items, key, wheel
 from tests.ui.qml_harness import qml_scene
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
@@ -118,3 +119,71 @@ def test_rubber_band_selects_what_is_inside(scene: Scene) -> None:
     assert ("instance", 1) in selection  # C1
     assert ("instance", 0) not in selection  # V1 is outside
     assert find_item(scene.canvas, "rubberBand").property("visible") is False
+
+
+# ---------------------------------------------------------------- S6
+
+PICKER_SCENE = """
+RowLayout {
+    anchors.fill: parent
+    spacing: 0
+    PartPicker {
+        Layout.preferredWidth: 220; Layout.fillHeight: true
+        onPlace: name => canvas.startPlace(name)
+    }
+    SchematicCanvas {
+        id: canvas; objectName: "canvas"; Layout.fillWidth: true; Layout.fillHeight: true
+    }
+}
+"""
+
+
+@pytest.fixture
+def picker(qapp: object, tmp_path: Path, qtbot) -> Iterator[Scene]:
+    with qml_scene(tmp_path, PICKER_SCENE, 1200, 700) as (engine, window):
+        s = Scene(engine, window, qtbot)
+        s.ctl.load_schematic(None)
+        qtbot.wait(20)
+        yield s
+        s.ctl.load_schematic(None)
+
+
+def test_picker_search_filters_and_previews(picker: Scene) -> None:
+    search = find_item(picker.window, "partSearch")
+    search.setProperty("text", "ca")
+    picker.qtbot.wait(20)
+    names = [i.property("text") for i in find_items(picker.window, "part_cap")]
+    assert names == ["cap"]
+    assert find_items(picker.window, "part_res") == []
+    assert find_item(picker.window, "partPicker").property("current") == "cap"
+    assert "Capacitor" in find_item(picker.window, "partDescription").property("text")
+    preview = find_item(picker.window, "partPreview")
+    assert [i.property("symbolName") for i in find_items(preview, "symbolItem")] == ["cap"]
+
+
+def test_click_a_part_then_place_it_repeatedly_until_esc(picker: Scene) -> None:
+    click(picker.window, item_point(find_item(picker.window, "part_res")))
+    assert picker.canvas.property("mode") == "place"
+    for x in (0, 160, 320):
+        p = picker.at(x, 0)
+        QTest.mouseMove(picker.window, p)
+        click(picker.window, p)
+    key(picker.window, Qt.Key.Key_Escape)
+    assert picker.canvas.property("mode") == "select"
+    assert [i.name for i in picker.ctl.schematic().instances] == ["R1", "R2", "R3"]
+    assert picker.ctl.undo_stack().count() == 3
+
+
+def test_right_click_also_stops_placing(picker: Scene) -> None:
+    picker.canvas.startPlace("cap")
+    assert picker.ctl.instances.count == 1
+    QTest.mouseClick(
+        picker.window, Qt.MouseButton.RightButton, Qt.KeyboardModifier.NoModifier, picker.at(0, 0)
+    )
+    picker.qtbot.wait(10)
+    assert picker.canvas.property("mode") == "select" and picker.ctl.instances.count == 0
+
+
+def item_point(item: QQuickItem) -> QPoint:
+    p = item.mapToScene(QPointF(item.width() / 2, item.height() / 2))
+    return QPoint(round(p.x()), round(p.y()))

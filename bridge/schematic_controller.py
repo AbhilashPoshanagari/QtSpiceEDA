@@ -42,6 +42,7 @@ from core.schematic.geometry import (
     WIRE,
     bounds,
     hit_test,
+    instance_box,
     instance_texts,
     items_in_rect,
     items_of,
@@ -51,8 +52,10 @@ from core.schematic.geometry import (
     snap,
     symbol_box,
     symbol_svg,
+    turn,
 )
 from core.schematic.model import Instance, Schematic
+from core.schematic.netlister import NET_FLAG_SYMBOLS
 from core.symbols.asy import Symbol
 from core.symbols.library import SymbolLibrary
 
@@ -654,6 +657,156 @@ class SchematicController(QObject):
         self.liveChanged.emit()
         self._set(live.before)
 
+    # ---- placing parts (S6)
+    #
+    # beginPlace(symbol) starts a live session with one floating part; placeMoveTo
+    # moves it with the pointer, placeCommit drops it (one undo step) and floats the
+    # next one, cancelLive (Esc) removes the floating part. The orientation of the last
+    # placed part is kept for the next one, as in LTspice.
+
+    @Slot(result="QStringList")
+    def placeableSymbols(self) -> list[str]:  # noqa: N802
+        """Symbols the part picker lists: all but ground and label, which have tools."""
+        return [n for n in self._symbols.names() if n.casefold() not in NET_FLAG_SYMBOLS]
+
+    @Slot(str, result=str)
+    def symbolDescription(self, name: str) -> str:  # noqa: N802
+        symbol = self.lookup(name)
+        if symbol is None:
+            return ""
+        prefix = symbol.prefix or "-"
+        text = symbol.attr("Description") or name
+        return f"{text} (Prefix {prefix}, {len(symbol.pins)} pins)"
+
+    @Slot(str, result=str)
+    def nextName(self, symbol_name: str) -> str:  # noqa: N802
+        """The next free InstName for a symbol: R1, R2... (X symbols: U1, U2...)."""
+        return _next_name(self._name_base(symbol_name), self._schematic.instances)
+
+    def _name_base(self, symbol_name: str) -> str:
+        symbol = self.lookup(symbol_name)
+        if symbol is None:
+            return "U"
+        named = symbol.attr("InstName").strip().rstrip("0123456789")
+        if named:
+            return named
+        letter = symbol.prefix[:1].upper()
+        return "U" if letter in ("", "X") else letter
+
+    @Slot(str, float, float, result=str)
+    def beginPlace(self, symbol_name: str, x: float, y: float) -> str:  # noqa: N802
+        """Start placing ``symbol_name`` with the pointer at (x, y); returns its name."""
+        if self.lookup(symbol_name) is None:
+            return ""
+        orientation = (0, False)
+        if self._live is not None and self._live.data.get("kind") == "place":
+            orientation = self._live.data["orientation"]  # type: ignore[assignment]
+        live = self._begin_live("")
+        live.data.update(kind="place", symbol=symbol_name, orientation=orientation)
+        return self._float_part(live, x, y)
+
+    def _float_part(self, live: _Live, x: float, y: float) -> str:
+        symbol_name = str(live.data["symbol"])
+        rotation, mirror = live.data["orientation"]  # type: ignore[misc]
+        s = self.schematic()
+        name = _next_name(self._name_base(symbol_name), s.instances)
+        attrs: dict[str, str] = {}
+        pending = self._pending
+        if pending.get("symbol") == symbol_name:
+            attrs = {str(k): str(v) for k, v in dict(pending.get("attrs") or {}).items()}
+        inst = Instance(symbol_name, name, 0, 0, rotation, mirror, attrs)
+        s.instances.append(inst)
+        live.text = f"place {name}"
+        live.data["index"] = len(s.instances) - 1
+        self._place_at(s, inst, x, y)
+        self._live_set(s)
+        return name
+
+    def _place_at(self, s: Schematic, inst: Instance, x: float, y: float) -> None:
+        """Put the part's box centre near (x, y) with its origin on the grid."""
+        x1, y1, x2, y2 = instance_box(
+            Instance(inst.symbol, inst.name, 0, 0, inst.rotation, inst.mirror),
+            self.lookup(inst.symbol),
+        )
+        inst.x = snap(x - (x1 + x2) / 2)
+        inst.y = snap(y - (y1 + y2) / 2)
+
+    def _floating(self) -> tuple[Schematic, Instance] | None:
+        live = self._live
+        if live is None or live.data.get("kind") != "place":
+            return None
+        s = self.schematic()
+        return s, s.instances[int(live.data["index"])]  # type: ignore[call-overload]
+
+    @Slot(float, float)
+    def placeMoveTo(self, x: float, y: float) -> None:  # noqa: N802
+        found = self._floating()
+        if found is None:
+            return
+        s, inst = found
+        old = (inst.x, inst.y)
+        self._place_at(s, inst, x, y)
+        if (inst.x, inst.y) != old:
+            self._live_set(s)
+
+    @Slot(float, float, result=str)
+    def placeCommit(self, x: float, y: float) -> str:  # noqa: N802
+        """Drop the floating part (one undo step) and float the next one; returns the
+        next part's name."""
+        live = self._live
+        if live is None or live.data.get("kind") != "place":
+            return ""
+        self.placeMoveTo(x, y)
+        data = dict(live.data)
+        self.commitLive()
+        nxt = self._begin_live("")
+        nxt.data.update(kind="place", symbol=data["symbol"], orientation=data["orientation"])
+        return self._float_part(nxt, x, y)
+
+    def _turn_floating(self, rotate: bool) -> bool:
+        found = self._floating()
+        if found is None:
+            return False
+        s, inst = found
+        box = instance_box(inst, self.lookup(inst.symbol))
+        cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+        if rotate:
+            inst.rotation, inst.mirror = turn(inst.rotation, inst.mirror, 90, False)
+        else:
+            inst.rotation, inst.mirror = turn(inst.rotation, inst.mirror, 0, True)
+        assert self._live is not None
+        self._live.data["orientation"] = (inst.rotation, inst.mirror)
+        self._place_at(s, inst, cx, cy)
+        self._live_set(s)
+        return True
+
+    @Slot(result=bool)
+    def placeRotate(self) -> bool:  # noqa: N802
+        """Ctrl+R while placing: turn the floating part 90 degrees clockwise."""
+        return self._turn_floating(True)
+
+    @Slot(result=bool)
+    def placeMirror(self) -> bool:  # noqa: N802
+        """Ctrl+E while placing: mirror the floating part left-right."""
+        return self._turn_floating(False)
+
+    def _get_placing(self) -> str:
+        live = self._live
+        if live is None or live.data.get("kind") != "place":
+            return ""
+        return str(live.data["symbol"])
+
+    placing = Property(str, _get_placing, notify=liveChanged)
+
+    @Slot()
+    def stopPlacing(self) -> None:  # noqa: N802
+        """Esc while placing: drop the floating part and forget a pending library part."""
+        if self._live is not None and self._live.data.get("kind") == "place":
+            self.cancelLive()
+        if self._pending:
+            self._pending = {}
+            self.pendingPartChanged.emit()
+
     # ---- settings
 
     def _read_list(self, key: str) -> list[str]:
@@ -766,6 +919,15 @@ class _Snapshot(QUndoCommand):
         ctl = self._ctl()
         if ctl is not None:
             ctl._apply_snapshot(self.before)
+
+
+def _next_name(base: str, instances: list[Instance]) -> str:
+    """``base`` + the lowest number no instance uses yet (names compare case-insensitively)."""
+    used = {i.name.casefold() for i in instances}
+    n = 1
+    while f"{base}{n}".casefold() in used:
+        n += 1
+    return f"{base}{n}"
 
 
 def _clean(paths: list[str]) -> list[str]:
