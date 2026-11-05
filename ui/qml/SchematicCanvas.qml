@@ -13,6 +13,9 @@ import QtSpice
 // Tools: "place" (S6: each click drops a part, Ctrl+R / Ctrl+E turn it), "wire"
 // (S7, see WireTool.qml), "label" (asks for a name, then each click places it) and
 // "ground". Esc or a right-click without dragging ends a wire, then leaves the tool.
+// Editing (S8): dragging a selected thing drags it with its wires following; the
+// "move" tool drags with wires detached. Ctrl+R rotate, Ctrl+E mirror, Delete,
+// Ctrl+C / Ctrl+V (the copy floats until a click), Ctrl+Z / Ctrl+Y undo and redo.
 // The model, hit-testing and undo live in SchematicController.
 Item {
     id: root
@@ -29,7 +32,8 @@ Item {
     readonly property real penWidth: 1.5 / settledZoom
     readonly property real pickTolerance: 6 / zoom   // sheet units for ~6 px
 
-    // "select", or a tool: "place" (S6), "wire", "label", "ground" (S7).
+    // "select", or a tool: "place" (S6), "wire", "label", "ground" (S7), "move",
+    // "paste" (S8).
     property string mode: "select"
     property string placeSymbol: ""
     property string labelName: ""
@@ -45,6 +49,10 @@ Item {
             return qsTr("Label %1: click a wire or pin to name its net; Esc to stop").arg(labelName)
         if (mode === "ground")
             return qsTr("Ground: click to place; Esc to stop")
+        if (mode === "move")
+            return qsTr("Move: drag the selection; wires stay where they are; Esc to stop")
+        if (mode === "paste")
+            return qsTr("Paste: click to drop the copy; Esc to cancel")
         return ""
     }
 
@@ -96,6 +104,8 @@ Item {
     function stopTool() {
         if (mode === "place")
             SchematicController.stopPlacing()
+        if (mode === "paste")
+            SchematicController.cancelLive()
         wireTool.stop()
         mode = "select"
         placeSymbol = ""
@@ -113,7 +123,8 @@ Item {
 
     function startTool(name) {
         stopTool()
-        SchematicController.clearSelection()
+        if (name !== "move")
+            SchematicController.clearSelection()
         mode = name
         wireTool.move(pointer)
         root.forceActiveFocus()
@@ -141,13 +152,25 @@ Item {
     }
 
     function rotate() {
-        if (mode === "place")
-            SchematicController.placeRotate()
+        if (mode === "place" || mode === "select" || mode === "move")
+            SchematicController.rotateSelection()
     }
 
     function mirror() {
-        if (mode === "place")
-            SchematicController.placeMirror()
+        if (mode === "place" || mode === "select" || mode === "move")
+            SchematicController.mirrorSelection()
+    }
+
+    function startPaste() {
+        if (!SchematicController.canPaste)
+            return
+        stopTool()
+        const at = viewport.containsPointer ? pointer
+                                            : toSheet(viewport.width / 2, viewport.height / 2)
+        if (SchematicController.beginPaste(at.x, at.y)) {
+            mode = "paste"
+            root.forceActiveFocus()
+        }
     }
 
     // "Use with symbol..." in the Library Browser: place that symbol with its model.
@@ -174,6 +197,31 @@ Item {
         sequence: "Ctrl+E"
         enabled: root.visible
         onActivated: root.mirror()
+    }
+    Shortcut {
+        sequences: [StandardKey.Delete, "Backspace"]
+        enabled: root.visible && (root.mode === "select" || root.mode === "move")
+        onActivated: SchematicController.deleteSelection()
+    }
+    Shortcut {
+        sequences: [StandardKey.Copy]
+        enabled: root.visible
+        onActivated: SchematicController.copySelection()
+    }
+    Shortcut {
+        sequences: [StandardKey.Paste]
+        enabled: root.visible
+        onActivated: root.startPaste()
+    }
+    Shortcut {
+        sequences: [StandardKey.Undo]
+        enabled: root.visible
+        onActivated: { root.stopTool(); SchematicController.undo() }
+    }
+    Shortcut {
+        sequences: [StandardKey.Redo]   // Ctrl+Y and Ctrl+Shift+Z on Windows
+        enabled: root.visible
+        onActivated: { root.stopTool(); SchematicController.redo() }
     }
 
     onZoomChanged: settleTimer.restart()
@@ -223,6 +271,50 @@ Item {
                     checkable: true
                     checked: root.mode === "ground"
                     onClicked: root.mode === "ground" ? root.stopTool() : root.startTool("ground")
+                }
+                ToolSeparator {}
+                ToolButton {
+                    objectName: "moveButton"
+                    text: qsTr("Move")
+                    checkable: true
+                    checked: root.mode === "move"
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Drag the selection with its wires detached")
+                    onClicked: root.mode === "move" ? root.stopTool() : root.startTool("move")
+                }
+                ToolButton {
+                    objectName: "rotateButton"
+                    text: qsTr("Rotate")
+                    enabled: SchematicController.selectionCount > 0 || root.mode === "place"
+                    onClicked: root.rotate()
+                }
+                ToolButton {
+                    objectName: "mirrorButton"
+                    text: qsTr("Mirror")
+                    enabled: SchematicController.selectionCount > 0 || root.mode === "place"
+                    onClicked: root.mirror()
+                }
+                ToolButton {
+                    objectName: "deleteButton"
+                    text: qsTr("Delete")
+                    enabled: SchematicController.selectionCount > 0 && root.mode === "select"
+                    onClicked: SchematicController.deleteSelection()
+                }
+                ToolButton {
+                    objectName: "undoButton"
+                    text: qsTr("Undo")
+                    enabled: SchematicController.canUndo
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Undo %1").arg(SchematicController.undoText)
+                    onClicked: { root.stopTool(); SchematicController.undo() }
+                }
+                ToolButton {
+                    objectName: "redoButton"
+                    text: qsTr("Redo")
+                    enabled: SchematicController.canRedo
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Redo %1").arg(SchematicController.redoText)
+                    onClicked: { root.stopTool(); SchematicController.redo() }
                 }
                 ToolSeparator {}
                 Label {
@@ -425,6 +517,8 @@ Item {
                 hoverEnabled: true
                 property bool panning: false
                 property bool panned: false
+                property bool pressedOnItem: false   // a drag from here moves the selection
+                property point pressSheet
                 property real lastX
                 property real lastY
 
@@ -457,12 +551,23 @@ Item {
                         SchematicController.addGround(q.x, q.y)
                         return
                     }
-                    if (root.mode !== "select")
+                    if (root.mode === "paste") {
+                        SchematicController.moveTo(p.x, p.y)
+                        SchematicController.endMove()
+                        root.mode = "select"
+                        return
+                    }
+                    if (root.mode !== "select" && root.mode !== "move")
                         return
                     const add = (ev.modifiers & Qt.ControlModifier) !== 0
                     const hit = SchematicController.itemAt(p.x, p.y, root.pickTolerance)
+                    pressedOnItem = false
                     if (hit.kind !== undefined) {
-                        SchematicController.select(hit.kind, hit.index, add)
+                        const already = SchematicController.isSelected(hit.kind, hit.index)
+                        if (add || !already)
+                            SchematicController.select(hit.kind, hit.index, add)
+                        pressedOnItem = !add && SchematicController.isSelected(hit.kind, hit.index)
+                        pressSheet = p
                     } else {
                         if (!add)
                             SchematicController.clearSelection()
@@ -485,6 +590,17 @@ Item {
                         SchematicController.placeMoveTo(p.x, p.y)
                     } else if (root.mode === "wire") {
                         wireTool.move(p)
+                    } else if (root.mode === "paste") {
+                        SchematicController.moveTo(p.x, p.y)
+                    } else if (pressedOnItem && (ev.buttons & Qt.LeftButton)) {
+                        if (!SchematicController.moving) {
+                            const far = Math.abs(p.x - pressSheet.x) + Math.abs(p.y - pressSheet.y)
+                            if (far * root.zoom > 3)
+                                SchematicController.beginMove(pressSheet.x, pressSheet.y,
+                                                              root.mode !== "move")
+                        }
+                        if (SchematicController.moving)
+                            SchematicController.moveTo(p.x, p.y)
                     } else if (root.banding) {
                         root.bandEnd = Qt.point(ev.x, ev.y)
                     }
@@ -494,6 +610,12 @@ Item {
                         panning = false
                         if (!panned && ev.button === Qt.RightButton && root.mode !== "select")
                             root.cancelStep()
+                        return
+                    }
+                    if (pressedOnItem) {
+                        pressedOnItem = false
+                        if (SchematicController.moving)
+                            SchematicController.endMove()
                         return
                     }
                     if (root.banding) {

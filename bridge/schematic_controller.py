@@ -33,6 +33,7 @@ from PySide6.QtQml import QmlElement, QmlSingleton
 
 from bridge.diagram_controller import RowModel
 from core.netlist.libindex import LIBRARY_SUFFIXES, LibraryIndex
+from core.schematic import edit as edit_ops
 from core.schematic.connectivity import connect
 from core.schematic.geometry import (
     GROUND,
@@ -330,6 +331,7 @@ class SchematicController(QObject):
         self._schematic = Schematic()
         self._undo = QUndoStack(self)
         self._live: _Live | None = None
+        self._clipboard: Schematic | None = None
         self._selection: set[tuple[str, int]] = set()
         self._symbol_cache: dict[str, Symbol | None] = {}
         self._geometry_cache: dict[str, dict[str, object]] = {}
@@ -556,6 +558,10 @@ class SchematicController(QObject):
             self._select(self._selection ^ {key})
         else:
             self._select({key})
+
+    @Slot(str, int, result=bool)
+    def isSelected(self, kind: str, index: int) -> bool:  # noqa: N802
+        return (kind, index) in self._selection
 
     @Slot(float, float, float, float, bool)
     def selectRect(self, x1: float, y1: float, x2: float, y2: float, add: bool) -> None:  # noqa: N802
@@ -860,6 +866,113 @@ class SchematicController(QObject):
         self._edit("ground", lambda s: s.grounds.append(GroundFlag(*point)))
         return True
 
+    # ---- editing the selection (S8)
+    #
+    # Ctrl+R / Ctrl+E turn the selection (or the part being placed), Delete removes it.
+    # beginMove / moveTo / endMove is one live session: Drag (follow=True, the default
+    # for a mouse drag) keeps wires on the pins that move, Move (follow=False) detaches
+    # them. Copy keeps the selection on the controller's own clipboard; beginPaste
+    # floats a copy that moveTo moves and endMove drops (one "paste" step).
+
+    @Slot(result=bool)
+    def rotateSelection(self) -> bool:  # noqa: N802
+        if self._get_placing():
+            return self.placeRotate()
+        if not self._selection:
+            return False
+        sel = set(self._selection)
+        self._edit("rotate", lambda s: _replace(s, edit_ops.rotate(s, self.lookup, sel)))
+        return True
+
+    @Slot(result=bool)
+    def mirrorSelection(self) -> bool:  # noqa: N802
+        if self._get_placing():
+            return self.placeMirror()
+        if not self._selection:
+            return False
+        sel = set(self._selection)
+        self._edit("mirror", lambda s: _replace(s, edit_ops.mirror(s, self.lookup, sel)))
+        return True
+
+    @Slot(result=bool)
+    def deleteSelection(self) -> bool:  # noqa: N802
+        if not self._selection or self._live is not None:
+            return False
+        sel = set(self._selection)
+        self._selection = set()
+        self._edit("delete", lambda s: _replace(s, edit_ops.delete(s, sel)))
+        self.selectionChanged.emit()
+        return True
+
+    @Slot(float, float, bool, result=bool)
+    def beginMove(self, x: float, y: float, follow: bool) -> bool:  # noqa: N802
+        """Start moving the selection with the pointer at (x, y)."""
+        if not self._selection:
+            return False
+        live = self._begin_live("drag" if follow else "move")
+        live.data.update(
+            kind="move", base=self.schematic(), start=(snap(x), snap(y)), follow=follow
+        )
+        return True
+
+    @Slot(float, float)
+    def moveTo(self, x: float, y: float) -> None:  # noqa: N802
+        live = self._live
+        if live is None or live.data.get("kind") != "move":
+            return
+        sx, sy = live.data["start"]  # type: ignore[misc]
+        delta = (snap(x) - sx, snap(y) - sy)
+        if delta == live.data.get("delta"):
+            return
+        live.data["delta"] = delta
+        base: Schematic = live.data["base"]  # type: ignore[assignment]
+        moved = edit_ops.move(base, self.lookup, self._selection, *delta, bool(live.data["follow"]))
+        self._live_set(moved)
+
+    @Slot()
+    def endMove(self) -> None:  # noqa: N802
+        live = self._live
+        if live is not None and live.data.get("kind") == "move":
+            self.commitLive()
+
+    def _get_moving(self) -> bool:
+        return self._live is not None and self._live.data.get("kind") == "move"
+
+    moving = Property(bool, _get_moving, notify=liveChanged)
+
+    @Slot(result=bool)
+    def copySelection(self) -> bool:  # noqa: N802
+        if not self._selection:
+            return False
+        self._clipboard = edit_ops.copy_selection(self._schematic, self._selection)
+        self.clipboardChanged.emit()
+        return True
+
+    clipboardChanged = Signal()
+
+    def _get_can_paste(self) -> bool:
+        return self._clipboard is not None
+
+    canPaste = Property(bool, _get_can_paste, notify=clipboardChanged)  # noqa: N815
+
+    @Slot(float, float, result=bool)
+    def beginPaste(self, x: float, y: float) -> bool:  # noqa: N802
+        """Float a copy of the clipboard at the pointer; moveTo moves it, endMove drops
+        it, cancelLive (Esc) takes it away."""
+        clip = self._clipboard
+        if clip is None:
+            return False
+        self.cancelLive()
+        c = edit_ops.centre(clip, self.lookup, edit_ops.all_items(clip)) or (0, 0)
+        dx, dy = snap(x) - c[0], snap(y) - c[1]
+        pasted, selection = edit_ops.paste(self._schematic, clip, dx, dy)
+        live = self._begin_live("paste")
+        self._selection = selection
+        live.data.update(kind="move", base=pasted, start=(snap(x), snap(y)), follow=False)
+        self._live_set(copy.deepcopy(pasted))
+        self.selectionChanged.emit()
+        return True
+
     # ---- settings
 
     def _read_list(self, key: str) -> list[str]:
@@ -972,6 +1085,12 @@ class _Snapshot(QUndoCommand):
         ctl = self._ctl()
         if ctl is not None:
             ctl._apply_snapshot(self.before)
+
+
+def _replace(target: Schematic, source: Schematic) -> None:
+    """Make ``target`` (the copy an _edit change works on) equal to ``source``."""
+    for name in ("title", "instances", "wires", "labels", "grounds", "ports", "texts"):
+        setattr(target, name, getattr(source, name))
 
 
 def _next_name(base: str, instances: list[Instance]) -> str:

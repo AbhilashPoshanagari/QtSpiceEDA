@@ -321,3 +321,70 @@ def test_draw_the_rc_fixture_by_hand(empty: Scene) -> None:
     for _ in range(steps):
         empty.ctl.redo()
     assert empty.ctl.schematic() == drawn
+
+
+# ---------------------------------------------------------------- S8
+
+
+def test_mouse_drag_moves_a_part_and_its_wires_follow(scene: Scene) -> None:
+    before = scene.ctl.schematic()
+    drag(scene.window, scene.at(304, 176), scene.at(368, 176))  # C1
+    after = scene.ctl.schematic()
+    assert after.instances[1].x == before.instances[1].x + 64
+    assert connect(after, scene.ctl.lookup).pins[1] == ["OUT", "0"]
+    assert scene.ctl.undo_stack().count() == 1
+    key(scene.window, Qt.Key.Key_Z, Qt.KeyboardModifier.ControlModifier)
+    assert scene.ctl.schematic() == before
+    key(scene.window, Qt.Key.Key_Y, Qt.KeyboardModifier.ControlModifier)
+    assert scene.ctl.schematic() == after
+
+
+def test_move_tool_detaches_wires(scene: Scene) -> None:
+    click(scene.window, scene.at(304, 176))
+    find_item(scene.window, "moveButton").clicked.emit()
+    assert scene.canvas.property("mode") == "move"
+    drag(scene.window, scene.at(304, 176), scene.at(368, 176))
+    after = scene.ctl.schematic()
+    assert after.wires == rc().wires
+    assert scene.ctl.property("undoText") == "move"
+
+
+def test_keys_rotate_mirror_and_delete_the_selection(scene: Scene) -> None:
+    click(scene.window, scene.at(304, 176))  # C1
+    key(scene.window, Qt.Key.Key_R, Qt.KeyboardModifier.ControlModifier)
+    assert scene.ctl.schematic().instances[1].rotation == 90
+    key(scene.window, Qt.Key.Key_E, Qt.KeyboardModifier.ControlModifier)
+    assert scene.ctl.schematic().instances[1].mirror is True
+    key(scene.window, Qt.Key.Key_Delete)
+    assert [i.name for i in scene.ctl.schematic().instances] == ["V1", "R2"]
+    for _ in range(3):
+        key(scene.window, Qt.Key.Key_Z, Qt.KeyboardModifier.ControlModifier)
+    assert scene.ctl.schematic() == rc()
+
+
+def test_copy_paste_with_keys_and_a_click(scene: Scene) -> None:
+    click(scene.window, scene.at(192, 112))  # R2
+    key(scene.window, Qt.Key.Key_C, Qt.KeyboardModifier.ControlModifier)
+    QTest.mouseMove(scene.window, scene.at(192, 220))
+    key(scene.window, Qt.Key.Key_V, Qt.KeyboardModifier.ControlModifier)
+    assert scene.canvas.property("mode") == "paste"
+    move_click(scene, 192, 240)
+    assert scene.canvas.property("mode") == "select"
+    names = [i.name for i in scene.ctl.schematic().instances]
+    assert names == ["V1", "C1", "R2", "R1"]
+    assert scene.ctl.property("undoText") == "paste"
+    # Esc while a copy floats leaves nothing.
+    key(scene.window, Qt.Key.Key_V, Qt.KeyboardModifier.ControlModifier)
+    key(scene.window, Qt.Key.Key_Escape)
+    assert [i.name for i in scene.ctl.schematic().instances] == names
+
+
+def test_toolbar_undo_and_redo(scene: Scene) -> None:
+    undo, redo = find_item(scene.window, "undoButton"), find_item(scene.window, "redoButton")
+    assert undo.property("enabled") is False
+    scene.ctl.addGround(400, 400)
+    assert undo.property("enabled") is True
+    undo.clicked.emit()
+    assert scene.ctl.schematic() == rc() and redo.property("enabled") is True
+    redo.clicked.emit()
+    assert len(scene.ctl.schematic().grounds) == 3

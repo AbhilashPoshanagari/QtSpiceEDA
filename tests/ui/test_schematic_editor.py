@@ -9,6 +9,7 @@ import pytest
 from PySide6.QtCore import QSettings
 
 from bridge.schematic_controller import SchematicController, SyncModel
+from core.schematic.connectivity import connect
 from core.schematic.model import Instance, Schematic, Wire
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
@@ -274,3 +275,77 @@ def test_labels_and_grounds(ctrl: SchematicController) -> None:
     assert ctrl.addLabel(0, 0, "two words") is False and ctrl.addLabel(0, 0, " ") is False
     after = check_undo_redo(ctrl, lambda: ctrl.addGround(400, 64))
     assert (after.grounds[-1].x, after.grounds[-1].y) == (400, 64)
+
+
+# ---------------------------------------------------------------- S8: editing
+
+
+def test_rotate_mirror_delete_each_undo_and_redo(ctrl: SchematicController) -> None:
+    ctrl.select("instance", 2, False)
+    after = check_undo_redo(ctrl, ctrl.rotateSelection)
+    r2 = after.instances[2]
+    assert (r2.rotation, r2.mirror) == (0, True)  # M90 turned clockwise is M0
+    assert ctrl.property("undoText") == "rotate"
+    check_undo_redo(ctrl, ctrl.mirrorSelection)
+    ctrl.select("instance", 2, False)
+    after = check_undo_redo(ctrl, ctrl.deleteSelection)
+    assert [i.name for i in after.instances] == ["V1", "C1"]
+    ctrl.clearSelection()
+    assert ctrl.rotateSelection() is False and ctrl.deleteSelection() is False
+
+
+def test_drag_is_one_undo_step_and_wires_follow(ctrl: SchematicController) -> None:
+    ctrl.select("instance", 1, False)  # C1
+    before = ctrl.schematic()
+
+    def drag() -> None:
+        assert ctrl.beginMove(304, 176, True)
+        for x in (310, 330, 350, 368):
+            ctrl.moveTo(x, 176)
+        assert ctrl.property("moving") is True
+        ctrl.endMove()
+
+    after = check_undo_redo(ctrl, drag)
+    assert after.instances[1].x == before.instances[1].x + 64
+    assert ctrl.property("undoText") == "drag"
+    nets = connect(after, ctrl.lookup)
+    assert nets.pins[1] == ["OUT", "0"]  # still connected
+
+
+def test_move_detaches(ctrl: SchematicController) -> None:
+    ctrl.select("instance", 1, False)
+    ctrl.beginMove(304, 176, False)
+    ctrl.moveTo(368, 176)
+    ctrl.endMove()
+    after = ctrl.schematic()
+    assert after.wires == rc().wires
+    assert ctrl.property("undoText") == "move"
+    assert connect(after, ctrl.lookup).pins[1] == ["", ""]
+
+
+def test_copy_paste_floats_then_drops_as_one_step(ctrl: SchematicController) -> None:
+    ctrl.select("instance", 2, False)
+    assert ctrl.property("canPaste") is False
+    assert ctrl.copySelection() and ctrl.property("canPaste") is True
+
+    def paste() -> None:
+        assert ctrl.beginPaste(192, 400)
+        ctrl.moveTo(192, 480)
+        ctrl.endMove()
+
+    after = check_undo_redo(ctrl, paste)
+    assert [i.name for i in after.instances] == ["V1", "C1", "R2", "R1"]
+    assert after.instances[3].attrs == {"Value": "10k"}
+    assert ctrl.property("undoText") == "paste"
+    # Esc while the copy floats: nothing is added.
+    before = ctrl.schematic()
+    ctrl.beginPaste(0, 0)
+    ctrl.cancelLive()
+    assert ctrl.schematic() == before
+
+
+def test_undo_during_a_live_session_cancels_it_first(ctrl: SchematicController) -> None:
+    ctrl.addGround(400, 400)
+    ctrl.beginPlace("res", 0, 0)
+    ctrl.undo()  # drops the floating part and undoes the ground
+    assert ctrl.schematic() == rc()
