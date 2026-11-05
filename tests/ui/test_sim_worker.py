@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from PySide6.QtCore import QObject, Qt, QThread, Signal
+from PySide6.QtCore import QObject, Qt, QThread, Signal, Slot
 
 from bridge.sim_worker import SimulationWorker
 from core.sim.backend import SimulationError, SimulatorBackend
@@ -15,6 +15,35 @@ RC_DECK = "rc\nV1 in 0 PULSE(0 1 0 1n 1n 1 2)\nR1 in out 1k\nC1 out 0 1u\n.tran 
 
 class _Starter(QObject):
     start = Signal(str)
+
+
+class _MainThreadSink(QObject):
+    """Receives the worker's signals in the main thread through queued connections,
+    as the Simulator does, and emits ``done`` once ``finished`` has been handled.
+
+    Wait on ``done``, not on ``worker.finished``: pytest-qt's waitSignal callback is a
+    plain callable, so for a worker on another thread it runs in that thread and ends
+    the wait before the main thread has handled the queued ``message`` events.
+    """
+
+    done = Signal()
+
+    def __init__(self, worker: SimulationWorker) -> None:
+        super().__init__()
+        self.lines: list[str] = []
+        self.result: SimulationResult | None = None
+        queued = Qt.ConnectionType.QueuedConnection
+        worker.message.connect(self.add, queued)
+        worker.finished.connect(self.finish, queued)
+
+    @Slot(str)
+    def add(self, text: str) -> None:
+        self.lines.append(text)
+
+    @Slot(object)
+    def finish(self, result: SimulationResult) -> None:
+        self.result = result
+        self.done.emit()
 
 
 def _on_thread(worker: SimulationWorker) -> tuple[QThread, _Starter]:
@@ -92,16 +121,16 @@ def test_stop_cancels_on_worker_thread(qtbot) -> None:
 @pytest.mark.ngspice
 def test_real_ngspice_on_a_thread(qtbot) -> None:
     worker = SimulationWorker(NgspiceAdapter())
-    messages: list[str] = []
-    worker.message.connect(messages.append)
+    sink = _MainThreadSink(worker)
     thread, starter = _on_thread(worker)
     try:
-        with qtbot.waitSignal(worker.finished, timeout=10_000) as blocker:
+        with qtbot.waitSignal(sink.done, timeout=10_000):
             starter.start.emit(RC_DECK)
-        result = blocker.args[0]
+        result = sink.result
+        assert result is not None
         v = np.interp(1e-3, result.vectors["time"], result.vectors["V(out)"])
         assert v == pytest.approx(1 - np.exp(-1), rel=1e-3)
-        assert any("transient" in m.lower() for m in messages)
+        assert any("transient" in m.lower() for m in sink.lines), sink.lines
     finally:
         thread.quit()
         thread.wait(3000)
