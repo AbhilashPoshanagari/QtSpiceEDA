@@ -65,6 +65,17 @@ ApplicationWindow {
             netlistEditor.loadUrl(url)
     }
 
+    Dialog {
+        id: libraryWindow
+        objectName: "libraryWindow"
+        title: qsTr("Library Browser")
+        anchors.centerIn: parent
+        width: Math.min(900, window.width - 40)
+        height: Math.min(600, window.height - 40)
+        standardButtons: Dialog.Close
+        LibraryBrowser { anchors.fill: parent }
+    }
+
     FileDialog {
         id: openDialog
         title: qsTr("Open project or netlist")
@@ -202,6 +213,14 @@ ApplicationWindow {
             MenuItem { text: qsTr("Save &As…"); onTriggered: window.saveAs(null) }
             MenuSeparator {}
             MenuItem { text: qsTr("&Quit"); onTriggered: window.close() }
+        }
+        Menu {
+            title: qsTr("&Tools")
+            MenuItem {
+                objectName: "libraryBrowserMenu"
+                text: qsTr("&Library Browser…")
+                onTriggered: libraryWindow.open()
+            }
         }
     }
 
