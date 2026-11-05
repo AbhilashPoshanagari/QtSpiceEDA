@@ -47,6 +47,7 @@ from core.project.io import (
     load_project,
     save_project,
 )
+from core.schematic.model import Schematic
 
 QML_IMPORT_NAME = "QtSpice"
 QML_IMPORT_MAJOR_VERSION = 1
@@ -102,6 +103,8 @@ class ProjectManager(QObject):
         self._diagram_name = "main"
         self._extra_netlists: list[NetlistEntry] = []
         self._extra_diagrams: list[DiagramEntry] = []
+        # Kept as loaded so saving does not drop it (the schematic editor comes with S5).
+        self._schematic: Schematic | None = None
         self._saved_json = ""
         self._saved_results: tuple[object, object] = (None, None)
         self._pending: tuple[Path, Project, list[str]] | None = None
@@ -172,6 +175,7 @@ class ProjectManager(QObject):
             analysis=AnalysisSettings(sim.property("analysisCard"), state.t_end, state.dt),
             simulation=SimulationSettings(sim.property("compatMode")),
             results=results,
+            schematic=self._schematic,
         )
 
     # ---- slots
@@ -279,6 +283,7 @@ class ProjectManager(QObject):
         sim, diagram = self._parts()
         self._extra_netlists = list(project.netlists[1:])
         self._extra_diagrams = list(project.diagrams[1:])
+        self._schematic = project.schematic
         sources = [(s.document, s.code) for s in project.block_sources] if trusted else []
         first = project.diagrams[0].diagram if project.diagrams else {"blocks": [], "wires": []}
         warnings = diagram.load_state(

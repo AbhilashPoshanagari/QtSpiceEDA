@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from core.netlist.model import ERROR
+from core.schematic.model import Schematic
 from core.sim.backend import DEFAULT_COMPAT_MODE, valid_compat_mode
 from core.sim.result import SimulationResult
 
@@ -37,6 +39,7 @@ DEFAULT_DT = 0.001
 _NAME = re.compile(r"^[A-Za-z0-9_-]+$")
 _KEYS_V1 = ("format", "version", "netlists", "diagrams", "block_sources", "analysis", "results")
 _KEYS = (*_KEYS_V1, "simulation")  # version 2
+_OPTIONAL_KEYS = ("schematic",)  # version 2, may be left out
 
 
 class ProjectError(Exception):
@@ -91,10 +94,12 @@ class Project:
     analysis: AnalysisSettings = field(default_factory=AnalysisSettings)
     simulation: SimulationSettings = field(default_factory=SimulationSettings)
     results: dict[str, SimulationResult] = field(default_factory=dict)
+    schematic: Schematic | None = None  # one per project (v2); None = no schematic
 
     def to_dict(self) -> dict[str, Any]:
-        """The JSON content of the .qsp file (results only by file name)."""
-        return {
+        """The JSON content of the .qsp file (results only by file name). ``schematic``
+        is written only when there is one, so projects without one keep their bytes."""
+        data: dict[str, Any] = {
             "format": FORMAT,
             "version": FORMAT_VERSION,
             "netlists": [{"name": n.name, "text": n.text} for n in self.netlists],
@@ -108,6 +113,9 @@ class Project:
             "results": [{"name": name, "file": f"{name}.npz"} for name in self.results],
             "simulation": {"compat_mode": self.simulation.compat_mode},
         }
+        if self.schematic is not None:
+            data["schematic"] = self.schematic.to_dict()
+        return data
 
     def to_json(self) -> str:
         return json.dumps(self.to_dict(), indent=2, ensure_ascii=False, allow_nan=False) + "\n"
@@ -215,6 +223,13 @@ def load_project(path: str | Path) -> LoadResult:
     if "simulation" in data:
         project.simulation = SimulationSettings(data["simulation"]["compat_mode"])
     warnings: list[str] = []
+    if data.get("schematic") is not None:
+        schematic, found = Schematic.from_dict(data["schematic"])
+        errors = [d.message for d in found if d.severity == ERROR]
+        if errors:
+            return LoadResult(None, errors)
+        warnings += [d.message for d in found]
+        project.schematic = schematic
     folder = results_dir(path)
     for entry in data["results"]:
         file = folder / entry["file"]
@@ -247,8 +262,9 @@ def _check_body(data: dict[str, Any]) -> list[str]:
     for key in keys:
         if key not in data:
             errors.append(f"missing field {key!r}")
+    allowed = keys if data["version"] == 1 else (*keys, *_OPTIONAL_KEYS)
     for key in data:
-        if key not in keys:
+        if key not in allowed:
             errors.append(f"unknown field {key!r}")
     if errors:
         return errors

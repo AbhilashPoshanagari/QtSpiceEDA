@@ -20,6 +20,7 @@ from core.project.io import (
     results_dir,
     save_project,
 )
+from core.schematic.model import Schematic
 from core.sim.result import SimulationResult
 
 SCHEMA = json.loads(
@@ -250,3 +251,71 @@ def test_version_rules_for_simulation(tmp_path: Path) -> None:
 def test_save_rejects_bad_compat_mode(tmp_path: Path) -> None:
     with pytest.raises(ProjectError, match="compatibility mode"):
         save_project(tmp_path / "p.qsp", Project(simulation=SimulationSettings("LT PS")))
+
+
+# ---- S4: one schematic per project
+
+RC_SCHEMATIC = Path(__file__).resolve().parents[2] / "fixtures" / "schematics" / "rc" / "rc.json"
+
+
+def rc_schematic() -> Schematic:
+    schematic, diagnostics = Schematic.from_dict(
+        json.loads(RC_SCHEMATIC.read_text(encoding="utf-8"))
+    )
+    assert diagnostics == []
+    return schematic
+
+
+def test_schematic_round_trip(tmp_path: Path) -> None:
+    path = tmp_path / "p.qsp"
+    project = Project(schematic=rc_schematic())
+    save_project(path, project)
+    data = json.loads(path.read_text("utf-8"))
+    assert data["version"] == FORMAT_VERSION == 2
+    jsonschema.validate(data, SCHEMA)
+    loaded = load_project(path)
+    assert loaded.ok and loaded.warnings == []
+    assert loaded.project is not None and loaded.project.schematic == project.schematic
+    first = path.read_bytes()
+    save_project(path, loaded.project)
+    assert path.read_bytes() == first
+
+
+def test_project_without_a_schematic_has_no_schematic_field(tmp_path: Path) -> None:
+    path = tmp_path / "p.qsp"
+    save_project(path, Project())
+    assert "schematic" not in json.loads(path.read_text("utf-8"))
+    loaded = load_project(path)
+    assert loaded.ok and loaded.project is not None and loaded.project.schematic is None
+
+
+def test_version_2_file_saved_before_schematics_still_opens(tmp_path: Path) -> None:
+    data = valid_dict()
+    assert "schematic" not in data
+    jsonschema.validate(data, SCHEMA)
+    assert load_project(write(tmp_path, data)).ok
+
+
+def test_version_1_file_may_not_have_a_schematic(tmp_path: Path) -> None:
+    data = valid_dict() | {"version": 1, "schematic": rc_schematic().to_dict()}
+    del data["simulation"]
+    assert load_project(write(tmp_path, data)).errors == ["unknown field 'schematic'"]
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(data, SCHEMA)
+
+
+def test_bad_schematic_is_a_load_error(tmp_path: Path) -> None:
+    schematic = rc_schematic().to_dict()
+    schematic["instances"][0]["rotation"] = 45
+    result = load_project(write(tmp_path, valid_dict() | {"schematic": schematic}))
+    assert result.project is None
+    assert result.errors == ["schematic: instances[0].rotation must be 0, 90, 180 or 270, not 45"]
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(valid_dict() | {"schematic": schematic}, SCHEMA)
+
+
+def test_schematic_warnings_are_load_warnings(tmp_path: Path) -> None:
+    schematic = rc_schematic().to_dict() | {"colour": "blue"}
+    result = load_project(write(tmp_path, valid_dict() | {"schematic": schematic}))
+    assert result.ok
+    assert result.warnings == ["schematic: unknown field 'colour' ignored"]

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,7 +13,8 @@ from bridge.diagram_controller import DiagramController
 from bridge.project_manager import MAX_RECENT, ProjectManager
 from bridge.simulator import Simulator
 from bridge.waveform_model import WaveformModel
-from core.project.io import load_project
+from core.project.io import Project, load_project, save_project
+from core.schematic.model import Schematic
 from core.sim.result import SimulationResult
 
 RC = "* RC low-pass\nV1 in 0 PULSE(0 1 0 1n 1n 1 2)\nR1 in out 1k\nC1 out 0 1u\n.end\n"
@@ -281,3 +283,16 @@ def test_cannot_open_while_running(app: App, tmp_path: Path) -> None:
     assert app.projects.open(str(path)) is False
     assert "Stop the running simulation" in app.projects.property("errorString")
     app.sim._set_running(False)
+
+
+def test_schematic_is_kept_through_open_and_save(app: App, tmp_path: Path) -> None:
+    rc = Path(__file__).resolve().parents[1] / "fixtures" / "schematics" / "rc" / "rc.json"
+    schematic, _ = Schematic.from_dict(json.loads(rc.read_text(encoding="utf-8")))
+    path = tmp_path / "with_schematic.qsp"
+    save_project(path, Project(schematic=schematic))
+    assert app.projects.open(str(path))
+    assert app.projects.current_project().schematic == schematic
+    assert app.projects.save()
+    assert load_project(path).project.schematic == schematic  # type: ignore[union-attr]
+    assert app.projects.newProject()
+    assert app.projects.current_project().schematic is None

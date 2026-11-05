@@ -7,7 +7,7 @@
   "required": ["format", "version", "netlists", "diagrams", "block_sources", "analysis", "results"],
   "additionalProperties": false,
   "if": { "properties": { "version": { "const": 1 } } },
-  "then": { "not": { "required": ["simulation"] } },
+  "then": { "not": { "anyOf": [{ "required": ["simulation"] }, { "required": ["schematic"] }] } },
   "else": { "required": ["simulation"] },
   "properties": {
     "format": { "const": "qtspice-project" },
@@ -74,6 +74,10 @@
         }
       }
     },
+    "schematic": {
+      "description": "Format version 2, optional: the project's one schematic (Schematic.to_dict() from core/schematic/model.py). Left out when there is none.",
+      "$ref": "#/$defs/schematic"
+    },
     "results": {
       "type": "array",
       "items": {
@@ -89,6 +93,92 @@
   },
   "$defs": {
     "name": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+    "point": { "type": "integer" },
+    "word": { "type": "string", "pattern": "^\\S+$" },
+    "schematic": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "string" },
+        "instances": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["symbol", "name", "x", "y"],
+            "additionalProperties": false,
+            "properties": {
+              "symbol": { "type": "string", "minLength": 1 },
+              "name": { "type": "string", "minLength": 1 },
+              "x": { "$ref": "#/$defs/point" },
+              "y": { "$ref": "#/$defs/point" },
+              "rotation": { "enum": [0, 90, 180, 270] },
+              "mirror": { "type": "boolean" },
+              "attrs": { "type": "object", "additionalProperties": { "type": "string" } }
+            }
+          }
+        },
+        "wires": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "description": "[x1, y1, x2, y2]",
+            "items": { "$ref": "#/$defs/point" },
+            "minItems": 4,
+            "maxItems": 4
+          }
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["x", "y", "name"],
+            "additionalProperties": false,
+            "properties": {
+              "x": { "$ref": "#/$defs/point" },
+              "y": { "$ref": "#/$defs/point" },
+              "name": { "$ref": "#/$defs/word" }
+            }
+          }
+        },
+        "grounds": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["x", "y"],
+            "additionalProperties": false,
+            "properties": { "x": { "$ref": "#/$defs/point" }, "y": { "$ref": "#/$defs/point" } }
+          }
+        },
+        "ports": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["x", "y", "name"],
+            "additionalProperties": false,
+            "properties": {
+              "x": { "$ref": "#/$defs/point" },
+              "y": { "$ref": "#/$defs/point" },
+              "name": { "$ref": "#/$defs/word" },
+              "direction": { "enum": ["in", "out", "bidir"] }
+            }
+          }
+        },
+        "texts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["x", "y", "text"],
+            "additionalProperties": false,
+            "properties": {
+              "x": { "$ref": "#/$defs/point" },
+              "y": { "$ref": "#/$defs/point" },
+              "text": { "type": "string" },
+              "directive": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
     "diagram": {
       "description": "Diagram.to_dict() from core/blocks/diagram.py.",
       "type": "object",
