@@ -131,6 +131,21 @@ def test_run_uses_netlist_card_then_panel_card(fake_sim, qtbot) -> None:
     assert sim.property("progress") == 100
     assert sim.property("consoleText") == "Circuit: rc\nTransient Analysis"
     assert sim.property("statusText").startswith("Done: .tran")  # the fake's result
+    assert "not run" not in sim.property("statusText")  # the panel card was chosen
+
+
+def test_status_says_other_netlist_cards_were_not_run(fake_sim, qtbot) -> None:
+    sim, _ = fake_sim
+    with qtbot.waitSignal(sim.resultReady, timeout=3000):
+        assert sim.run(RC_EXAMPLE.read_text()) is True  # .tran and .ac
+        assert "1 more analysis card was not run" in sim.property("statusText")
+    assert sim.property("statusText").startswith("Done: .tran")
+    assert "1 more analysis card was not run" in sim.property("statusText")
+
+    one_card = "t\nV1 a 0 1\nR1 a 0 1k\n.op\n.end\n"
+    with qtbot.waitSignal(sim.resultReady, timeout=3000):
+        sim.run(one_card)
+    assert "not run" not in sim.property("statusText")
 
 
 def test_run_pushes_result_to_waveforms(fake_sim, qtbot) -> None:

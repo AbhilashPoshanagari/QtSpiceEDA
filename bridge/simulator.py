@@ -63,7 +63,8 @@ class Simulator(QObject):
     ``run(text)`` checks first and refuses to start if there are errors. One analysis
     runs at a time: ``analysisCard`` (set by the AnalysisPanel) replaces the netlist's
     analysis cards in the deck that is sent, through ``build``; when it is empty the
-    netlist's first card (``netlistAnalysis``) is used. While ``analysisCard`` is set,
+    netlist's first card (``netlistAnalysis``) is used, and ``statusText`` says how many
+    other netlist cards were not run. While ``analysisCard`` is set,
     a netlist without analysis cards is not an error. ``sentDeck`` is the deck that
     was sent and ``consoleText`` the ngspice output of the last run.
 
@@ -108,6 +109,7 @@ class Simulator(QObject):
         self._analysis_card = ""
         self._netlist_analysis = ""
         self._netlist_text = ""
+        self._skipped_note = ""
         self._result: SimulationResult | None = None
         self._last_text: str | None = None
         self._waveforms: QObject | None = None
@@ -305,7 +307,8 @@ class Simulator(QObject):
         self.consoleTextChanged.emit()
         self._set_sent_deck(deck)
         self._set_progress(0)
-        self._set_status(f"Running {card.split()[0]} ...")
+        self._skipped_note = "" if self._analysis_card else _skipped_note(circuit)
+        self._set_status(f"Running {card.split()[0]} ...{self._skipped_note}")
         self._set_running(True)
         assert self._worker is not None
         self._worker.arm()
@@ -415,9 +418,9 @@ class Simulator(QObject):
         self._result = result
         if result.axis:
             points = len(result.vectors[result.axis])
-            self._set_status(f"Done: .{result.analysis}, {points} points")
+            self._set_status(f"Done: .{result.analysis}, {points} points{self._skipped_note}")
         else:
-            self._set_status(f"Done: .{result.analysis}")
+            self._set_status(f"Done: .{result.analysis}{self._skipped_note}")
             self._append_console(["", "Operating point:", *_op_lines(result)])
         self._set_progress(100)
         self._set_running(False)
@@ -437,6 +440,15 @@ class Simulator(QObject):
             set_result = getattr(self._waveforms, "set_result", None)
             if set_result is not None:
                 set_result(self._result)
+
+
+def _skipped_note(circuit: Circuit) -> str:
+    """Status suffix when the netlist has analysis cards after the one that runs."""
+    others = len(circuit.analyses) - 1
+    if others < 1:
+        return ""
+    cards = "card was" if others == 1 else "cards were"
+    return f" ({others} more analysis {cards} not run: choose one in the Analysis panel)"
 
 
 def _op_lines(result: SimulationResult) -> list[str]:
