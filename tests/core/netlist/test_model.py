@@ -31,3 +31,11 @@ def test_parse_result_ok() -> None:
     assert ParseResult(Circuit()).ok
     assert ParseResult(Circuit(), [Diagnostic(1, 1, WARNING, "w")]).ok
     assert not ParseResult(Circuit(), [Diagnostic(1, 1, ERROR, "e")]).ok
+
+
+def test_diagnostic_to_dict_adds_fix_only_when_set() -> None:
+    from core.netlist.model import Diagnostic
+
+    plain = Diagnostic(2, 3, "error", "m")
+    assert plain.to_dict() == {"line": 2, "col": 3, "severity": "error", "message": "m"}
+    assert Diagnostic(1, 1, "warning", "m", fix="insert_title").to_dict()["fix"] == "insert_title"

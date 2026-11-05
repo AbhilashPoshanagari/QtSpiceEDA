@@ -6,7 +6,6 @@ ngspice runs on a QThread (SimulationWorker); results go to the attached Wavefor
 
 from __future__ import annotations
 
-from dataclasses import asdict
 from pathlib import Path
 
 from PySide6.QtCore import (
@@ -275,7 +274,7 @@ class Simulator(QObject):
             key=lambda d: (d.line, d.col),
         )
         ok = not any(d.severity == ERROR for d in found)
-        self._diagnostics = [asdict(d) for d in found]
+        self._diagnostics = [d.to_dict() for d in found]
         self.diagnosticsChanged.emit()
         deck = build(result.circuit) if ok else ""
         if deck != self._deck:

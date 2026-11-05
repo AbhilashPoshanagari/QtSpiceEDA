@@ -83,3 +83,34 @@ def test_load_url_reads_file_and_checks(qtbot, editor: QObject) -> None:
     qtbot.wait(50)
     assert marked_lines(editor) == []
     assert editor.property("errorCount") == 0
+
+
+def find_item(root: QQuickItem, name: str) -> QQuickItem:
+    pending = list(root.childItems())
+    while pending:
+        item = pending.pop()
+        if item.objectName() == name:
+            return item
+        pending.extend(item.childItems())
+    raise AssertionError(f"no item {name!r}")
+
+
+def test_title_line_quick_fix(qtbot, editor: QObject) -> None:
+    """O1: line 1 looks like an element -> warning + "Insert title line", undoable."""
+    netlist = "R1 1 0 1k\nV1 1 0 DC 1\nR2 1 0 1k\n.op\n.end\n"
+    paste(qtbot, editor, netlist)
+    bar = find_item(editor, "quickFixBar")
+    assert bar.isVisible()
+    assert marked_lines(editor) == [1]
+    assert editor.property("warningCount") == 1
+    button = find_item(editor, "insertTitleButton")
+    QMetaObject.invokeMethod(button, "clicked", Qt.DirectConnection)
+    qtbot.wait(450)
+    assert editor.property("text") == "* Title\n" + netlist
+    assert not bar.isVisible()
+    assert editor.property("warningCount") == 0
+    text_area = find_item(editor, "editorText")
+    QMetaObject.invokeMethod(text_area, "undo", Qt.DirectConnection)
+    qtbot.wait(450)
+    assert editor.property("text") == netlist
+    assert bar.isVisible()

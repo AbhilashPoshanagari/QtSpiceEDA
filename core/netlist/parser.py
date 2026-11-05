@@ -23,6 +23,7 @@ from pathlib import Path
 from core.netlist.libindex import encrypted_block_line
 from core.netlist.model import (
     ERROR,
+    GROUND_NODES,
     WARNING,
     Analysis,
     Circuit,
@@ -173,6 +174,10 @@ def _section_end(lines: list[_Line], start: int) -> int | None:
         if keyword == ".lib" and len(lines[j].tokens) == 2:
             return None
     return None
+
+
+# Quick-fix id for the "line 1 looks like an element" warning (O1).
+FIX_INSERT_TITLE = "insert_title"
 
 
 # ---------------------------------------------------------------- parser
@@ -392,6 +397,8 @@ class _Parser:
         circuit.end_line = max(1, len(physical))
         lines = self.read(physical[1:], 2, None, self.base_dir, ())
         self.prescan(lines)
+        if physical:
+            self.check_title(physical[0])
         for line in lines:
             if self.state.ended:
                 break
@@ -401,6 +408,37 @@ class _Parser:
                 self.error(line, line.tokens[0], f"internal parser error: {exc!r}")
         self.finish()
         return circuit
+
+    def check_title(self, title: str) -> None:
+        """O1: warn when line 1 (always the title) looks like an element line.
+
+        It must parse cleanly as an element, and either its name has a digit (R1) or
+        a node is a number or ground (``Rload out 0 1k``), so ordinary titles such as
+        "Diode half-wave rectifier" or "RC filter" are not flagged.
+        """
+        cut = comment_start(title)
+        tokens = _tokenize(title if cut < 0 else title[:cut], 1)
+        if not tokens or tokens[0].text[0].upper() not in ELEMENT_KINDS:
+            return
+        probe = _Parser(None)
+        probe.model_names, probe.param_names = self.model_names, self.param_names
+        probe.element(_Line(tokens))
+        if probe.diagnostics or not probe.state.circuit.elements:
+            return
+        element = probe.state.circuit.elements[0]
+        numbered = any(c.isdigit() for c in element.name)
+        if not numbered and not any(n in GROUND_NODES or n.isdigit() for n in element.nodes):
+            return
+        self.diagnostics.append(
+            Diagnostic(
+                1,
+                1,
+                WARNING,
+                f"line 1 is the title and is not simulated, but it looks like an element "
+                f"({element.name}); insert a title line above it",
+                fix=FIX_INSERT_TITLE,
+            )
+        )
 
     def finish(self) -> None:
         sub = self.state.subckt

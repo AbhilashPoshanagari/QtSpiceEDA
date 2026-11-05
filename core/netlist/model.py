@@ -104,12 +104,28 @@ class Circuit:
 
 @dataclass(frozen=True)
 class Diagnostic:
-    """A problem found in the netlist, reported at a 1-based line and column."""
+    """A problem found in the netlist, reported at a 1-based line and column.
+
+    ``fix`` names a quick-fix the editor can offer ("" = none), e.g. ``insert_title``.
+    """
 
     line: int
     col: int
     severity: str
     message: str
+    fix: str = field(default="", compare=False)
+
+    def to_dict(self) -> dict[str, object]:
+        """{line, col, severity, message}, plus ``fix`` only when there is one."""
+        out: dict[str, object] = {
+            "line": self.line,
+            "col": self.col,
+            "severity": self.severity,
+            "message": self.message,
+        }
+        if self.fix:
+            out["fix"] = self.fix
+        return out
 
 
 @dataclass

@@ -6,7 +6,8 @@ import QtSpice
 
 // Netlist editor (F1/F2): line numbers, syntax highlighting, diagnostics in the margin
 // (hover a mark for the message), an Open dialog and drag-and-drop of netlist files.
-// The text is checked 300 ms after the last edit.
+// The text is checked 300 ms after the last edit. Diagnostics with a quick-fix (O1:
+// "Insert title line") show a bar above the text with a button that applies it.
 Item {
     id: root
     objectName: "netlistEditor"
@@ -25,6 +26,8 @@ Item {
         }
         return byLine
     }
+    // The O1 diagnostic "line 1 looks like an element", or null.
+    readonly property var titleFix: diagnostics.find(d => d.fix === "insert_title") || null
     readonly property real lineHeight: editor.lineCount > 0
                                        ? editor.contentHeight / editor.lineCount
                                        : fontMetrics.lineSpacing
@@ -32,6 +35,15 @@ Item {
     function check() {
         checkTimer.stop()
         Simulator.check(editor.text)
+    }
+    // O1 quick-fix. TextArea.insert goes through the editor's own undo stack (Ctrl+Z).
+    function insertTitleLine() {
+        const title = qsTr("Title")
+        editor.insert(0, "* " + title + "
+")
+        editor.select(2, 2 + title.length)
+        editor.forceActiveFocus()
+        check()
     }
     function openDialog() {
         fileDialog.open()
@@ -88,6 +100,33 @@ Item {
     ColumnLayout {
         anchors.fill: parent
         spacing: 0
+
+        Rectangle {
+            id: quickFixBar
+            objectName: "quickFixBar"
+            Layout.fillWidth: true
+            visible: root.titleFix !== null
+            implicitHeight: fixRow.implicitHeight + 6
+            color: "#33e3a008"
+
+            RowLayout {
+                id: fixRow
+                anchors.fill: parent
+                anchors.leftMargin: 6
+                anchors.rightMargin: 6
+                Label {
+                    Layout.fillWidth: true
+                    elide: Text.ElideRight
+                    text: root.titleFix !== null ? qsTr("Line 1: %1").arg(root.titleFix.message)
+                                                 : ""
+                }
+                Button {
+                    objectName: "insertTitleButton"
+                    text: qsTr("Insert title line")
+                    onClicked: root.insertTitleLine()
+                }
+            }
+        }
 
         RowLayout {
             Layout.fillWidth: true

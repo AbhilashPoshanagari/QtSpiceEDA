@@ -41,7 +41,7 @@ import math
 import re
 import threading
 import weakref
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 
 from PySide6.QtCore import (
     Property,
@@ -1334,7 +1334,7 @@ class DiagramController(QObject):
             self.libraryChanged.emit()
 
     def _set_diagnostics(self, result: SourceResult) -> None:
-        diagnostics = [asdict(d) for d in result.diagnostics]
+        diagnostics = [d.to_dict() for d in result.diagnostics]
         if diagnostics != self._diagnostics:
             self._diagnostics = diagnostics
             self.diagnosticsChanged.emit()

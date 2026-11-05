@@ -301,3 +301,50 @@ def test_non_string_input_does_not_raise() -> None:
 )
 def test_comment_start(text: str, index: int) -> None:
     assert comment_start(text) == index
+
+
+# ---- O1: line 1 is the title, warn when it looks like an element
+
+
+@pytest.mark.parametrize(
+    "first",
+    [
+        "R1 1 0 1k",
+        "Rload out 0 1k",
+        "R1 in out 1k",
+        "V1 in 0 DC 5",
+        "C2 a b 1u ; cap",
+        "q1 c b e qm",
+    ],
+)
+def test_element_on_line_1_warns_with_quick_fix(first: str) -> None:
+    result = parse(f"{first}\nR2 1 0 1k\n.model qm NPN\n.op\n")
+    [d] = [d for d in result.diagnostics if d.line == 1]
+    assert (d.col, d.severity, d.fix) == (1, WARNING, "insert_title")
+    assert "looks like an element" in d.message
+    assert result.circuit.title == first  # still the title, as in SPICE
+    assert [e.name for e in result.circuit.elements] == ["R2"]
+
+
+@pytest.mark.parametrize(
+    "first",
+    [
+        "RC low-pass filter, fc = 1.59 kHz",
+        "Diode half-wave rectifier",
+        "RC filter test",
+        "BJT common-emitter amplifier",
+        "* R1 1 0 1k",
+        ".include x.lib",
+        "",
+        "R1 1 0",
+    ],
+)
+def test_ordinary_titles_do_not_warn(first: str) -> None:
+    result = parse(f"{first}\nR2 1 0 1k\n.op\n")
+    assert [d for d in result.diagnostics if d.line == 1] == []
+
+
+def test_fix_does_not_change_equality() -> None:
+    from core.netlist.model import Diagnostic
+
+    assert Diagnostic(1, 1, WARNING, "m", fix="insert_title") == Diagnostic(1, 1, WARNING, "m")
