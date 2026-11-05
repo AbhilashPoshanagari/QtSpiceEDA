@@ -407,3 +407,122 @@ def test_failed_run_reports_the_block(controller: DiagramController, qtbot) -> N
     assert controller.property("runStatus").startswith("Failed:")
     assert "boom1" in controller.property("runStatus")
     assert "Traceback" in controller.property("runDetails")
+
+
+# ---- placed blocks follow function-editor changes
+
+TWO_IN = "@block\ndef mix(a, b, k=1.0):\n    return k * (a + b)\n"
+THREE_IN = "@block\ndef mix(a, b, c, k=1.0):\n    return k * (a + b + c)\n"
+ONE_IN = "@block\ndef mix(a, gain=1.0):\n    return gain * a\n"
+
+
+def mix_diagram(controller: DiagramController) -> None:
+    """Constant1 -> mix1.a, Constant2 -> mix1.b, mix1 -> Scope1, with mix1 k = 3."""
+    assert controller.apply(TWO_IN)
+    controller.addBlock("Constant", 0, 0)
+    controller.addBlock("Constant", 0, 100)
+    controller.addBlock("mix", 200, 0)
+    controller.addBlock("Scope", 400, 0)
+    assert controller.connectPorts("Constant1.y", "mix1.a")
+    assert controller.connectPorts("Constant2.y", "mix1.b")
+    assert controller.connectPorts("mix1.y", "Scope1.u")
+    assert controller.setSetting("mix1", "k", "3")
+
+
+def wire_pairs(controller: DiagramController) -> set[tuple[str, str]]:
+    return {(w.src, w.dst) for w in controller.diagram.wires}
+
+
+def test_added_port_resizes_block_and_keeps_wires(controller: DiagramController) -> None:
+    mix_diagram(controller)
+    before = dict(block_row(controller, "mix1"))
+    steps = controller.undo_stack.count()
+    assert controller.apply(THREE_IN)
+    row = block_row(controller, "mix1")
+    assert [p["name"] for p in row["inputs"]] == ["a", "b", "c"]
+    assert row["blockHeight"] > before["blockHeight"]
+    assert len(wire_pairs(controller)) == 3
+    # The wires moved with the ports.
+    a = next(p for p in row["inputs"] if p["name"] == "a")
+    wire = next(r for r in rows(controller.wires) if r["dst"] == "mix1.a")
+    assert wire["y2"] == row["blockY"] + a["y"]
+    # Nothing was removed, so nothing to undo and no hint.
+    assert controller.undo_stack.count() == steps
+    assert controller.property("hint") == ""
+    assert controller.diagram.effective_settings("mix1")["k"] == 3.0
+
+
+def test_removed_port_removes_its_wire_in_one_undo_step(controller: DiagramController) -> None:
+    mix_diagram(controller)
+    controller.select("mix1", False)
+    assert controller.apply(ONE_IN)
+    assert wire_pairs(controller) == {("Constant1.y", "mix1.a"), ("mix1.y", "Scope1.u")}
+    assert len(rows(controller.wires)) == 2
+    assert [p["name"] for p in block_row(controller, "mix1")["inputs"]] == ["a"]
+    # The renamed setting k is dropped; the new one uses its default.
+    assert controller.diagram.block("mix1").settings == {}
+    assert controller.property("selectedBlock")["settings"][0]["name"] == "gain"
+    text = controller.property("undoText")
+    assert text.startswith("update mix: ")
+    assert "remove wire Constant2.y→mix1.b" in text and "drop settings of mix1" in text
+    assert "Canvas updated" in controller.property("hint")
+    # Undo while port b is still gone: nothing invalid comes back, nothing breaks.
+    controller.undo()
+    assert len(wire_pairs(controller)) == 2
+    assert controller.diagram.block("mix1").settings == {}
+    controller.redo()
+    assert len(wire_pairs(controller)) == 2
+
+
+def test_undo_restores_the_wire_once_the_port_is_back(controller: DiagramController) -> None:
+    mix_diagram(controller)
+    controller.apply(ONE_IN)
+    controller.apply(TWO_IN)  # port b and setting k are back; nothing new to remove
+    assert len(wire_pairs(controller)) == 2
+    controller.undo()
+    assert ("Constant2.y", "mix1.b") in wire_pairs(controller)
+    assert controller.diagram.effective_settings("mix1")["k"] == 3.0
+    assert len(rows(controller.wires)) == 3
+
+
+def test_deleted_function_removes_placed_blocks(controller: DiagramController) -> None:
+    mix_diagram(controller)
+    assert controller.apply("")
+    assert [r["blockId"] for r in rows(controller.blocks)] == ["Constant1", "Constant2", "Scope1"]
+    assert wire_pairs(controller) == set()
+    assert "remove mix1" in controller.property("undoText")
+    controller.undo()  # mix is still gone: the block cannot come back yet
+    assert len(rows(controller.blocks)) == 3
+    controller.apply(TWO_IN)
+    controller.redo()  # redo of the update is harmless
+    controller.undo()
+    assert {r["blockId"] for r in rows(controller.blocks)} == {
+        "Constant1",
+        "Constant2",
+        "mix1",
+        "Scope1",
+    }
+    assert len(wire_pairs(controller)) == 3
+    assert controller.diagram.effective_settings("mix1")["k"] == 3.0
+
+
+def test_older_undo_steps_skip_what_no_longer_exists(controller: DiagramController) -> None:
+    mix_diagram(controller)
+    controller.apply("")
+    # Undo everything, then redo everything: steps that touch mix1 are skipped.
+    while controller.property("canUndo"):
+        controller.undo()
+    assert rows(controller.blocks) == [] and controller.diagram.wires == []
+    while controller.property("canRedo"):
+        controller.redo()
+    assert [r["blockId"] for r in rows(controller.blocks)] == ["Constant1", "Constant2", "Scope1"]
+    assert wire_pairs(controller) == set()
+
+
+def test_diagram_runs_after_a_port_is_removed(controller: DiagramController, qtbot) -> None:
+    mix_diagram(controller)
+    controller.apply(ONE_IN)
+    controller.setSetting("mix1", "gain", "2")
+    with qtbot.waitSignal(controller.resultReady, timeout=20_000):
+        assert controller.run(0.2, 0.1) is True
+    assert list(controller.result.vectors["Scope1"]) == [2.0, 2.0, 2.0]

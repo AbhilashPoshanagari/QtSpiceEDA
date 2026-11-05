@@ -267,3 +267,28 @@ def test_200_blocks_and_300_wires_stay_smooth(scene: Scene, qtbot) -> None:
     # Measured about 0.3 s and 9 ms here; the limits leave room for slow CI machines.
     assert build < 5.0
     assert median < 0.05
+
+
+def test_placed_block_follows_function_edits(scene: Scene, qtbot) -> None:
+    ctl = scene.ctl
+    assert ctl.apply("@block\ndef mix(a, b):\n    return a + b\n")
+    ctl.addBlock("Constant", 0, 0)
+    ctl.addBlock("Constant", 0, 100)
+    ctl.addBlock("mix", 200, 40)
+    assert ctl.connectPorts("Constant1.y", "mix1.a")
+    assert ctl.connectPorts("Constant2.y", "mix1.b")
+    qtbot.wait(20)
+    height = scene.block_item("mix1").height()
+
+    assert ctl.apply("@block\ndef mix(a, b, c):\n    return a + b + c\n")
+    qtbot.waitUntil(lambda: find_items(scene.canvas, "in_mix1.c") != [])
+    assert scene.block_item("mix1").height() > height
+    assert len(find_items(scene.canvas, "wire_Constant2.y_mix1.b")) == 1
+
+    assert ctl.apply("@block\ndef mix(a):\n    return a\n")
+    qtbot.waitUntil(lambda: find_items(scene.canvas, "wire_Constant2.y_mix1.b") == [])
+    assert find_items(scene.canvas, "in_mix1.b") == []
+    assert len(find_items(scene.canvas, "wire_Constant1.y_mix1.a")) == 1
+    status = find_item(scene.canvas, "canvasStatus")
+    assert "Canvas updated" in status.property("text")
+    assert "Constant2.y→mix1.b" in status.property("text")

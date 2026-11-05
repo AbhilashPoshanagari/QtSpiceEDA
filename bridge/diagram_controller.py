@@ -17,6 +17,12 @@ updates; with errors the library keeps the last good version. ``diagnostics`` is
 of {line, col, severity, message}; ``removedPorts`` lists the ports that disappeared in
 the last successful apply, as "block: input a".
 
+When a successful ``apply`` changes a block that is already placed, the placed blocks
+get their new size and ports and keep the wires on ports that still exist. Wires on
+ports that are gone, placed blocks whose function is gone, and settings that are gone
+are removed in one undo step; undo brings back only what is valid again. Because the
+library itself is not on the undo stack, every undo step skips what no longer exists.
+
 Canvas geometry (block size, port positions, wire bends) is computed here, in canvas
 units, so QML only draws it and hit-testing (``portAt``, ``wireAt``) uses the same
 numbers. Positions snap to a ``GRID`` unit grid.
@@ -27,6 +33,7 @@ from __future__ import annotations
 import ast
 import math
 import threading
+import weakref
 from dataclasses import asdict, dataclass
 
 from PySide6.QtCore import (
@@ -279,9 +286,23 @@ WIRE_ROLES = ["src", "dst", "x1", "y1", "x2", "y2", "bend", "selected"]
 
 
 class _Command(QUndoCommand):
+    """Base of the undo commands.
+
+    The QUndoStack (a child of the controller) owns the commands, so a command keeps
+    only a weak reference back to the controller: a strong one would make a cycle
+    through C++ ownership, and freeing it at exit corrupts the heap.
+    """
+
     def __init__(self, ctl: DiagramController, text: str) -> None:
         super().__init__(text)
-        self.ctl = ctl
+        self._ctl = weakref.ref(ctl)
+
+    @property
+    def ctl(self) -> DiagramController:
+        ctl = self._ctl()
+        if ctl is None:
+            raise RuntimeError("the DiagramController is gone")
+        return ctl
 
 
 class _AddBlock(_Command):
@@ -386,6 +407,46 @@ class _SetSettings(_Command):
         self.ctl._apply_settings(self.block_id, self.old)
 
 
+class _LibraryUpdate(_Command):
+    """Removes what a function-editor change made invalid: wires on ports that are
+    gone, placed blocks whose function is gone, and settings that are gone.
+
+    Undo puts back only what is valid again (for example after the port is restored
+    in the editor); the rest is skipped by the primitives.
+    """
+
+    def __init__(
+        self,
+        ctl: DiagramController,
+        names: list[str],
+        blocks: list[BlockInstance],
+        wires: list[Wire],
+        settings: dict[str, tuple[dict, dict]],
+    ) -> None:
+        parts = [f"remove {b.id}" for b in blocks] + [f"remove wire {w.src}→{w.dst}" for w in wires]
+        parts += [f"drop settings of {bid}" for bid in settings]
+        super().__init__(ctl, f"update {', '.join(names)}: " + ", ".join(parts))
+        self.blocks = blocks
+        self.wires = wires
+        self.settings = settings  # id -> (old, new)
+
+    def redo(self) -> None:
+        for wire in self.wires:
+            self.ctl._delete_wire(wire)
+        for inst in self.blocks:
+            self.ctl._delete_block(inst.id)
+        for bid, (_, new) in self.settings.items():
+            self.ctl._apply_settings(bid, new)
+
+    def undo(self) -> None:
+        for inst in self.blocks:
+            self.ctl._insert_block(inst)
+        for bid, (old, _) in self.settings.items():
+            self.ctl._apply_settings(bid, old)
+        for wire in self.wires:
+            self.ctl._insert_wire(wire)
+
+
 # ---- the controller
 
 
@@ -422,6 +483,7 @@ class DiagramController(QObject):
         self._blocks = RowModel(BLOCK_ROLES, self)
         self._wires = RowModel(WIRE_ROLES, self)
         self._geometry: dict[str, BlockGeometry] = {}
+        self._specs_of: dict[str, BlockSpec] = {}  # spec each placed block was drawn from
         self._selected_blocks: set[str] = set()
         self._selected_wires: set[Wire] = set()
         self._loop_blocks: set[str] = set()
@@ -579,7 +641,44 @@ class DiagramController(QObject):
         self._set_removed_ports(result.removed_ports)
         self._refresh_library()
         self._set_status(self._describe(result))
+        self._sync_with_library()
         return True
+
+    def _sync_with_library(self) -> None:
+        """Bring placed blocks in line with the library after a function-editor change.
+
+        Blocks keep their wires on ports that still exist and get their new size and
+        ports. What is no longer valid is removed in one undo step.
+        """
+        gone: list[BlockInstance] = []
+        refresh: list[str] = []
+        settings: dict[str, tuple[dict, dict]] = {}
+        for inst in self._diagram.blocks:
+            spec = self._registry.get(inst.spec_name)
+            if spec is None:
+                gone.append(self._copy(inst))
+                continue
+            if spec != self._specs_of.get(inst.id):
+                refresh.append(inst.id)
+            kept = {k: v for k, v in inst.settings.items() if k in spec.settings}
+            if kept != inst.settings:
+                settings[inst.id] = (dict(inst.settings), kept)
+        gone_ids = {b.id for b in gone}
+        wires = [
+            w
+            for w in self._diagram.wires
+            if w.src_block in gone_ids or w.dst_block in gone_ids or not self._wire_valid(w)
+        ]
+        if gone or wires or settings:
+            names = sorted(
+                {b.spec_name for b in gone}
+                | {self._diagram.block(bid).spec_name for bid in refresh + list(settings)}
+            )
+            command = _LibraryUpdate(self, names, gone, wires, settings)
+            self._push(command)
+            self._set_hint(f"Canvas updated: {command.text().split(': ', 1)[1]}")
+        for bid in refresh:
+            self._refresh_block(bid)
 
     @Slot(result=str)
     def newDocument(self) -> str:  # noqa: N802
@@ -892,26 +991,36 @@ class DiagramController(QObject):
         self._set_running(False)
 
     # ---- primitive changes (used by the undo commands)
+    #
+    # The library is not on the undo stack, so an undo or redo step can meet a block
+    # type, port or setting that no longer exists. These skip what cannot apply.
+
+    def _block_row_data(self, block_id: str, spec: BlockSpec) -> dict[str, object]:
+        geo = block_geometry(spec)
+        self._geometry[block_id] = geo
+        self._specs_of[block_id] = spec
+        return {
+            "specName": spec.name,
+            "blockWidth": geo.width,
+            "blockHeight": geo.height,
+            "shape": spec.shape,
+            "color": spec.color,
+            "inputs": geo.inputs,
+            "outputs": geo.outputs,
+        }
 
     def _insert_block(self, inst: BlockInstance) -> None:
-        added = self._diagram.add_block(
-            inst.spec_name, inst.x, inst.y, dict(inst.settings), block_id=inst.id
-        )
-        spec = self._diagram.spec(added.id)
-        geo = block_geometry(spec)
-        self._geometry[added.id] = geo
+        spec = self._registry.get(inst.spec_name)
+        if spec is None or self._has_block(inst.id):
+            return
+        settings = {k: v for k, v in inst.settings.items() if k in spec.settings}
+        added = self._diagram.add_block(inst.spec_name, inst.x, inst.y, settings, block_id=inst.id)
         self._blocks.append(
             {
                 "blockId": added.id,
-                "specName": spec.name,
                 "blockX": added.x,
                 "blockY": added.y,
-                "blockWidth": geo.width,
-                "blockHeight": geo.height,
-                "shape": spec.shape,
-                "color": spec.color,
-                "inputs": geo.inputs,
-                "outputs": geo.outputs,
+                **self._block_row_data(added.id, spec),
                 "selected": False,
                 "inLoop": False,
             }
@@ -919,28 +1028,53 @@ class DiagramController(QObject):
         self._set_loop(set())
 
     def _delete_block(self, block_id: str) -> None:
+        if not self._has_block(block_id):
+            return
         self._diagram.remove_block(block_id)
         self._blocks.remove(self._block_row(block_id))
         self._geometry.pop(block_id, None)
+        self._specs_of.pop(block_id, None)
         if block_id in self._selected_blocks:
             self._set_selection(self._selected_blocks - {block_id}, set(self._selected_wires))
         self._set_loop(set())
 
+    def _refresh_block(self, block_id: str) -> None:
+        """Re-read a placed block's spec: new size and ports; its wires follow."""
+        self._blocks.update(
+            self._block_row(block_id),
+            **self._block_row_data(block_id, self._diagram.spec(block_id)),
+        )
+        self._update_wires_of(block_id)
+        if block_id in self._selected_blocks:
+            self.selectionChanged.emit()
+
     def _place_block(self, block_id: str, x: float, y: float) -> None:
+        if not self._has_block(block_id):
+            return
         self._diagram.move_block(block_id, x, y)
         self._blocks.update(self._block_row(block_id), blockX=x, blockY=y)
+        self._update_wires_of(block_id)
+
+    def _update_wires_of(self, block_id: str) -> None:
         for i, row in enumerate(self._wires.rows()):
             if row["src"].startswith(block_id + ".") or row["dst"].startswith(block_id + "."):  # type: ignore[union-attr]
                 self._wires.update(i, **self._wire_geometry(self._wire_at_row(i)))
 
     def _insert_wire(self, wire: Wire) -> None:
-        added = self._diagram.add_wire(wire.src_block, wire.src_port, wire.dst_block, wire.dst_port)
+        try:
+            added = self._diagram.add_wire(
+                wire.src_block, wire.src_port, wire.dst_block, wire.dst_port
+            )
+        except DiagramError:
+            return  # a block or port is gone, or the input is wired again
         self._wires.append(
             {"src": added.src, "dst": added.dst, "selected": False, **self._wire_geometry(added)}
         )
         self._set_loop(set())
 
     def _delete_wire(self, wire: Wire) -> None:
+        if wire not in self._diagram.wires:
+            return
         self._diagram.remove_wire(wire)
         for i, row in enumerate(self._wires.rows()):
             if row["src"] == wire.src and row["dst"] == wire.dst:
@@ -951,9 +1085,26 @@ class DiagramController(QObject):
         self._set_loop(set())
 
     def _apply_settings(self, block_id: str, settings: dict) -> None:
-        self._diagram.set_settings(block_id, dict(settings))
+        if not self._has_block(block_id):
+            return
+        spec = self._diagram.spec(block_id)
+        self._diagram.set_settings(
+            block_id, {k: v for k, v in settings.items() if k in spec.settings}
+        )
         if block_id in self._selected_blocks:
             self.selectionChanged.emit()
+
+    def _has_block(self, block_id: str) -> bool:
+        return any(b.id == block_id for b in self._diagram.blocks)
+
+    def _wire_valid(self, wire: Wire) -> bool:
+        """Both ends of ``wire`` still exist in the current library."""
+        try:
+            src = self._diagram.spec(wire.src_block)
+            dst = self._diagram.spec(wire.dst_block)
+        except DiagramError:
+            return False
+        return wire.src_port in src.outputs and wire.dst_port in dst.inputs
 
     # ---- helpers
 
