@@ -22,7 +22,6 @@ from PySide6.QtQml import QmlElement, QmlSingleton
 from core.blocks.library import builtin_specs
 from core.blocks.registry import BlockRegistry, SourceResult
 from core.blocks.spec import BlockSpec
-from core.netlist.model import ERROR
 
 QML_IMPORT_NAME = "QtSpice"
 QML_IMPORT_MAJOR_VERSION = 1
@@ -109,8 +108,7 @@ class DiagramController(QObject):
         result = self._registry.add_source(code, self._document)
         self._set_diagnostics(result)
         if not result.ok:
-            errors = sum(1 for d in result.diagnostics if d.severity == ERROR)
-            self._set_status(f"{errors} error(s): library not updated")
+            self._set_status("library not updated: it keeps the last version without errors")
             return False
         self._set_removed_ports(result.removed_ports)
         self._refresh_library()
