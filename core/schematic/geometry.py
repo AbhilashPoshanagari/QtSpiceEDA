@@ -26,16 +26,20 @@ Lookup = Callable[[str], Symbol | None]
 
 # Kinds of selectable things; ``Hit.index`` indexes the matching Schematic list.
 INSTANCE, WIRE, LABEL, GROUND, PORT = "instance", "wire", "label", "ground", "port"
+TEXT = "text"  # a directive or comment on the sheet (S9)
 _LIST_OF = {
     INSTANCE: "instances",
     WIRE: "wires",
     LABEL: "labels",
     GROUND: "grounds",
     PORT: "ports",
+    TEXT: "texts",
 }
 # Size of a part whose symbol is missing (drawn as a box).
 MISSING_BOX: Rect = (-16, -16, 16, 16)
 LABEL_CHAR = 8  # approximate width of a label character, for hit-testing
+TEXT_CHAR = 7  # ... and of a sheet-text character
+TEXT_LINE = 16  # sheet-text line height
 
 
 @dataclass(frozen=True)
@@ -217,12 +221,23 @@ def flag_box(schematic: Schematic, kind: str, index: int) -> Rect:
     return flag.x, flag.y - 10, flag.x + width, flag.y + 10
 
 
+def text_box(schematic: Schematic, index: int) -> Rect:
+    """Box of a sheet text: (x, y) is the middle of its first line's left end."""
+    t = schematic.texts[index]
+    lines = t.text.splitlines() or [""]
+    width = max(TEXT_CHAR * max(len(line) for line in lines), TEXT_CHAR)
+    return t.x, t.y - TEXT_LINE // 2, t.x + width, t.y - TEXT_LINE // 2 + TEXT_LINE * len(lines)
+
+
 def hit_test(schematic: Schematic, lookup: Lookup, x: float, y: float, tol: float) -> Hit | None:
-    """The thing under (x, y): flags first, then wires within ``tol``, then parts."""
+    """The thing under (x, y): flags first, then texts, wires within ``tol``, parts."""
     for kind in (LABEL, PORT, GROUND):
         for i in range(len(items_of(schematic, kind)) - 1, -1, -1):
             if _inside(flag_box(schematic, kind, i), x, y, tol):
                 return Hit(kind, i)
+    for i in range(len(schematic.texts) - 1, -1, -1):
+        if _inside(text_box(schematic, i), x, y, tol / 2):
+            return Hit(TEXT, i)
     best: tuple[float, int] | None = None
     for i, w in enumerate(schematic.wires):
         d = _segment_distance(x, y, w.x1, w.y1, w.x2, w.y2)
@@ -264,6 +279,7 @@ def items_in_rect(schematic: Schematic, lookup: Lookup, rect: Rect) -> list[Hit]
         found += [
             Hit(kind, i) for i, f in enumerate(items_of(schematic, kind)) if _inside(box, f.x, f.y)
         ]
+    found += [Hit(TEXT, i) for i in range(len(schematic.texts)) if contains(text_box(schematic, i))]
     return found
 
 
@@ -290,7 +306,7 @@ def bounds(schematic: Schematic, lookup: Lookup) -> Rect | None:
     ]
     for kind in (LABEL, GROUND, PORT):
         boxes += [flag_box(schematic, kind, i) for i in range(len(items_of(schematic, kind)))]
-    boxes += [(t.x, t.y, t.x, t.y) for t in schematic.texts]
+    boxes += [text_box(schematic, i) for i in range(len(schematic.texts))]
     if not boxes:
         return None
     return (

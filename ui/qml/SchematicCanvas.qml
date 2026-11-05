@@ -16,6 +16,8 @@ import QtSpice
 // Editing (S8): dragging a selected thing drags it with its wires following; the
 // "move" tool drags with wires detached. Ctrl+R rotate, Ctrl+E mirror, Delete,
 // Ctrl+C / Ctrl+V (the copy floats until a click), Ctrl+Z / Ctrl+Y undo and redo.
+// S9: double-click a part for its attributes, a label to rename it, a text to edit it;
+// the "text" tool asks for a SPICE directive (or comment) and places it on a click.
 // The model, hit-testing and undo live in SchematicController.
 Item {
     id: root
@@ -33,10 +35,14 @@ Item {
     readonly property real pickTolerance: 6 / zoom   // sheet units for ~6 px
 
     // "select", or a tool: "place" (S6), "wire", "label", "ground" (S7), "move",
-    // "paste" (S8).
+    // "paste" (S8), "text" (S9).
     property string mode: "select"
     property string placeSymbol: ""
     property string labelName: ""
+    property int renameLabelIndex: -1     // label popup: -1 = new label, else rename
+    property int editTextIndex: -1        // text popup: -1 = new text, else edit
+    property string pendingText: ""
+    property bool pendingDirective: true
     property point pointer: Qt.point(0, 0)   // last pointer position, sheet units
     readonly property string hint: {
         if (mode === "place")
@@ -53,6 +59,9 @@ Item {
             return qsTr("Move: drag the selection; wires stay where they are; Esc to stop")
         if (mode === "paste")
             return qsTr("Paste: click to drop the copy; Esc to cancel")
+        if (mode === "text")
+            return qsTr("Click to place the %1; Esc to cancel")
+                   .arg(pendingDirective ? qsTr("SPICE directive") : qsTr("comment"))
         return ""
     }
 
@@ -133,6 +142,7 @@ Item {
     // Net label tool: ask for the name first (Enter or OK), then place on each click.
     function startLabel(name) {
         if (name === undefined) {
+            renameLabelIndex = -1
             labelField.text = labelName
             labelPopup.open()
             labelField.forceActiveFocus()
@@ -144,6 +154,61 @@ Item {
             return
         labelName = name
         startTool("label")
+    }
+
+    function renameLabel(index) {
+        renameLabelIndex = index
+        labelField.text = SchematicController.labelName(index)
+        labelPopup.open()
+        labelField.forceActiveFocus()
+        labelField.selectAll()
+    }
+
+    // The SPICE directive / comment popup: new text (then click to place) or an edit.
+    function startText() {
+        stopTool()
+        editTextIndex = -1
+        textArea.text = pendingText
+        commentBox.checked = !pendingDirective
+        textPopup.open()
+        textArea.forceActiveFocus()
+        textArea.selectAll()
+    }
+
+    function editText(index) {
+        const t = SchematicController.textAt(index)
+        if (t.index === undefined)
+            return
+        editTextIndex = index
+        textArea.text = t.text
+        commentBox.checked = !t.directive
+        textPopup.open()
+        textArea.forceActiveFocus()
+    }
+
+    function textDone() {
+        textPopup.close()
+        const text = textArea.text.trim()
+        if (text === "")
+            return
+        if (editTextIndex >= 0) {
+            SchematicController.setText(editTextIndex, text, !commentBox.checked)
+        } else {
+            pendingText = text
+            pendingDirective = !commentBox.checked
+            startTool("text")
+        }
+    }
+
+    // Double-click: edit what is under the pointer.
+    function editAt(p) {
+        const hit = SchematicController.itemAt(p.x, p.y, pickTolerance)
+        if (hit.kind === "instance")
+            attributeDialog.openFor(hit.index)
+        else if (hit.kind === "label")
+            renameLabel(hit.index)
+        else if (hit.kind === "text")
+            editText(hit.index)
     }
 
     function snapped(p) {
@@ -264,6 +329,15 @@ Item {
                     checkable: true
                     checked: root.mode === "label"
                     onClicked: root.mode === "label" ? root.stopTool() : root.startLabel()
+                }
+                ToolButton {
+                    objectName: "textButton"
+                    text: qsTr(".op")
+                    checkable: true
+                    checked: root.mode === "text"
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Place a SPICE directive such as .tran 5m, or a comment")
+                    onClicked: root.mode === "text" ? root.stopTool() : root.startText()
                 }
                 ToolButton {
                     objectName: "groundButton"
@@ -469,11 +543,14 @@ Item {
                         required property var modelData
                         objectName: "sheetText"
                         x: modelData.posX
-                        y: modelData.posY - height / 2
+                        y: modelData.posY - 8
                         text: modelData.text
+                        lineHeightMode: Text.FixedHeight
+                        lineHeight: 16
                         font.pixelSize: 12
                         font.bold: modelData.directive
-                        color: modelData.directive ? "#202020" : "#606060"
+                        color: modelData.selected ? "#d35400"
+                               : (modelData.directive ? "#202020" : "#606060")
                     }
                 }
 
@@ -557,6 +634,12 @@ Item {
                         root.mode = "select"
                         return
                     }
+                    if (root.mode === "text") {
+                        const q = root.snapped(p)
+                        SchematicController.addText(q.x, q.y, root.pendingText, root.pendingDirective)
+                        root.mode = "select"
+                        return
+                    }
                     if (root.mode !== "select" && root.mode !== "move")
                         return
                     const add = (ev.modifiers & Qt.ControlModifier) !== 0
@@ -629,6 +712,10 @@ Item {
                                                            Math.max(a.x, b.x), Math.max(a.y, b.y), add)
                     }
                 }
+                onDoubleClicked: ev => {
+                    if (ev.button === Qt.LeftButton && (root.mode === "select" || root.mode === "move"))
+                        root.editAt(root.toSheet(ev.x, ev.y))
+                }
                 onWheel: ev => {
                     root.zoomAt(ev.x, ev.y, Math.pow(1.25, ev.angleDelta.y / 120))
                     ev.accepted = true
@@ -666,8 +753,57 @@ Item {
                     enabled: labelField.text.trim() !== ""
                     onClicked: {
                         labelPopup.close()
-                        root.startLabel(labelField.text)
+                        if (root.renameLabelIndex >= 0)
+                            SchematicController.renameLabel(root.renameLabelIndex, labelField.text)
+                        else
+                            root.startLabel(labelField.text)
+                        root.renameLabelIndex = -1
                     }
+                }
+            }
+        }
+    }
+
+    AttributeDialog { id: attributeDialog }
+
+    Popup {
+        id: textPopup
+        objectName: "textPopup"
+        anchors.centerIn: parent
+        modal: true
+        padding: 12
+        contentItem: ColumnLayout {
+            spacing: 8
+            Label {
+                text: root.editTextIndex >= 0 ? qsTr("Edit text") : qsTr("SPICE directive, e.g. .tran 5m")
+            }
+            ScrollView {
+                Layout.preferredWidth: 360
+                Layout.preferredHeight: 110
+                TextArea {
+                    id: textArea
+                    objectName: "textArea"
+                    font.family: "Consolas"
+                    selectByMouse: true
+                    wrapMode: TextEdit.NoWrap
+                }
+            }
+            CheckBox {
+                id: commentBox
+                objectName: "commentBox"
+                text: qsTr("Comment (not simulated)")
+            }
+            RowLayout {
+                Layout.alignment: Qt.AlignRight
+                Button {
+                    text: qsTr("Cancel")
+                    onClicked: textPopup.close()
+                }
+                Button {
+                    objectName: "textOk"
+                    text: qsTr("OK")
+                    enabled: textArea.text.trim() !== ""
+                    onClicked: root.textDone()
                 }
             }
         }

@@ -10,7 +10,7 @@ from PySide6.QtCore import QSettings
 
 from bridge.schematic_controller import SchematicController, SyncModel
 from core.schematic.connectivity import connect
-from core.schematic.model import Instance, Schematic, Wire
+from core.schematic.model import Instance, Schematic, TextItem, Wire
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
@@ -62,7 +62,14 @@ def test_load_fills_the_models(ctrl: SchematicController) -> None:
     assert ctrl.property("wirePath").startswith("M 144 112 L 64 112 M 304 112")
     assert ctrl.property("junctions") == []
     assert ctrl.property("texts") == [
-        {"posX": -96, "posY": 176, "text": ".ac dec 100 1 1MEG", "directive": True}
+        {
+            "index": 0,
+            "posX": -96,
+            "posY": 176,
+            "text": ".ac dec 100 1 1MEG",
+            "directive": True,
+            "selected": False,
+        }
     ]
     assert ctrl.property("canUndo") is False
 
@@ -98,7 +105,7 @@ def test_selection(ctrl: SchematicController, qtbot) -> None:
     ctrl.selectRect(250, 100, 340, 300, False)
     assert ("instance", 1) in ctrl.selection() and ("wire", 0) not in ctrl.selection()
     ctrl.selectAll()
-    assert ctrl.property("selectionCount") == 3 + 7 + 2 + 2
+    assert ctrl.property("selectionCount") == 3 + 7 + 2 + 2 + 1  # parts, wires, flags, text
     ctrl.clearSelection()
     assert ctrl.selection() == set()
     ctrl.select("instance", 99, False)  # out of range: ignored
@@ -349,3 +356,84 @@ def test_undo_during_a_live_session_cancels_it_first(ctrl: SchematicController) 
     ctrl.beginPlace("res", 0, 0)
     ctrl.undo()  # drops the floating part and undoes the ground
     assert ctrl.schematic() == rc()
+
+
+# ---------------------------------------------------------------- S9: attributes, texts
+
+
+def test_simple_part_attributes_show_value_and_value2(ctrl: SchematicController) -> None:
+    v1 = ctrl.partAttributes(0)
+    assert (v1["name"], v1["prefix"], v1["simple"]) == ("V1", "V", True)
+    assert [(f["key"], f["value"]) for f in v1["fields"]] == [
+        ("Value", "PULSE(0 5 10m 1u 1u 10m 20m)"),
+        ("Value2", "AC 1"),
+    ]
+    r2 = ctrl.partAttributes(2)
+    assert [f["key"] for f in r2["fields"]] == ["Value"]
+    assert ctrl.partAttributes(99) == {}
+
+
+def test_model_part_shows_all_fields_with_symbol_defaults(ctrl: SchematicController) -> None:
+    ctrl.load_schematic(Schematic(instances=[Instance("diode", "D1", 0, 0)]))
+    d1 = ctrl.partAttributes(0)
+    assert d1["simple"] is False
+    fields = {f["key"]: (f["value"], f["default"]) for f in d1["fields"]}
+    assert list(fields) == ["Value", "Value2", "SpiceModel", "ModelFile", "SpiceLine", "SpiceLine2"]
+    assert fields["Value"] == ("D", "D")
+
+
+def test_set_attributes_is_one_step_and_stores_only_changes(ctrl: SchematicController) -> None:
+    after = check_undo_redo(ctrl, lambda: ctrl.setAttributes(2, "R1", {"Value": "2k"}))
+    assert after.instances[2].name == "R1" and after.instances[2].attrs == {"Value": "2k"}
+    assert ctrl.property("undoText") == "edit R2"
+    ctrl.load_schematic(Schematic(instances=[Instance("diode", "D1", 0, 0)]))
+    assert ctrl.setAttributes(0, "D1", {"Value": "D", "SpiceModel": "1N4148"}) == ""
+    assert ctrl.schematic().instances[0].attrs == {"SpiceModel": "1N4148"}  # Value = default
+    steps = ctrl.undo_stack().count()
+    assert ctrl.setAttributes(0, "D1", {"SpiceModel": "1N4148"}) == ""
+    assert ctrl.undo_stack().count() == steps  # nothing changed, no step
+
+
+def test_changed_value_reaches_the_netlist(ctrl: SchematicController) -> None:
+    from core.schematic.netlister import netlist_schematic
+
+    ctrl.setAttributes(2, "R2", {"Value": "2k"})
+    text = netlist_schematic(ctrl.schematic(), ctrl.lookup).text
+    assert "R2 IN OUT 2k" in text
+
+
+def test_bad_attributes_are_refused_with_the_reason(ctrl: SchematicController) -> None:
+    assert ctrl.checkAttributes(2, "C1", {"Value": "1k"}) == "another part is already called C1"
+    assert ctrl.checkAttributes(2, "R 2", {"Value": "1k"}) == "the name must be one word"
+    assert "bad number" in ctrl.checkAttributes(2, "R2", {"Value": "1kz!"})
+    before = ctrl.schematic()
+    assert ctrl.setAttributes(2, "C1", {"Value": "1k"}) != ""
+    assert ctrl.schematic() == before
+    assert ctrl.checkAttributes(2, "Rload", {"Value": "47"}) == ""
+
+
+def test_rename_label(ctrl: SchematicController) -> None:
+    after = check_undo_redo(ctrl, lambda: ctrl.renameLabel(1, "VOUT"))
+    assert after.labels[1].name == "VOUT" and ctrl.labelName(1) == "VOUT"
+    assert ctrl.renameLabel(1, "two words") is False and ctrl.renameLabel(9, "x") is False
+
+
+def test_add_and_edit_sheet_texts(ctrl: SchematicController) -> None:
+    after = check_undo_redo(ctrl, lambda: ctrl.addText(0, 400, " .tran 5m ", True))
+    assert after.texts[-1] == TextItem(0, 400, ".tran 5m", True)
+    assert ctrl.property("undoText") == "add directive"
+    after = check_undo_redo(ctrl, lambda: ctrl.setText(1, "note", False))
+    assert after.texts[1] == TextItem(0, 400, "note", False)
+    assert ctrl.textAt(1) == {"index": 1, "text": "note", "directive": False}
+    assert ctrl.addText(0, 0, "  ", True) is False and ctrl.setText(5, "x", True) is False
+
+
+def test_texts_are_selectable_movable_and_deletable(ctrl: SchematicController) -> None:
+    assert ctrl.itemAt(-80, 176, 4) == {"kind": "text", "index": 0}
+    ctrl.select("text", 0, False)
+    ctrl.beginMove(-80, 176, True)
+    ctrl.moveTo(-48, 208)
+    ctrl.endMove()
+    assert (ctrl.schematic().texts[0].x, ctrl.schematic().texts[0].y) == (-64, 208)
+    ctrl.deleteSelection()
+    assert ctrl.schematic().texts == []

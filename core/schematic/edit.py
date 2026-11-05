@@ -12,6 +12,9 @@ leaves its input alone, so the editor can keep the "before" state for undo.
 * ``delete`` removes the selection.
 * ``copy`` / ``paste``: a clipboard is a Schematic of the selected items; pasted parts
   get the next free names (R1 -> R3 when R1 and R2 exist).
+
+Sheet texts (directives, comments) are items too: they move, turn about the centre
+(the text itself stays upright), delete and copy like the rest, but never connect.
 """
 
 from __future__ import annotations
@@ -24,6 +27,7 @@ from core.schematic.geometry import (
     INSTANCE,
     LABEL,
     PORT,
+    TEXT,
     WIRE,
     Lookup,
     instance_box,
@@ -34,7 +38,7 @@ from core.schematic.geometry import (
 from core.schematic.model import Instance, Point, Schematic, pin_points
 
 Selection = set[tuple[str, int]]
-KINDS = (INSTANCE, WIRE, LABEL, GROUND, PORT)
+KINDS = (INSTANCE, WIRE, LABEL, GROUND, PORT, TEXT)
 
 
 def valid(schematic: Schematic, selection: Iterable[tuple[str, int]]) -> Selection:
@@ -117,7 +121,7 @@ def connection_points(schematic: Schematic, lookup: Lookup, selection: Selection
                 points.update(pin_points(inst, symbol))
         elif kind == WIRE:
             points.update(schematic.wires[i].ends)
-        else:
+        elif kind != TEXT:  # texts never connect
             f = items_of(schematic, kind)[i]
             points.add((f.x, f.y))
     return points
@@ -159,7 +163,7 @@ def delete(schematic: Schematic, selection: Selection) -> Schematic:
 
 
 def copy_selection(schematic: Schematic, selection: Selection) -> Schematic:
-    """A clipboard: just the selected items (title and texts are not copied)."""
+    """A clipboard: just the selected items (the title is not copied)."""
     clip = Schematic()
     for kind in KINDS:
         chosen = sorted(i for k, i in valid(schematic, selection) if k == kind)

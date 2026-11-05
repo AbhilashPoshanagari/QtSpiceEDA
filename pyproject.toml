@@ -88,6 +88,7 @@ files = [
     "core/symbols/builtin/res.asy",
     "core/symbols/builtin/voltage.asy",
     "ui/qml/AnalysisPanel.qml",
+    "ui/qml/AttributeDialog.qml",
     "ui/qml/Block.qml",
     "ui/qml/BlockCanvas.qml",
     "ui/qml/BlockLibrary.qml",

@@ -33,6 +33,7 @@ from PySide6.QtQml import QmlElement, QmlSingleton
 
 from bridge.diagram_controller import RowModel
 from core.netlist.libindex import LIBRARY_SUFFIXES, LibraryIndex
+from core.netlist.model import ERROR
 from core.schematic import edit as edit_ops
 from core.schematic.connectivity import connect
 from core.schematic.geometry import (
@@ -40,6 +41,7 @@ from core.schematic.geometry import (
     INSTANCE,
     LABEL,
     PORT,
+    TEXT,
     WIRE,
     bounds,
     hit_test,
@@ -56,8 +58,17 @@ from core.schematic.geometry import (
     symbol_svg,
     turn,
 )
-from core.schematic.model import GroundFlag, Instance, NetLabel, Schematic, Wire, pin_points
-from core.schematic.netlister import NET_FLAG_SYMBOLS
+from core.schematic.model import (
+    GroundFlag,
+    Instance,
+    NetLabel,
+    PartInstance,
+    Schematic,
+    TextItem,
+    Wire,
+    pin_points,
+)
+from core.schematic.netlister import NET_FLAG_SYMBOLS, netlist_part
 from core.symbols.asy import Symbol
 from core.symbols.library import SymbolLibrary
 
@@ -465,7 +476,15 @@ class SchematicController(QObject):
             f"M {w.x1} {w.y1} L {w.x2} {w.y2}" for i, w in enumerate(s.wires) if (WIRE, i) in sel
         )
         self._texts = [
-            {"posX": t.x, "posY": t.y, "text": t.text, "directive": t.directive} for t in s.texts
+            {
+                "index": i,
+                "posX": t.x,
+                "posY": t.y,
+                "text": t.text,
+                "directive": t.directive,
+                "selected": (TEXT, i) in sel,
+            }
+            for i, t in enumerate(s.texts)
         ]
         if not live:
             nets = connect(s, self.lookup)
@@ -973,6 +992,152 @@ class SchematicController(QObject):
         self.selectionChanged.emit()
         return True
 
+    # ---- attributes, label names and sheet texts (S9)
+    #
+    # The attribute dialog shows a part's effective values (its own, else the symbol's
+    # SYMATTR default). Saving stores only values that differ from the symbol, so a
+    # part keeps following its symbol for the rest. Every change is one undo step.
+
+    @Slot(int, result="QVariantMap")
+    def partAttributes(self, index: int) -> dict[str, object]:  # noqa: N802
+        """{index, name, symbol, prefix, simple, description, fields: [{key, value,
+        default}]} for the attribute dialog; {} for a bad index."""
+        if not 0 <= index < len(self._schematic.instances):
+            return {}
+        inst = self._schematic.instances[index]
+        symbol = self.lookup(inst.symbol)
+        prefix = symbol.prefix if symbol is not None else ""
+        letter = prefix[:1].upper()
+        keys = SIMPLE_KEYS.get(letter, ATTRIBUTE_KEYS)
+        fields = []
+        for key in keys:
+            default = symbol.attr(key) if symbol is not None else ""
+            own = next((v for k, v in inst.attrs.items() if k.casefold() == key.casefold()), None)
+            fields.append(
+                {"key": key, "value": default if own is None else own, "default": default}
+            )
+        return {
+            "index": index,
+            "name": inst.name,
+            "symbol": inst.symbol,
+            "prefix": prefix,
+            "simple": letter in SIMPLE_KEYS,
+            "description": self.symbolDescription(inst.symbol),
+            "fields": fields,
+        }
+
+    @Slot(int, str, "QVariantMap", result=str)
+    def checkAttributes(self, index: int, name: str, values: dict) -> str:  # noqa: N802
+        """ "" when ``name`` and ``values`` make a valid part, else the first problem."""
+        made = self._attributed(index, name, values)
+        return made if isinstance(made, str) else ""
+
+    @Slot(int, str, "QVariantMap", result=str)
+    def setAttributes(self, index: int, name: str, values: dict) -> str:  # noqa: N802
+        """Apply the attribute dialog (one undo step); returns "" or the problem."""
+        made = self._attributed(index, name, values)
+        if isinstance(made, str):
+            return made
+        old = self._schematic.instances[index].name
+
+        def change(s: Schematic) -> None:
+            s.instances[index] = made
+
+        self._edit(f"edit {old}", change)
+        return ""
+
+    def _attributed(self, index: int, name: str, values: dict) -> Instance | str:
+        if not 0 <= index < len(self._schematic.instances):
+            return "no such part"
+        inst = self._schematic.instances[index]
+        name = name.strip()
+        if not name or any(c.isspace() for c in name):
+            return "the name must be one word"
+        if any(
+            i != index and other.name.casefold() == name.casefold()
+            for i, other in enumerate(self._schematic.instances)
+        ):
+            return f"another part is already called {name}"
+        symbol = self.lookup(inst.symbol)
+        attrs = {k: v for k, v in inst.attrs.items() if k.casefold() not in _ATTRIBUTE_FOLDED}
+        for key in ATTRIBUTE_KEYS:
+            match = next(
+                (v for k, v in values.items() if str(k).casefold() == key.casefold()), None
+            )
+            if match is None:
+                own = next(
+                    (v for k, v in inst.attrs.items() if k.casefold() == key.casefold()), None
+                )
+                if own is not None:
+                    attrs[key] = own
+                continue
+            value = str(match).strip()
+            default = symbol.attr(key) if symbol is not None else ""
+            if value != default:
+                attrs[key] = value
+        made = Instance(inst.symbol, name, inst.x, inst.y, inst.rotation, inst.mirror, attrs)
+        if symbol is not None and symbol.prefix:
+            nets = [f"n{k + 1}" for k in range(len(symbol.pins))]
+            part = netlist_part(PartInstance(name, symbol, nets, attrs))
+            errors = [d.message for d in part.diagnostics if d.severity == ERROR]
+            if errors:
+                return errors[0].removeprefix(f"{name}: ")
+        return made
+
+    @Slot(int, str, result=bool)
+    def renameLabel(self, index: int, name: str) -> bool:  # noqa: N802
+        """Give net label ``index`` a new one-word name (one undo step)."""
+        name = name.strip()
+        if (
+            not 0 <= index < len(self._schematic.labels)
+            or not name
+            or any(c.isspace() for c in name)
+        ):
+            return False
+
+        def change(s: Schematic) -> None:
+            s.labels[index].name = name
+
+        self._edit(f"rename label {name}", change)
+        return True
+
+    @Slot(float, float, str, bool, result=bool)
+    def addText(self, x: float, y: float, text: str, directive: bool) -> bool:  # noqa: N802
+        """Place a SPICE directive (``directive``) or a comment (one undo step)."""
+        text = text.strip()
+        if not text:
+            return False
+        point = (int(round(x)), int(round(y)))
+        what = "directive" if directive else "comment"
+        self._edit(f"add {what}", lambda s: s.texts.append(TextItem(*point, text, directive)))
+        return True
+
+    @Slot(int, str, bool, result=bool)
+    def setText(self, index: int, text: str, directive: bool) -> bool:  # noqa: N802
+        """Change sheet text ``index`` (one undo step)."""
+        text = text.strip()
+        if not 0 <= index < len(self._schematic.texts) or not text:
+            return False
+
+        def change(s: Schematic) -> None:
+            s.texts[index].text = text
+            s.texts[index].directive = directive
+
+        self._edit("edit text", change)
+        return True
+
+    @Slot(int, result="QVariantMap")
+    def textAt(self, index: int) -> dict[str, object]:  # noqa: N802
+        if not 0 <= index < len(self._schematic.texts):
+            return {}
+        t = self._schematic.texts[index]
+        return {"index": index, "text": t.text, "directive": t.directive}
+
+    @Slot(int, result=str)
+    def labelName(self, index: int) -> str:  # noqa: N802
+        labels = self._schematic.labels
+        return labels[index].name if 0 <= index < len(labels) else ""
+
     # ---- settings
 
     def _read_list(self, key: str) -> list[str]:
@@ -989,7 +1154,17 @@ class SchematicController(QObject):
 
 # ---------------------------------------------------------------- editor models
 
-KINDS = (INSTANCE, WIRE, LABEL, GROUND, PORT)
+KINDS = (INSTANCE, WIRE, LABEL, GROUND, PORT, TEXT)
+# The attribute dialog's fields; simple parts (by device letter) show only some.
+ATTRIBUTE_KEYS = ("Value", "Value2", "SpiceModel", "ModelFile", "SpiceLine", "SpiceLine2")
+SIMPLE_KEYS: dict[str, tuple[str, ...]] = {
+    "R": ("Value",),
+    "C": ("Value",),
+    "L": ("Value",),
+    "V": ("Value", "Value2"),
+    "I": ("Value", "Value2"),
+}
+_ATTRIBUTE_FOLDED = frozenset(k.casefold() for k in ATTRIBUTE_KEYS)
 INSTANCE_ROLES = [
     "index",
     "instName",
