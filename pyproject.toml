@@ -50,6 +50,7 @@ files = [
     "ui/qml/DeckView.qml",
     "ui/qml/Main.qml",
     "ui/qml/NetlistEditor.qml",
+    "ui/qml/WaveformView.qml",
     "tests/conftest.py",
     "tests/core/netlist/test_builder.py",
     "tests/core/netlist/test_model.py",
@@ -69,6 +70,7 @@ files = [
     "tests/ui/test_sim_worker.py",
     "tests/ui/test_simulator.py",
     "tests/ui/test_waveform_model.py",
+    "tests/ui/test_waveform_view.py",
     "examples/rc_lowpass.cir",
     "CLAUDE.md",
 ]
