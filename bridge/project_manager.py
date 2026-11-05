@@ -7,7 +7,9 @@ WaveformModel)``); a project is the state they hold:
 - the netlist editor text (``Simulator.netlistText``) and the analysis panel card;
 - the user block code, the block diagram and its end time / time step
   (``DiagramController.export_state()``);
-- the last netlist result and the last diagram result (saved as .npz files).
+- the last netlist result and the last diagram result (saved as .npz files);
+- the schematic, once ``attachSchematic(SchematicController)`` is called (S5); until
+  then a loaded schematic is only kept so that saving does not drop it.
 
 ``modified`` compares that state with what was last saved or opened, so undoing
 back to the saved state clears it again. ``save()`` returns False when the project
@@ -103,8 +105,9 @@ class ProjectManager(QObject):
         self._diagram_name = "main"
         self._extra_netlists: list[NetlistEntry] = []
         self._extra_diagrams: list[DiagramEntry] = []
-        # Kept as loaded so saving does not drop it (the schematic editor comes with S5).
+        # Kept as loaded while no SchematicController is attached.
         self._schematic: Schematic | None = None
+        self._schematic_ctl: QObject | None = None
         self._saved_json = ""
         self._saved_results: tuple[object, object] = (None, None)
         self._pending: tuple[Path, Project, list[str]] | None = None
@@ -156,6 +159,15 @@ class ProjectManager(QObject):
             signal.connect(self._update_modified)
         self._mark_saved()
 
+    @Slot(QObject)
+    def attachSchematic(self, controller: QObject) -> None:  # noqa: N802 - QML API
+        """Make the schematic editor's sheet part of the project."""
+        self._schematic_ctl = controller
+        controller.load_schematic(self._schematic)  # type: ignore[attr-defined]
+        controller.schematicEdited.connect(self._update_modified)  # type: ignore[attr-defined]
+        if self._simulator is not None and self._diagram is not None:
+            self._mark_saved()
+
     # ---- state
 
     def current_project(self) -> Project:
@@ -175,7 +187,11 @@ class ProjectManager(QObject):
             analysis=AnalysisSettings(sim.property("analysisCard"), state.t_end, state.dt),
             simulation=SimulationSettings(sim.property("compatMode")),
             results=results,
-            schematic=self._schematic,
+            schematic=(
+                self._schematic_ctl.schematic_or_none()  # type: ignore[attr-defined]
+                if self._schematic_ctl is not None
+                else self._schematic
+            ),
         )
 
     # ---- slots
@@ -284,6 +300,8 @@ class ProjectManager(QObject):
         self._extra_netlists = list(project.netlists[1:])
         self._extra_diagrams = list(project.diagrams[1:])
         self._schematic = project.schematic
+        if self._schematic_ctl is not None:
+            self._schematic_ctl.load_schematic(project.schematic)  # type: ignore[attr-defined]
         sources = [(s.document, s.code) for s in project.block_sources] if trusted else []
         first = project.diagrams[0].diagram if project.diagrams else {"blocks": [], "wires": []}
         warnings = diagram.load_state(

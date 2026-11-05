@@ -19,6 +19,7 @@ ApplicationWindow {
         Simulator.attachWaveforms(WaveformModel)
         DiagramController.attachWaveforms(WaveformModel)
         ProjectManager.attach(Simulator, DiagramController, WaveformModel)
+        ProjectManager.attachSchematic(SchematicController)
     }
 
     onClosing: close => {
@@ -325,6 +326,7 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     TabButton { text: qsTr("Netlist") }
                     TabButton { text: qsTr("Blocks") }
+                    TabButton { text: qsTr("Schematic") }
                 }
                 StackLayout {
                     Layout.fillWidth: true
@@ -343,6 +345,12 @@ ApplicationWindow {
                             SplitView.fillHeight: true
                             SplitView.minimumHeight: 120
                         }
+                    }
+                    Label {
+                        objectName: "schematicSidePlaceholder"
+                        text: qsTr("Parts are placed from the part picker (S6).")
+                        wrapMode: Text.WordWrap
+                        padding: 8
                     }
                 }
             }
@@ -366,6 +374,7 @@ ApplicationWindow {
                         SplitView.minimumWidth: 160
                     }
                 }
+                SchematicCanvas {}
             }
         }
 

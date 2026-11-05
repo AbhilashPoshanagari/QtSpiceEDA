@@ -11,10 +11,11 @@ from PySide6.QtCore import QSettings
 
 from bridge.diagram_controller import DiagramController
 from bridge.project_manager import MAX_RECENT, ProjectManager
+from bridge.schematic_controller import SchematicController
 from bridge.simulator import Simulator
 from bridge.waveform_model import WaveformModel
 from core.project.io import Project, load_project, save_project
-from core.schematic.model import Schematic
+from core.schematic.model import Schematic, Wire
 from core.sim.result import SimulationResult
 
 RC = "* RC low-pass\nV1 in 0 PULSE(0 1 0 1n 1n 1 2)\nR1 in out 1k\nC1 out 0 1u\n.end\n"
@@ -29,6 +30,7 @@ class App:
     diagram: DiagramController
     waveforms: WaveformModel
     projects: ProjectManager
+    schematic: SchematicController
 
     def close(self) -> None:
         self.sim.shutdown()
@@ -47,7 +49,9 @@ def start_app(settings_file: Path) -> App:
     diagram.attachWaveforms(waveforms)
     projects = ProjectManager(settings=settings)
     projects.attach(sim, diagram, waveforms)
-    return App(sim, diagram, waveforms, projects)
+    schematic = SchematicController(settings=settings)
+    projects.attachSchematic(schematic)
+    return App(sim, diagram, waveforms, projects, schematic)
 
 
 @pytest.fixture
@@ -292,7 +296,17 @@ def test_schematic_is_kept_through_open_and_save(app: App, tmp_path: Path) -> No
     save_project(path, Project(schematic=schematic))
     assert app.projects.open(str(path))
     assert app.projects.current_project().schematic == schematic
+    assert [r["instName"] for r in app.schematic.instances.rows()] == ["V1", "C1", "R2"]
     assert app.projects.save()
     assert load_project(path).project.schematic == schematic  # type: ignore[union-attr]
     assert app.projects.newProject()
     assert app.projects.current_project().schematic is None
+
+
+def test_schematic_edits_mark_the_project_modified(app: App, tmp_path: Path) -> None:
+    assert app.projects.saveAs(str(tmp_path / "p.qsp"))
+    assert app.projects.property("modified") is False
+    app.schematic._edit("add wire", lambda s: s.wires.append(Wire(0, 0, 16, 0)))
+    assert app.projects.property("modified") is True
+    app.schematic.undo()
+    assert app.projects.property("modified") is False
