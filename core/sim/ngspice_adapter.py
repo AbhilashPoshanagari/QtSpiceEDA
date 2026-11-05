@@ -112,6 +112,70 @@ def _load_library() -> tuple[ctypes.CDLL | None, str]:
     return None, detail
 
 
+class _Session:
+    """The one ngspice instance in this process.
+
+    ngspice is process-global: ngSpice_Init must run once, and the callback objects
+    it receives must stay alive for as long as the library is loaded. Callbacks are
+    forwarded to the adapter that last loaded a deck (``owner``).
+    """
+
+    def __init__(self) -> None:
+        self.lib: ctypes.CDLL | None = None
+        self.error = ""
+        self.tried = False
+        self.owner: NgspiceAdapter | None = None
+        self.lock = threading.Lock()
+        self.callbacks = (
+            _SendChar(lambda text, ident, user: self._forward("_send_char", text, ident, user)),
+            _SendStat(lambda text, ident, user: self._forward("_send_stat", text, ident, user)),
+            _ControlledExit(
+                lambda status, unload, quit_, ident, user: self._forward(
+                    "_controlled_exit", status, unload, quit_, ident, user
+                )
+            ),
+            _BGThreadRunning(
+                lambda running, ident, user: self._forward("_bg_running", running, ident, user)
+            ),
+        )
+
+    def _forward(self, method: str, *args: object) -> int:
+        owner = self.owner
+        if owner is None:
+            return 0
+        try:
+            return int(getattr(owner, method)(*args))
+        except Exception:  # never let a Python error unwind into ngspice
+            return 0
+
+    def ensure(self) -> ctypes.CDLL | None:
+        with self.lock:
+            if self.tried:
+                return self.lib
+            self.tried = True
+            lib, error = _load_library()
+            if lib is None:
+                self.error = error
+                return None
+            try:
+                _declare(lib)
+                send_char, send_stat, controlled_exit, bg_running = self.callbacks
+                status = lib.ngSpice_Init(
+                    send_char, send_stat, controlled_exit, None, None, bg_running, None
+                )
+            except (AttributeError, OSError) as exc:
+                self.error = f"not an ngspice shared library: {exc}"
+                return None
+            if status != 0:
+                self.error = f"ngSpice_Init returned {status}"
+                return None
+            self.lib = lib
+            return lib
+
+
+_SESSION = _Session()
+
+
 def _declare(lib: ctypes.CDLL) -> None:
     lib.ngSpice_Init.argtypes = [
         _SendChar,
@@ -153,7 +217,8 @@ def display_name(raw: str, unit: str) -> str:
 class NgspiceAdapter(SimulatorBackend):
     """SimulatorBackend for the ngspice shared library.
 
-    ngspice keeps one circuit per process, so use one adapter at a time.
+    ngspice keeps one circuit per process, so use one adapter at a time; the adapter
+    that last loaded a deck receives ngspice's callbacks.
     Console lines are collected in ``console`` and also sent to ``on_message``.
     """
 
@@ -166,20 +231,12 @@ class NgspiceAdapter(SimulatorBackend):
         self.console: list[str] = []
         self.last_error = ""
         self._lib: ctypes.CDLL | None = None
-        self._tried = False
         self._loaded = False
         self._result: SimulationResult | None = None
         self._stop_requested = threading.Event()
         self._bg_done = threading.Event()
         self._bg_calls = 0
         self._lock = threading.Lock()
-        # ctypes callback objects must stay referenced while ngspice may call them.
-        self._callbacks = (
-            _SendChar(self._send_char),
-            _SendStat(self._send_stat),
-            _ControlledExit(self._controlled_exit),
-            _BGThreadRunning(self._bg_running),
-        )
 
     # --- SimulatorBackend --------------------------------------------------
 
@@ -192,6 +249,9 @@ class NgspiceAdapter(SimulatorBackend):
 
     def load(self, deck: str) -> None:
         lib = self._require()
+        if lib.ngSpice_running():
+            raise SimulationError("ngspice is still running another simulation")
+        _SESSION.owner = self
         self._result = None
         self._loaded = False
         self.console.clear()
@@ -209,7 +269,7 @@ class NgspiceAdapter(SimulatorBackend):
 
     def run(self) -> None:
         lib = self._require()
-        if not self._loaded:
+        if not self._loaded or _SESSION.owner is not self:
             raise SimulationError("no deck loaded")
         self._stop_requested.clear()
         errors_before = self._error_count()
@@ -237,7 +297,7 @@ class NgspiceAdapter(SimulatorBackend):
         return self._result
 
     def stop(self) -> None:
-        if self._lib is None:
+        if self._lib is None or _SESSION.owner is not self:
             return
         self._stop_requested.set()
         if self._lib.ngSpice_running():
@@ -246,27 +306,11 @@ class NgspiceAdapter(SimulatorBackend):
     # --- internals -----------------------------------------------------------
 
     def _ensure_library(self) -> ctypes.CDLL | None:
-        if self._tried:
-            return self._lib
-        self._tried = True
-        lib, error = _load_library()
-        if lib is None:
-            self.last_error = error
-            return None
-        try:
-            _declare(lib)
-            send_char, send_stat, controlled_exit, bg_running = self._callbacks
-            status = lib.ngSpice_Init(
-                send_char, send_stat, controlled_exit, None, None, bg_running, None
-            )
-        except (AttributeError, OSError) as exc:
-            self.last_error = f"not an ngspice shared library: {exc}"
-            return None
-        if status != 0:
-            self.last_error = f"ngSpice_Init returned {status}"
-            return None
-        self._lib = lib
-        return lib
+        if self._lib is None:
+            self._lib = _SESSION.ensure()
+            if self._lib is None:
+                self.last_error = _SESSION.error
+        return self._lib
 
     def _require(self) -> ctypes.CDLL:
         lib = self._ensure_library()

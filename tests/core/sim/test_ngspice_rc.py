@@ -6,6 +6,7 @@ import threading
 import numpy as np
 import pytest
 
+from core.sim import ngspice_adapter
 from core.sim.backend import SimulationError
 from core.sim.ngspice_adapter import NgspiceAdapter, display_name
 
@@ -71,6 +72,7 @@ def test_missing_library_is_reported_not_raised(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(
         "core.sim.ngspice_adapter.library_candidates", lambda: ["definitely-not-ngspice.dll"]
     )
+    monkeypatch.setattr(ngspice_adapter, "_SESSION", ngspice_adapter._Session())
     sim = NgspiceAdapter()
     assert sim.available() is False
     assert sim.last_error
@@ -84,3 +86,18 @@ def test_missing_library_is_reported_not_raised(monkeypatch: pytest.MonkeyPatch)
 )
 def test_display_name(raw: str, unit: str, expected: str) -> None:
     assert display_name(raw, unit) == expected
+
+
+@pytest.mark.ngspice
+def test_several_adapters_share_one_ngspice() -> None:
+    first, second = NgspiceAdapter(), NgspiceAdapter()
+    assert first.available() and second.available()
+    first.load(RC_DECK)
+    lines_before = len(first.console)
+    second.load(RC_DECK)  # second now owns the callbacks
+    with pytest.raises(SimulationError, match="no deck"):
+        first.run()
+    second.run()
+    assert second.results() is not None
+    assert len(first.console) == lines_before  # output of second's run went to second only
+    assert any("transient" in line.lower() for line in second.console)
