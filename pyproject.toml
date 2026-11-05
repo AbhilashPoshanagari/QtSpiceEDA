@@ -46,6 +46,8 @@ files = [
     "core/sim/ngspice_adapter.py",
     "core/sim/result.py",
     "ui/qml/AnalysisPanel.qml",
+    "ui/qml/ConsoleView.qml",
+    "ui/qml/DeckView.qml",
     "ui/qml/Main.qml",
     "ui/qml/NetlistEditor.qml",
     "tests/conftest.py",
