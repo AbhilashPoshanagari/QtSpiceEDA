@@ -102,6 +102,7 @@ files = [
     "ui/qml/SchematicCanvas.qml",
     "ui/qml/SymbolItem.qml",
     "ui/qml/WaveformView.qml",
+    "ui/qml/WireTool.qml",
     "ui/qml/Wire.qml",
     "tests/conftest.py",
     "tests/test_version.py",

@@ -11,7 +11,8 @@ from PySide6.QtCore import QObject, QPoint, QPointF, Qt
 from PySide6.QtQuick import QQuickItem
 from PySide6.QtTest import QTest
 
-from core.schematic.model import Schematic
+from core.schematic.connectivity import connect
+from core.schematic.model import Schematic, Wire, pin_points
 from tests.ui.mouse import click, drag, find_item, find_items, key, wheel
 from tests.ui.qml_harness import qml_scene
 
@@ -187,3 +188,136 @@ def test_right_click_also_stops_placing(picker: Scene) -> None:
 def item_point(item: QQuickItem) -> QPoint:
     p = item.mapToScene(QPointF(item.width() / 2, item.height() / 2))
     return QPoint(round(p.x()), round(p.y()))
+
+
+# ---------------------------------------------------------------- S7
+
+
+@pytest.fixture
+def empty(qapp: object, tmp_path: Path, qtbot) -> Iterator[Scene]:
+    with qml_scene(tmp_path, SCENE, 1000, 700) as (engine, window):
+        s = Scene(engine, window, qtbot)
+        s.ctl.load_schematic(None)
+        s.canvas.setProperty("zoom", 1.5)
+        s.canvas.setProperty("panX", 100)
+        s.canvas.setProperty("panY", 100)
+        qtbot.wait(20)
+        yield s
+        s.ctl.load_schematic(None)
+
+
+def move_click(scene: Scene, x: float, y: float) -> None:
+    p = scene.at(x, y)
+    QTest.mouseMove(scene.window, p)
+    scene.qtbot.wait(5)
+    click(scene.window, p)
+
+
+def test_wire_tool_draws_orthogonal_segments_and_esc_ends(empty: Scene) -> None:
+    empty.canvas.startTool("wire")
+    move_click(empty, 3, 2)  # snaps to (0, 0)
+    QTest.mouseMove(empty.window, empty.at(60, 10))  # mostly sideways: horizontal first
+    move_click(empty, 96, 64)
+    assert empty.ctl.schematic().wires == [Wire(0, 0, 96, 0), Wire(96, 0, 96, 64)]
+    assert find_item(empty.canvas, "rubberWire").property("visible") is True
+    move_click(empty, 96, 128)  # straight on: one segment (the other is zero length)
+    assert empty.ctl.schematic().wires[-1] == Wire(96, 64, 96, 128)
+    key(empty.window, Qt.Key.Key_Escape)  # ends the wire, the tool stays
+    assert empty.canvas.property("mode") == "wire"
+    assert find_item(empty.canvas, "rubberWire").property("visible") is False
+    key(empty.window, Qt.Key.Key_Escape)  # leaves the tool
+    assert empty.canvas.property("mode") == "select"
+    assert empty.ctl.undo_stack().count() == 2
+
+
+def test_wire_ending_on_a_wire_stops_and_shows_a_junction(empty: Scene) -> None:
+    empty.ctl.addWires([[0, 0, 160, 0]])
+    empty.canvas.startTool("wire")
+    move_click(empty, 80, 96)
+    move_click(empty, 80, 0)  # on the middle of the first wire
+    assert empty.canvas.findChild(QObject, "wireTool").property("active") is False
+    dots = find_items(empty.canvas, "junctionDot")
+    assert len(dots) == 1
+
+
+def test_label_tool_asks_for_a_name_then_places(empty: Scene) -> None:
+    empty.ctl.addWires([[0, 0, 160, 0]])
+    find_item(empty.window, "labelButton").clicked.emit()
+    empty.qtbot.wait(20)
+    popup = empty.canvas.findChild(QObject, "labelPopup")
+    assert popup.property("visible") is True
+    empty.canvas.findChild(QObject, "labelField").setProperty("text", "vout")
+    empty.canvas.findChild(QObject, "labelOk").clicked.emit()
+    empty.qtbot.wait(20)
+    assert empty.canvas.property("mode") == "label"
+    move_click(empty, 82, 3)
+    [label] = empty.ctl.schematic().labels
+    assert (label.x, label.y, label.name) == (80, 0, "vout")
+
+
+def test_ground_tool_places_on_each_click(empty: Scene) -> None:
+    find_item(empty.window, "groundButton").clicked.emit()
+    move_click(empty, 0, 0)
+    move_click(empty, 64, 0)
+    key(empty.window, Qt.Key.Key_Escape)
+    assert [(g.x, g.y) for g in empty.ctl.schematic().grounds] == [(0, 0), (64, 0)]
+
+
+def pins(scene: Scene, name: str) -> list[tuple[int, int]]:
+    inst = scene.ctl.schematic().instance(name)
+    return pin_points(inst, scene.ctl.lookup(inst.symbol))
+
+
+def test_draw_the_rc_fixture_by_hand(empty: Scene) -> None:
+    """Parts, wires, labels and ground drawn with the mouse give the fixture's nets.
+    (Values are set with the attribute dialog, S9; here the defaults stay.)"""
+    c = empty.canvas
+    c.startPlace("voltage")
+    move_click(empty, 0, 200)
+    key(empty.window, Qt.Key.Key_Escape)
+    c.startPlace("res")
+    key(empty.window, Qt.Key.Key_R, Qt.KeyboardModifier.ControlModifier)  # horizontal
+    move_click(empty, 160, 64)
+    key(empty.window, Qt.Key.Key_Escape)
+    c.startPlace("cap")
+    move_click(empty, 320, 200)
+    key(empty.window, Qt.Key.Key_Escape)
+    v_plus, v_minus = pins(empty, "V1")
+    # After Ctrl+R (R90) pin A is on the right: wire V1 to the left pin, C1 to the right.
+    r_left, r_right = sorted(pins(empty, "R1"))
+    c_a, c_b = pins(empty, "C1")
+
+    c.startTool("wire")
+    move_click(empty, *v_plus)
+    move_click(empty, *r_left)  # a pin ends the wire
+    move_click(empty, *r_right)
+    move_click(empty, *c_a)
+    key(empty.window, Qt.Key.Key_Escape)
+
+    c.startTool("ground")
+    move_click(empty, *v_minus)
+    move_click(empty, *c_b)
+    c.startLabel("IN")
+    move_click(empty, *v_plus)
+    c.startLabel("OUT")
+    move_click(empty, *c_a)
+    key(empty.window, Qt.Key.Key_Escape)
+
+    drawn = empty.ctl.schematic()
+    nets = connect(drawn, empty.ctl.lookup)
+    got = {inst.name: nets.pins[i] for i, inst in enumerate(drawn.instances)}
+    fixture = rc()
+    want_nets = connect(fixture, empty.ctl.lookup)
+    want = {inst.name: want_nets.pins[i] for i, inst in enumerate(fixture.instances)}
+    assert got["V1"] == want["V1"] == ["IN", "0"]
+    assert got["C1"] == want["C1"] == ["OUT", "0"]
+    assert sorted(got["R1"]) == sorted(want["R2"]) == ["IN", "OUT"]
+    # Every step undoes back to an empty sheet and redoes to the drawing.
+    steps = empty.ctl.undo_stack().count()
+    assert steps == 3 + 2 + 2 + 2
+    for _ in range(steps):
+        empty.ctl.undo()
+    assert empty.ctl.schematic() == Schematic()
+    for _ in range(steps):
+        empty.ctl.redo()
+    assert empty.ctl.schematic() == drawn

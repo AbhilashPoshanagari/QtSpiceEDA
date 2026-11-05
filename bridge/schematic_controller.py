@@ -46,6 +46,7 @@ from core.schematic.geometry import (
     instance_texts,
     items_in_rect,
     items_of,
+    on_segment,
     orientation_matrix,
     part_value,
     pin_near,
@@ -54,7 +55,7 @@ from core.schematic.geometry import (
     symbol_svg,
     turn,
 )
-from core.schematic.model import Instance, Schematic
+from core.schematic.model import GroundFlag, Instance, NetLabel, Schematic, Wire, pin_points
 from core.schematic.netlister import NET_FLAG_SYMBOLS
 from core.symbols.asy import Symbol
 from core.symbols.library import SymbolLibrary
@@ -806,6 +807,58 @@ class SchematicController(QObject):
         if self._pending:
             self._pending = {}
             self.pendingPartChanged.emit()
+
+    # ---- wires, net labels and ground (S7)
+
+    @Slot("QVariantList", result=bool)
+    def addWires(self, segments: list) -> bool:  # noqa: N802
+        """Add wire segments [[x1, y1, x2, y2], ...] as one undo step ("wire").
+        Zero-length segments are skipped; returns False when nothing was added."""
+        wires: list[Wire] = []
+        for seg in segments:
+            try:
+                x1, y1, x2, y2 = (int(round(float(v))) for v in seg)
+            except (TypeError, ValueError):
+                return False
+            if (x1, y1) != (x2, y2):
+                wires.append(Wire(x1, y1, x2, y2))
+        if not wires:
+            return False
+        self._edit("wire", lambda s: s.wires.extend(wires))
+        return True
+
+    @Slot(float, float, result=bool)
+    def isConnectionPoint(self, x: float, y: float) -> bool:  # noqa: N802
+        """True when (x, y) is a pin, a wire end, a point on a wire or a flag: the wire
+        tool stops there."""
+        point = (int(round(x)), int(round(y)))
+        s = self._schematic
+        for inst in s.instances:
+            symbol = self.lookup(inst.symbol)
+            if symbol is not None and point in pin_points(inst, symbol):
+                return True
+        for w in s.wires:
+            if point in w.ends or on_segment(point, w):
+                return True
+        flags = [(f.x, f.y) for f in [*s.labels, *s.grounds, *s.ports]]
+        return point in flags
+
+    @Slot(float, float, str, result=bool)
+    def addLabel(self, x: float, y: float, name: str) -> bool:  # noqa: N802
+        """Place a net label (one undo step). The name must be one word."""
+        name = name.strip()
+        if not name or any(c.isspace() for c in name):
+            return False
+        point = (int(round(x)), int(round(y)))
+        self._edit(f"label {name}", lambda s: s.labels.append(NetLabel(*point, name)))
+        return True
+
+    @Slot(float, float, result=bool)
+    def addGround(self, x: float, y: float) -> bool:  # noqa: N802
+        """Place a ground flag (one undo step)."""
+        point = (int(round(x)), int(round(y)))
+        self._edit("ground", lambda s: s.grounds.append(GroundFlag(*point)))
+        return True
 
     # ---- settings
 

@@ -17,7 +17,7 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from core.schematic.model import Instance, Point, Schematic, pin_points, transform
+from core.schematic.model import Instance, Point, Schematic, Wire, pin_points, transform
 from core.symbols.asy import Symbol
 
 GRID = 16
@@ -197,6 +197,15 @@ def _segment_distance(px: float, py: float, x1: int, y1: int, x2: int, y2: int) 
     length = dx * dx + dy * dy
     t = 0.0 if length == 0 else max(0.0, min(1.0, ((px - x1) * dx + (py - y1) * dy) / length))
     return math.hypot(px - (x1 + t * dx), py - (y1 + t * dy))
+
+
+def on_segment(point: Point, wire: Wire) -> bool:
+    """True when ``point`` lies on the wire strictly between its ends."""
+    (x1, y1), (x2, y2) = wire.ends
+    x, y = point
+    if (x2 - x1) * (y - y1) != (y2 - y1) * (x - x1) or point in wire.ends:
+        return False
+    return min(x1, x2) <= x <= max(x1, x2) and min(y1, y2) <= y <= max(y1, y2)
 
 
 def flag_box(schematic: Schematic, kind: str, index: int) -> Rect:

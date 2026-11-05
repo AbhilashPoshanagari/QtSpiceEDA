@@ -10,8 +10,9 @@ import QtSpice
 //
 // Mouse: wheel zooms around the pointer; middle- or right-drag pans; in select mode
 // a click selects (Ctrl+click toggles) and a drag on empty space is a rubber band.
-// Tools: "place" (S6: each click drops a part, Ctrl+R / Ctrl+E turn it). Esc or a
-// right-click without dragging leaves a tool.
+// Tools: "place" (S6: each click drops a part, Ctrl+R / Ctrl+E turn it), "wire"
+// (S7, see WireTool.qml), "label" (asks for a name, then each click places it) and
+// "ground". Esc or a right-click without dragging ends a wire, then leaves the tool.
 // The model, hit-testing and undo live in SchematicController.
 Item {
     id: root
@@ -28,14 +29,22 @@ Item {
     readonly property real penWidth: 1.5 / settledZoom
     readonly property real pickTolerance: 6 / zoom   // sheet units for ~6 px
 
-    // "select", or a tool: "place" (S6).
+    // "select", or a tool: "place" (S6), "wire", "label", "ground" (S7).
     property string mode: "select"
     property string placeSymbol: ""
+    property string labelName: ""
     property point pointer: Qt.point(0, 0)   // last pointer position, sheet units
     readonly property string hint: {
         if (mode === "place")
             return qsTr("Placing %1: click to place, Ctrl+R rotate, Ctrl+E mirror, Esc to stop")
                    .arg(SchematicController.placing)
+        if (mode === "wire")
+            return wireTool.active ? qsTr("Click to add a corner; a pin or wire ends it; Esc ends")
+                                   : qsTr("Wire: click to start; Esc to stop")
+        if (mode === "label")
+            return qsTr("Label %1: click a wire or pin to name its net; Esc to stop").arg(labelName)
+        if (mode === "ground")
+            return qsTr("Ground: click to place; Esc to stop")
         return ""
     }
 
@@ -87,8 +96,48 @@ Item {
     function stopTool() {
         if (mode === "place")
             SchematicController.stopPlacing()
+        wireTool.stop()
         mode = "select"
         placeSymbol = ""
+    }
+
+    // Esc / right-click: end a wire first, then leave the tool.
+    function cancelStep() {
+        if (mode === "wire" && wireTool.active)
+            wireTool.stop()
+        else if (mode !== "select")
+            stopTool()
+        else
+            SchematicController.clearSelection()
+    }
+
+    function startTool(name) {
+        stopTool()
+        SchematicController.clearSelection()
+        mode = name
+        wireTool.move(pointer)
+        root.forceActiveFocus()
+    }
+
+    // Net label tool: ask for the name first (Enter or OK), then place on each click.
+    function startLabel(name) {
+        if (name === undefined) {
+            labelField.text = labelName
+            labelPopup.open()
+            labelField.forceActiveFocus()
+            labelField.selectAll()
+            return
+        }
+        name = name.trim()
+        if (name === "" || name.split(" ").length > 1 || name.split("\t").length > 1)
+            return
+        labelName = name
+        startTool("label")
+    }
+
+    function snapped(p) {
+        const s = SchematicController.snapPoint(p.x, p.y, pickTolerance)
+        return Qt.point(s.x, s.y)
     }
 
     function rotate() {
@@ -114,7 +163,7 @@ Item {
     Shortcut {
         sequence: "Esc"
         enabled: root.visible
-        onActivated: root.mode !== "select" ? root.stopTool() : SchematicController.clearSelection()
+        onActivated: root.cancelStep()
     }
     Shortcut {
         sequence: "Ctrl+R"
@@ -153,6 +202,29 @@ Item {
                     ToolTip.text: qsTr("Zoom to fit the whole sheet")
                     onClicked: root.zoomToFit()
                 }
+                ToolSeparator {}
+                ToolButton {
+                    objectName: "wireButton"
+                    text: qsTr("Wire")
+                    checkable: true
+                    checked: root.mode === "wire"
+                    onClicked: root.mode === "wire" ? root.stopTool() : root.startTool("wire")
+                }
+                ToolButton {
+                    objectName: "labelButton"
+                    text: qsTr("Label")
+                    checkable: true
+                    checked: root.mode === "label"
+                    onClicked: root.mode === "label" ? root.stopTool() : root.startLabel()
+                }
+                ToolButton {
+                    objectName: "groundButton"
+                    text: qsTr("Ground")
+                    checkable: true
+                    checked: root.mode === "ground"
+                    onClicked: root.mode === "ground" ? root.stopTool() : root.startTool("ground")
+                }
+                ToolSeparator {}
                 Label {
                     objectName: "zoomLabel"
                     text: Math.round(root.zoom * 100) + " %"
@@ -313,6 +385,13 @@ Item {
                     }
                 }
 
+                WireTool {
+                    id: wireTool
+                    visible: root.mode === "wire"
+                    tolerance: root.pickTolerance
+                    penWidth: root.penWidth
+                }
+
                 Repeater {
                     objectName: "junctionRepeater"
                     model: SchematicController.junctions
@@ -364,6 +443,20 @@ Item {
                         SchematicController.placeCommit(p.x, p.y)
                         return
                     }
+                    if (root.mode === "wire") {
+                        wireTool.press(p)
+                        return
+                    }
+                    if (root.mode === "label") {
+                        const q = root.snapped(p)
+                        SchematicController.addLabel(q.x, q.y, root.labelName)
+                        return
+                    }
+                    if (root.mode === "ground") {
+                        const q = root.snapped(p)
+                        SchematicController.addGround(q.x, q.y)
+                        return
+                    }
                     if (root.mode !== "select")
                         return
                     const add = (ev.modifiers & Qt.ControlModifier) !== 0
@@ -390,6 +483,8 @@ Item {
                         lastY = ev.y
                     } else if (root.mode === "place") {
                         SchematicController.placeMoveTo(p.x, p.y)
+                    } else if (root.mode === "wire") {
+                        wireTool.move(p)
                     } else if (root.banding) {
                         root.bandEnd = Qt.point(ev.x, ev.y)
                     }
@@ -398,7 +493,7 @@ Item {
                     if (panning) {
                         panning = false
                         if (!panned && ev.button === Qt.RightButton && root.mode !== "select")
-                            root.stopTool()
+                            root.cancelStep()
                         return
                     }
                     if (root.banding) {
@@ -415,6 +510,42 @@ Item {
                 onWheel: ev => {
                     root.zoomAt(ev.x, ev.y, Math.pow(1.25, ev.angleDelta.y / 120))
                     ev.accepted = true
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: labelPopup
+        objectName: "labelPopup"
+        anchors.centerIn: parent
+        modal: true
+        padding: 12
+        contentItem: ColumnLayout {
+            spacing: 8
+            Label { text: qsTr("Net label name (one word):") }
+            TextField {
+                id: labelField
+                objectName: "labelField"
+                Layout.preferredWidth: 200
+                selectByMouse: true
+                onAccepted: okButton.clicked()
+            }
+            RowLayout {
+                Layout.alignment: Qt.AlignRight
+                Button {
+                    text: qsTr("Cancel")
+                    onClicked: labelPopup.close()
+                }
+                Button {
+                    id: okButton
+                    objectName: "labelOk"
+                    text: qsTr("OK")
+                    enabled: labelField.text.trim() !== ""
+                    onClicked: {
+                        labelPopup.close()
+                        root.startLabel(labelField.text)
+                    }
                 }
             }
         }

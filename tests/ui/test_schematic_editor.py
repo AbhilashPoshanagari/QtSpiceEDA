@@ -238,3 +238,39 @@ def test_pending_library_part_is_placed_with_its_model(ctrl: SchematicController
 def test_unknown_symbol_is_not_placed(ctrl: SchematicController) -> None:
     assert ctrl.beginPlace("nosuch", 0, 0) == ""
     assert ctrl.property("live") is False
+
+
+# ---------------------------------------------------------------- S7: wires and flags
+
+
+def test_add_wires_is_one_undo_step_and_skips_zero_length(ctrl: SchematicController) -> None:
+    after = check_undo_redo(
+        ctrl, lambda: ctrl.addWires([[400, 0, 400, 0], [400, 0, 480, 0], [480, 0, 480, 64]])
+    )
+    assert after.wires[-2:] == [Wire(400, 0, 480, 0), Wire(480, 0, 480, 64)]
+    assert ctrl.property("undoText") == "wire"
+    assert ctrl.addWires([[0, 0, 0, 0]]) is False
+    assert ctrl.addWires([["a", 0, 1, 2]]) is False
+
+
+def test_t_join_gets_a_junction_dot(ctrl: SchematicController, qtbot) -> None:
+    with qtbot.waitSignal(ctrl.sheetChanged):
+        ctrl.addWires([[100, 112, 100, 48]])  # ends on the middle of the IN wire
+    assert ctrl.property("junctions") == [{"x": 100, "y": 112}]
+    ctrl.undo()
+    assert ctrl.property("junctions") == []
+
+
+def test_connection_points_end_the_wire_tool(ctrl: SchematicController) -> None:
+    assert ctrl.isConnectionPoint(144, 112)  # R2 pin and wire end
+    assert ctrl.isConnectionPoint(100, 112)  # on a wire
+    assert ctrl.isConnectionPoint(64, 288)  # ground flag
+    assert not ctrl.isConnectionPoint(500, 500)
+
+
+def test_labels_and_grounds(ctrl: SchematicController) -> None:
+    after = check_undo_redo(ctrl, lambda: ctrl.addLabel(400, 0, " vout "))
+    assert after.labels[-1].name == "vout" and ctrl.property("undoText") == "label vout"
+    assert ctrl.addLabel(0, 0, "two words") is False and ctrl.addLabel(0, 0, " ") is False
+    after = check_undo_redo(ctrl, lambda: ctrl.addGround(400, 64))
+    assert (after.grounds[-1].x, after.grounds[-1].y) == (400, 64)
