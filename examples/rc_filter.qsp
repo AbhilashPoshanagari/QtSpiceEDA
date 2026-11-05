@@ -1,0 +1,31 @@
+{
+  "format": "qtspice-project",
+  "version": 1,
+  "netlists": [
+    {
+      "name": "main",
+      "text": "RC low-pass filter, R = 1k, C = 1u, RC = 1 ms, fc = 159 Hz\n* A 1 V step (1 ns rise) that is also a 1 V AC source drives a first-order RC low-pass.\n* .tran: V(out) = 1 - exp(-t/RC), 63 % of the step after 1 ms.\n* .ac:   V(out) is -3 dB (0.707 V) at 1 / (2 pi RC) = 159.15 Hz, then falls 20 dB/decade.\n* Only the first card runs from the netlist; choose .ac in the Analysis panel to run it.\nV1 in 0 DC 0 AC 1 PULSE(0 1 0 1n 1n 1 2)\nR1 in out 1k\nC1 out 0 1u\n.tran 1u 5m\n.ac dec 50 1 100k\n.end\n"
+    }
+  ],
+  "diagrams": [
+    {
+      "name": "main",
+      "diagram": {
+        "blocks": [],
+        "wires": []
+      }
+    }
+  ],
+  "block_sources": [
+    {
+      "document": "function1",
+      "code": ""
+    }
+  ],
+  "analysis": {
+    "card": "",
+    "diagram_t_end": 1.0,
+    "diagram_dt": 0.001
+  },
+  "results": []
+}
