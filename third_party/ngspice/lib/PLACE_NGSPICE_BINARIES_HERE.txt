@@ -1,0 +1,2 @@
+Put ngspice.dll + ngspice.lib (Windows) or libngspice.so (Linux) here.
+See README.md "Setup" section for download links and exact filenames.

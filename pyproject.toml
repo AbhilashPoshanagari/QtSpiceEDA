@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qtspice"
+version = "0.0.1"
+description = "QtSpice: a small desktop EDA app (netlists, ngspice, waveforms, function blocks)"
+readme = "CLAUDE.md"
+requires-python = ">=3.12"
+dependencies = [
+    "PySide6~=6.8.0",
+    "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-qt>=4.4",
+    "ruff>=0.6",
+    "pyinstaller>=6.10",
+]
+
+[project.scripts]
+qtspice = "app.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["app*", "core*", "bridge*"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["third_party"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "ngspice: test needs the ngspice shared library (skipped when it is missing)",
+]
