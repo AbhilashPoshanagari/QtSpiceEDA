@@ -5,8 +5,13 @@
 
 Supported: the title line, ``*`` comments, ``;`` and ``$`` inline comments, ``+``
 continuation lines, elements R C L V I D Q M E F G H X, and the cards ``.model``,
-``.subckt``/``.ends``, ``.include``, ``.param``, ``.op``, ``.dc``, ``.ac``, ``.tran``
-and ``.end``.
+``.subckt``/``.ends``, ``.include``, ``.lib``, ``.param`` (also inside ``.subckt``),
+``.op``, ``.dc``, ``.ac``, ``.tran`` and ``.end``.
+
+Libraries: ``.lib file`` is the include form (as in LTspice). ``.lib file section``
+reads only the ``.lib section`` ... ``.endl`` block of that file. Inside an included
+file a one-word ``.lib name`` followed by ``.endl`` is a section header; such sections
+are skipped (with a warning) when the file is included without naming a section.
 """
 
 from __future__ import annotations
@@ -97,6 +102,10 @@ class _Site:
     file: str
 
 
+# An included file and the library section read from it (None = the whole file).
+_Key = tuple[Path, str | None]
+
+
 @dataclass
 class _Line:
     """One logical line: a card or element with its continuation lines joined."""
@@ -150,6 +159,19 @@ def _join(texts: list[str]) -> str:
         else:
             out += " " + text
     return out
+
+
+def _section_end(lines: list[_Line], start: int) -> int | None:
+    """Index of the ``.endl`` closing the one-word ``.lib name`` at ``start``, or None."""
+    if len(lines[start].tokens) != 2:
+        return None
+    for j in range(start + 1, len(lines)):
+        keyword = lines[j].keyword
+        if keyword == ".endl":
+            return j
+        if keyword == ".lib" and len(lines[j].tokens) == 2:
+            return None
+    return None
 
 
 # ---------------------------------------------------------------- parser
@@ -217,22 +239,61 @@ class _Parser:
         first: int,
         site: _Site | None,
         base_dir: Path | None,
-        stack: tuple[Path, ...],
+        stack: tuple[_Key, ...],
     ) -> list[_Line]:
+        return self.expand(self.split(physical, first, site), base_dir, stack)
+
+    def expand(
+        self, lines: list[_Line], base_dir: Path | None, stack: tuple[_Key, ...]
+    ) -> list[_Line]:
+        """Expand ``.include`` and ``.lib`` lines; drop library sections not asked for."""
         out: list[_Line] = []
-        for line in self.split(physical, first, site):
-            if line.keyword in (".include", ".inc"):
+        skipped: list[str] = []
+        first_skipped: _Line | None = None
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            keyword = line.keyword
+            if keyword in (".include", ".inc"):
                 out.extend(self.include(line, base_dir, stack))
-            elif line.site is not None and line.keyword == ".end":
-                continue  # an .end inside an included file does not end the netlist
+            elif keyword == ".lib":
+                end = _section_end(lines, i) if line.site is not None else None
+                if end is not None:
+                    skipped.append(line.tokens[1].text)
+                    first_skipped = first_skipped or line
+                    i = end + 1
+                    continue
+                if len(line.tokens) > 3:
+                    self.warning(line, line.tokens[3], f"unexpected '{line.tokens[3].text}'")
+                section = line.tokens[2] if len(line.tokens) > 2 else None
+                out.extend(self.include(line, base_dir, stack, section))
+            elif keyword == ".endl":
+                self.error(line, line.tokens[0], ".endl without .lib section")
+            elif line.site is not None and keyword == ".end":
+                pass  # an .end inside an included file does not end the netlist
             else:
                 out.append(line)
+            i += 1
+        if first_skipped is not None and first_skipped.site is not None:
+            file = first_skipped.site.file
+            self.warning(
+                first_skipped,
+                first_skipped.tokens[0],
+                f"{file} has library sections ({', '.join(skipped)}); choose one with "
+                f".lib {file} <section>. The sections were not read",
+            )
         return out
 
-    def include(self, line: _Line, base_dir: Path | None, stack: tuple[Path, ...]) -> list[_Line]:
+    def include(
+        self,
+        line: _Line,
+        base_dir: Path | None,
+        stack: tuple[_Key, ...],
+        section: _Token | None = None,
+    ) -> list[_Line]:
         card = line.tokens[0]
         if len(line.tokens) < 2:
-            self.error(line, card, ".include needs a file name")
+            self.error(line, card, f"{card.text.lower()} needs a file name")
             return []
         name = line.tokens[1].text.strip("'\"")
         path = Path(name)
@@ -250,7 +311,9 @@ class _Parser:
             resolved = path.resolve()
         except OSError:
             resolved = path
-        if resolved in stack:
+        wanted = section.text.strip("'\"") if section is not None else None
+        key = (resolved, wanted.casefold() if wanted is not None else None)
+        if key in stack:
             self.error(line, line.tokens[1], f"'{name}' includes itself")
             return []
         if len(stack) >= _MAX_INCLUDE_DEPTH:
@@ -266,7 +329,39 @@ class _Parser:
             site = _Site(card.line, card.col, path.name)
         else:
             site = _Site(line.site.line, line.site.col, path.name)
-        return self.read(text.splitlines(), 1, site, resolved.parent, (*stack, resolved))
+        if section is None:
+            return self.read(text.splitlines(), 1, site, resolved.parent, (*stack, key))
+        lines = self.split(text.splitlines(), 1, site)
+        block = self.section(line, section, path.name, lines)
+        if block is None:
+            return []
+        return self.expand(block, resolved.parent, (*stack, key))
+
+    def section(
+        self, line: _Line, section: _Token, file: str, lines: list[_Line]
+    ) -> list[_Line] | None:
+        """The lines of library section ``section`` in ``lines``, or None (reported)."""
+        wanted = section.text.strip("'\"")
+        names: list[str] = []
+        for i, header in enumerate(lines):
+            if header.keyword != ".lib" or len(header.tokens) != 2:
+                continue
+            names.append(header.tokens[1].text)
+            if header.tokens[1].text.casefold() != wanted.casefold():
+                continue
+            end = _section_end(lines, i)
+            if end is None:
+                self.error(header, header.tokens[0], f"missing .endl for .lib {wanted}")
+                return None
+            closer = lines[end]
+            if len(closer.tokens) > 1 and closer.tokens[1].text.casefold() != wanted.casefold():
+                self.warning(
+                    closer, closer.tokens[1], f".endl {closer.tokens[1].text} closes {wanted}"
+                )
+            return lines[i + 1 : end]
+        have = f" (it has {', '.join(names)})" if names else " (it has no sections)"
+        self.error(line, section, f"no library section '{wanted}' in {file}{have}")
+        return None
 
     # ---- stage 2: collect names used to resolve ambiguous lines
 
@@ -541,15 +636,16 @@ class _Parser:
 
     def param_card(self, line: _Line) -> None:
         card = line.tokens[0]
-        if self.state.subckt is not None:
-            self.warning(line, card, ".param inside .subckt is not supported in v0.1; ignored")
-            return
         positional, params = self.split_params(line, line.tokens[1:])
         for token in positional:
             self.error(line, token, f"expected name=value, got '{token.text}'")
         if not params and not positional:
             self.error(line, card, ".param needs name=value")
-        self.state.circuit.params.update(params)
+        sub = self.state.subckt
+        if sub is not None:
+            sub.local_params.update(params)
+        else:
+            self.state.circuit.params.update(params)
 
     def analysis_card(self, line: _Line) -> None:
         card = line.tokens[0]

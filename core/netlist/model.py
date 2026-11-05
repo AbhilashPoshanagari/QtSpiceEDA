@@ -56,13 +56,19 @@ class Model:
 
 @dataclass
 class Subcircuit:
-    """A ``.subckt name ports... params: k=v`` ... ``.ends`` block."""
+    """A ``.subckt name ports... params: k=v`` ... ``.ends`` block.
+
+    ``params`` are the ``params:`` defaults on the ``.subckt`` line; ``local_params``
+    the ``.param`` lines inside the block, in written order (later ones may use
+    earlier ones).
+    """
 
     name: str
     ports: list[str]
     elements: list[Element] = field(default_factory=list)
     models: list[Model] = field(default_factory=list)
     params: dict[str, str] = field(default_factory=dict)
+    local_params: dict[str, str] = field(default_factory=dict)
     source_line: int = field(default=0, compare=False)
 
 

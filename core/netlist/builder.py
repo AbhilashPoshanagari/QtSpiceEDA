@@ -55,7 +55,8 @@ def _subckt(sub: Subcircuit) -> list[str]:
     head = " ".join([".subckt", sub.name, *sub.ports])
     if sub.params:
         head += f" params: {_params(sub.params)}"
-    body = [_model(m) for m in sub.models] + [_element(e) for e in sub.elements]
+    body = [f".param {key}={value}" for key, value in sub.local_params.items()]
+    body += [_model(m) for m in sub.models] + [_element(e) for e in sub.elements]
     return [head, *body, f".ends {sub.name}"]
 
 
