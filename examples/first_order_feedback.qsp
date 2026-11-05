@@ -26,8 +26,8 @@
           {
             "id": "Sum1",
             "spec": "Sum",
-            "x": 220.0,
-            "y": 0.0,
+            "x": 200.0,
+            "y": 120.0,
             "settings": {
               "signs": "+-"
             }
@@ -35,8 +35,8 @@
           {
             "id": "Gain1",
             "spec": "Gain",
-            "x": 320.0,
-            "y": 0.0,
+            "x": 330.0,
+            "y": 120.0,
             "settings": {
               "k": 2.0
             }
@@ -44,8 +44,8 @@
           {
             "id": "Integrator1",
             "spec": "Integrator",
-            "x": 260.0,
-            "y": 140.0,
+            "x": 470.0,
+            "y": 120.0,
             "settings": {
               "initial": 0.0
             }
@@ -53,8 +53,8 @@
           {
             "id": "ScopeY",
             "spec": "Scope",
-            "x": 420.0,
-            "y": 140.0,
+            "x": 640.0,
+            "y": 120.0,
             "settings": {
               "label": "y"
             }
@@ -106,13 +106,8 @@
   ],
   "analysis": {
     "card": "",
-    "diagram_t_end": 6.0,
+    "diagram_t_end": 4.0,
     "diagram_dt": 0.001
   },
-  "results": [
-    {
-      "name": "diagram",
-      "file": "diagram.npz"
-    }
-  ]
+  "results": []
 }
