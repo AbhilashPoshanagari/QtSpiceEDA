@@ -55,3 +55,11 @@ def test_highlighting(qapp: object) -> None:
 
     bjt = _colors(document, 5)
     assert all(i not in bjt for i in range(9, 16))  # model name is not a number
+
+
+def test_dollar_comment(qapp: object) -> None:
+    document, _keep = _document("Title\nR1 a 0 1k $ 5 ohm\nR2 a$b 0 2k\n")
+    line = _colors(document, 1)
+    assert line[10] == "comment" and line[len("R1 a 0 1k $ 5 ohm") - 1] == "comment"
+    assert {line[i] for i in range(7, 9)} == {"number"}
+    assert "comment" not in _colors(document, 2).values()

@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from core.netlist.model import ERROR, WARNING, Analysis, Element, Model
-from core.netlist.parser import parse, parse_number
+from core.netlist.parser import comment_start, parse, parse_number
 from tests.netlists import GOOD, GOOD_FILES, INCLUDE_FILE
 
 
@@ -35,6 +35,9 @@ from tests.netlists import GOOD, GOOD_FILES, INCLUDE_FILE
         ("10uF", 10e-6),
         ("1kohm", 1e3),
         ("3V", 3.0),
+        ("10mil", 254e-6),
+        ("1MIL", 25.4e-6),
+        ("2mA", 2e-3),
     ],
 )
 def test_parse_number(text: str, value: float) -> None:
@@ -92,6 +95,20 @@ def test_comments_are_stripped() -> None:
     result = parse(text)
     assert result.diagnostics == []
     assert [e.value for e in result.circuit.elements] == ["1k", "2k"]
+
+
+def test_dollar_inline_comments_are_stripped() -> None:
+    text = "t\n$ whole line\nV1 a 0 1 $ source\nR1 a 0 1k\t$tab\nR2 a 0 2k\n.op $ op\n"
+    result = parse(text)
+    assert result.diagnostics == []
+    assert [e.value for e in result.circuit.elements] == ["1", "1k", "2k"]
+    assert len(result.circuit.analyses) == 1
+
+
+def test_dollar_inside_a_token_is_not_a_comment() -> None:
+    result = parse("t\nR1 a$b 0 1k\nR2 a$b 0 1k\n.op\n")
+    assert result.diagnostics == []
+    assert result.circuit.elements[0].nodes == ["a$b", "0"]
 
 
 def test_case_insensitive_cards_and_lowercase_nodes() -> None:
@@ -268,3 +285,19 @@ def test_never_raises_on_garbage() -> None:
 def test_non_string_input_does_not_raise() -> None:
     result = parse(None)  # type: ignore[arg-type]
     assert result.circuit is not None
+
+
+@pytest.mark.parametrize(
+    ("text", "index"),
+    [
+        ("R1 a 0 1k", -1),
+        ("R1 a 0 1k ; x", 10),
+        ("R1 a 0 1k $ x", 10),
+        ("$ x", 0),
+        ("R1 a$b 0 1k", -1),
+        ("R1 a 0 1k $ y ; z", 10),
+        ("R1 a 0 1k;z $ y", 9),
+    ],
+)
+def test_comment_start(text: str, index: int) -> None:
+    assert comment_start(text) == index

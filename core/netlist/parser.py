@@ -3,9 +3,10 @@
 ``parse(text, base_dir)`` never raises on bad input: every problem becomes a
 :class:`Diagnostic` in the returned :class:`ParseResult`.
 
-Supported: the title line, ``*`` and ``;`` comments, ``+`` continuation lines,
-elements R C L V I D Q M E F G H X, and the cards ``.model``, ``.subckt``/``.ends``,
-``.include``, ``.param``, ``.op``, ``.dc``, ``.ac``, ``.tran`` and ``.end``.
+Supported: the title line, ``*`` comments, ``;`` and ``$`` inline comments, ``+``
+continuation lines, elements R C L V I D Q M E F G H X, and the cards ``.model``,
+``.subckt``/``.ends``, ``.include``, ``.param``, ``.op``, ``.dc``, ``.ac``, ``.tran``
+and ``.end``.
 """
 
 from __future__ import annotations
@@ -28,7 +29,9 @@ from core.netlist.model import (
 
 # ---------------------------------------------------------------- numbers
 
-_NUMBER_RE = re.compile(r"([+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)(meg|[fpnumkgt])?([a-z]*)", re.I)
+_NUMBER_RE = re.compile(
+    r"([+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)(meg|mil|[fpnumkgt])?([a-z]*)", re.I
+)
 _SCALE = {
     "f": 1e-15,
     "p": 1e-12,
@@ -37,6 +40,7 @@ _SCALE = {
     "m": 1e-3,
     "k": 1e3,
     "meg": 1e6,
+    "mil": 25.4e-6,
     "g": 1e9,
     "t": 1e12,
 }
@@ -45,9 +49,10 @@ _SCALE = {
 def parse_number(text: str) -> float | None:
     """Parse a SPICE number such as ``4.7k``, ``10uF``, ``1MEG`` or ``-2.5e-3``.
 
-    Suffixes (case-insensitive): f p n u m k meg g t, where ``m`` is milli and ``meg``
-    mega. As in ngspice, letters after the number and suffix are ignored (``10uF``,
-    ``1kohm``). Returns None when the text does not start with a valid number.
+    Suffixes (case-insensitive): f p n u m k meg g t mil, where ``m`` is milli, ``meg``
+    mega and ``mil`` a thousandth of an inch (25.4u). As in ngspice, letters after the
+    number and suffix are ignored (``10uF``, ``1kohm``). Returns None when the text does
+    not start with a valid number.
     """
     match = _NUMBER_RE.fullmatch(text.strip())
     if match is None:
@@ -72,6 +77,8 @@ _SOURCE_WORDS = frozenset(
     {"dc", "ac", "sin", "pulse", "pwl", "exp", "sffm", "am", "distof1", "distof2", "(", ")"}
 )
 _MAX_INCLUDE_DEPTH = 16
+# As in ngspice, "$" starts an inline comment at the start of a line or after a space.
+_DOLLAR_COMMENT_RE = re.compile(r"(?:^|(?<=\s))\$")
 
 
 @dataclass(frozen=True)
@@ -114,6 +121,18 @@ class _State:
     subckt: Subcircuit | None = None
     in_control: bool = False
     ended: bool = False
+
+
+def comment_start(text: str) -> int:
+    """Index where an inline comment starts in ``text``, or -1 if there is none.
+
+    ``;`` starts a comment anywhere; ``$`` at the start of a line or after a space.
+    """
+    starts = [i for i in (text.find(";"),) if i >= 0]
+    dollar = _DOLLAR_COMMENT_RE.search(text)
+    if dollar is not None:
+        starts.append(dollar.start())
+    return min(starts, default=-1)
 
 
 def _tokenize(text: str, line: int, start: int = 0) -> list[_Token]:
@@ -173,7 +192,8 @@ class _Parser:
         lines: list[_Line] = []
         for offset, raw in enumerate(physical):
             number = first + offset
-            text = raw.split(";", 1)[0]
+            cut = comment_start(raw)
+            text = raw if cut < 0 else raw[:cut]
             stripped = text.lstrip()
             if not stripped or stripped.startswith("*"):
                 continue

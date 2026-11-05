@@ -6,6 +6,8 @@ import re
 
 from PySide6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat, QTextDocument
 
+from core.netlist.parser import comment_start
+
 # Same number syntax as core.netlist.parser.parse_number, but only where a number
 # starts a word (so "R1" and "q2n2222" are not highlighted).
 _NUMBER_RE = re.compile(
@@ -57,10 +59,10 @@ class NetlistHighlighter(QSyntaxHighlighter):
             return
 
         code = text
-        semicolon = text.find(";")
-        if semicolon >= 0:
-            code = text[:semicolon]
-            self.setFormat(semicolon, len(text) - semicolon, self._formats["comment"])
+        cut = comment_start(text)
+        if cut >= 0:
+            code = text[:cut]
+            self.setFormat(cut, len(text) - cut, self._formats["comment"])
 
         start = 0
         if stripped.startswith("."):
