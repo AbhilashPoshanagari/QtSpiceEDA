@@ -8,6 +8,7 @@ dist/
 .pytest_cache/
 .ruff_cache/
 *.npz
+/temp/*
 
 # ngspice binaries: install locally (see third_party/ngspice/README.md)
 third_party/ngspice/lib/*.dll
