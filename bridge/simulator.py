@@ -36,7 +36,7 @@ QML_IMPORT_NAME = "QtSpice"
 QML_IMPORT_MAJOR_VERSION = 1
 
 NETLIST_SUFFIXES = (".cir", ".net", ".sp")
-MAX_CONSOLE_LINES = 5000
+MAX_CONSOLE_LINES = 2000
 _QUEUED = Qt.ConnectionType.QueuedConnection
 
 
@@ -269,6 +269,17 @@ class Simulator(QObject):
         self._worker.arm()
         self._start.emit(deck)
         return True
+
+    @Slot(str, result=str)
+    def checkAnalysisCard(self, card: str) -> str:  # noqa: N802 - QML API
+        """Error message for an analysis card such as ".ac dec 10 1 1k", or "" if valid."""
+        result = parse(f"card check\n{card}\n.end\n")
+        for d in result.diagnostics:
+            if d.severity == ERROR and d.line == 2:
+                return d.message
+        if not result.circuit.analyses:
+            return "not an analysis card (.op, .dc, .ac or .tran)"
+        return ""
 
     @Slot()
     def stop(self) -> None:

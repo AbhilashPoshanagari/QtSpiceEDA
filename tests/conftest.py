@@ -6,8 +6,12 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest  # noqa: E402
+from PySide6.QtQuickControls2 import QQuickStyle  # noqa: E402
 
 from core.sim.ngspice_adapter import NgspiceAdapter  # noqa: E402
+
+# Same style as the app; it must be set before any test loads QML.
+QQuickStyle.setStyle("Fusion")
 
 
 def _ngspice_status() -> tuple[bool, str]:
