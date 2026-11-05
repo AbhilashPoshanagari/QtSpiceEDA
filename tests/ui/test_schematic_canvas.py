@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -12,7 +13,7 @@ from PySide6.QtQuick import QQuickItem
 from PySide6.QtTest import QTest
 
 from core.schematic.connectivity import connect
-from core.schematic.model import Schematic, Wire, pin_points
+from core.schematic.model import Instance, Schematic, Wire, pin_points
 from tests.ui.mouse import click, drag, find_item, find_items, key, wheel
 from tests.ui.qml_harness import qml_scene
 
@@ -388,3 +389,55 @@ def test_toolbar_undo_and_redo(scene: Scene) -> None:
     assert scene.ctl.schematic() == rc() and redo.property("enabled") is True
     redo.clicked.emit()
     assert len(scene.ctl.schematic().grounds) == 3
+
+
+# ---------------------------------------------------------------- 300 parts + 600 wires
+
+
+def big_sheet(n: int = 300) -> Schematic:
+    s = Schematic()
+    for i in range(n):
+        x, y = (i % 20) * 160, (i // 20) * 192
+        s.instances.append(Instance("res", f"R{i + 1}", x, y, attrs={"Value": "1k"}))
+        s.wires.append(Wire(x + 16, y, x + 16, y - 48))
+        s.wires.append(Wire(x + 16, y + 96, x + 176, y + 96))
+    return s
+
+
+def test_big_sheet_pans_and_zooms_without_touching_the_parts(scene: Scene) -> None:
+    """Pan and zoom only move/scale one item: no part is rebuilt, no model row changes.
+    (Frame rates are measured on screen by scratch/schematic_demo/bench.py.)"""
+    scene.ctl.load_schematic(big_sheet())
+    scene.qtbot.wait(50)
+    scene.fit()
+    parts = scene.symbols()
+    assert len(parts) == 300 and scene.ctl.wires.count == 600
+    changed: list[int] = []
+    scene.ctl.instances.dataChanged.connect(lambda *_: changed.append(1))
+    start = time.perf_counter()
+    for k in range(30):
+        scene.canvas.zoomAt(500, 350, 1.1 if k < 15 else 1 / 1.1)
+        scene.canvas.setProperty("panX", scene.canvas.property("panX") + 5)
+        scene.qtbot.wait(1)
+    elapsed = time.perf_counter() - start
+    scene.qtbot.wait(150)  # line widths settle
+    assert changed == []
+    assert scene.symbols() == parts  # the very same delegate objects
+    assert elapsed < 3.0, f"30 pan/zoom steps took {elapsed:.2f} s"
+
+
+def test_big_sheet_edits_stay_fast(scene: Scene) -> None:
+    scene.ctl.load_schematic(big_sheet())
+
+    def timed(fn) -> float:  # noqa: ANN001
+        start = time.perf_counter()
+        fn()
+        return (time.perf_counter() - start) * 1e3
+
+    assert timed(lambda: scene.ctl.addGround(5000, 5000)) < 250
+    assert timed(scene.ctl.undo) < 250
+    scene.ctl.select("instance", 150, False)
+    scene.ctl.beginMove(0, 0, True)
+    moves = [timed(lambda x=x: scene.ctl.moveTo(x, 0)) for x in range(16, 330, 16)]
+    scene.ctl.endMove()
+    assert sorted(moves)[len(moves) // 2] < 100, moves
