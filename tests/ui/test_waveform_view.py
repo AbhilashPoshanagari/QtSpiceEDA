@@ -129,3 +129,26 @@ def test_plot_area_geometry_matches_qtgraphs(qapp: object, tmp_path: Path, qtbot
         assert dark, "cursor line not found"
         found = min(dark, key=lambda x: abs(x - (origin.x() + expected)))
         assert abs(found - (origin.x() + expected)) <= 2
+
+
+def test_ac_then_tran_and_back(qapp: object, tmp_path: Path, qtbot, qtlog) -> None:
+    # .ac then .tran used to abort the app: the trace series were destroyed while
+    # still in the GraphsView (QtGraphs 6.8 pure virtual call). The series are now a
+    # pool that is reused, and trace colours never come out undefined.
+    with qml_window(tmp_path, "WaveformView") as (engine, _, view):
+        model = engine.singletonInstance("QtSpice", "WaveformModel")
+        plot = _child(view, "magnitudePlot")
+        for result, names in (
+            (tran_result(1_001), ["V(out)", "V(in)"]),
+            (ac_result(), ["V(out)"]),
+            (tran_result(2_001), ["V(out)", "V(in)"]),
+            (ac_result(), ["V(out)"]),
+        ):
+            model.set_result(result)
+            _settle(qtbot)
+            series = _series(plot)
+            assert [s["name"] for s in series] == names
+            assert all(s["visible"] and s["count"] > 0 for s in series)
+        assert _child(view, "phasePlot").property("visible") is True
+    warnings = [r.message for r in qtlog.records if "Unable to assign" in r.message]
+    assert warnings == []

@@ -24,7 +24,7 @@ Item {
     property bool cursorsVisible: true
 
     function colorFor(index) {
-        return colors[index % colors.length]
+        return colors[Math.max(0, index) % colors.length]  // -1: not a trace (indexOf)
     }
 
     function fit() {
@@ -115,16 +115,20 @@ Item {
         function refresh() {
             const names = WaveformModel.traceNames
             const state = []
-            for (let i = 0; i < seriesFactory.count; ++i) {
-                const s = seriesFactory.objectAt(i)
-                const shown = WaveformModel.isVisible(names[i])
+            growPool(names.length)
+            for (let i = 0; i < pool.length; ++i) {
+                const s = pool[i]
+                const used = i < names.length
+                const shown = used && WaveformModel.isVisible(names[i])
+                s.name = used ? names[i] : ""
                 s.visible = shown
                 if (shown)
                     WaveformModel.fillSeries(s, names[i], root.x0, root.x1,
                                              Math.round(plotWidth), phase)
                 else
                     s.clear()
-                state.push({ name: names[i], visible: shown, count: s.count })
+                if (used)
+                    state.push({ name: names[i], visible: shown, count: s.count })
             }
             seriesState = state
             const range = WaveformModel.yRange(root.x0, root.x1, phase)
@@ -204,21 +208,29 @@ Item {
             }
         }
 
-        Instantiator {
-            id: seriesFactory
-            model: WaveformModel.traceNames
-            delegate: LineSeries {
-                required property int index
-                required property string modelData
-                name: modelData
-                color: root.colorFor(index)
+        // Trace series: a pool that only grows and lives as long as the graph, like the
+        // cursor series. refresh() names, fills or hides them. Series are never removed
+        // or destroyed while the view is up: in QtGraphs 6.8 a LineSeries destroyed while
+        // still in a GraphsView aborts the process (pure virtual call in removeSeries),
+        // which happened when an Instantiator rebuilt them for a new result.
+        property var pool: []
+
+        function growPool(count) {
+            while (pool.length < count) {
+                const s = seriesComponent.createObject(graph, {
+                    color: root.colorFor(pool.length)
+                })
+                graph.addSeries(s)
+                pool.push(s)
+            }
+        }
+
+        Component {
+            id: seriesComponent
+            LineSeries {
                 width: 1.5
+                visible: false
             }
-            onObjectAdded: (index, object) => {
-                graph.addSeries(object)
-                root.scheduleRefresh()
-            }
-            onObjectRemoved: (index, object) => graph.removeSeries(object)
         }
 
         Label {
