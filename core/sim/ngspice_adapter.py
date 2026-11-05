@@ -87,6 +87,15 @@ def library_candidates() -> list[Path | str]:
         roots += [Path("/opt/homebrew/lib"), Path("/usr/local/lib")]
     for root in roots:
         candidates += [root / name for name in names]
+    if bundle:
+        # A packaged app keeps the library under its real file name, which may carry
+        # a full version (libngspice.so.0.0.0, libngspice.0.dylib, ...).
+        bundled = Path(bundle) / "ngspice"
+        candidates += sorted(
+            p
+            for p in bundled.glob("*ngspice*")
+            if p.suffix in (".dll", ".dylib") or ".so" in p.suffixes
+        )
 
     found = ctypes.util.find_library("ngspice")
     if found:
