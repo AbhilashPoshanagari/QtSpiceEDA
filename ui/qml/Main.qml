@@ -25,17 +25,6 @@ ApplicationWindow {
         }
     }
 
-    // Placeholder pane: replaced by the real views in later phases.
-    component Placeholder: Rectangle {
-        property string text
-        color: palette.base
-        Label {
-            anchors.centerIn: parent
-            text: parent.text
-            color: palette.placeholderText
-        }
-    }
-
     header: ToolBar {
         RowLayout {
             anchors.fill: parent
@@ -113,7 +102,19 @@ ApplicationWindow {
                     Layout.fillHeight: true
                     currentIndex: leftTabs.currentIndex
                     NetlistEditor { id: netlistEditor }
-                    Placeholder { text: qsTr("Block library and canvas (Phase 4-5)") }
+                    SplitView {
+                        orientation: Qt.Vertical
+                        BlockLibrary {
+                            SplitView.preferredHeight: 300
+                            SplitView.minimumHeight: 120
+                            onEditBlock: name => functionEditor.openBlock(name)
+                        }
+                        FunctionEditor {
+                            id: functionEditor
+                            SplitView.fillHeight: true
+                            SplitView.minimumHeight: 120
+                        }
+                    }
                 }
             }
 
