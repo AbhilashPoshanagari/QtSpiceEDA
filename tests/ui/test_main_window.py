@@ -18,9 +18,17 @@ def test_main_window_loads(qapp: object) -> None:
     window = roots[0]
 
     for name in ("openButton", "saveButton", "checkButton", "runButton", "stopButton"):
-        button = window.findChild(QObject, name)
-        assert button is not None, name
-        assert button.property("enabled") is False, name
+        assert window.findChild(QObject, name) is not None, name
+    # Phase 2 enables Open and Check; the rest arrive in later phases.
+    for name, enabled in (
+        ("openButton", True),
+        ("checkButton", True),
+        ("saveButton", False),
+        ("runButton", False),
+        ("stopButton", False),
+    ):
+        assert window.findChild(QObject, name).property("enabled") is enabled, name
+    assert window.findChild(QObject, "netlistEditor") is not None
 
     left = window.findChild(QObject, "leftTabs")
     bottom = window.findChild(QObject, "bottomTabs")

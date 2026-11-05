@@ -26,10 +26,18 @@ ApplicationWindow {
             anchors.fill: parent
             spacing: 4
             // Actions are wired to the bridge objects in later phases.
-            ToolButton { objectName: "openButton"; text: qsTr("Open"); enabled: false }
+            ToolButton {
+                objectName: "openButton"
+                text: qsTr("Open")
+                onClicked: netlistEditor.openDialog()
+            }
             ToolButton { objectName: "saveButton"; text: qsTr("Save"); enabled: false }
             ToolSeparator {}
-            ToolButton { objectName: "checkButton"; text: qsTr("Check"); enabled: false }
+            ToolButton {
+                objectName: "checkButton"
+                text: qsTr("Check")
+                onClicked: netlistEditor.check()
+            }
             ToolButton { objectName: "runButton"; text: qsTr("Run"); enabled: false }
             ToolButton { objectName: "stopButton"; text: qsTr("Stop"); enabled: false }
             Item { Layout.fillWidth: true }
@@ -61,7 +69,7 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     currentIndex: leftTabs.currentIndex
-                    Placeholder { text: qsTr("Netlist editor (Phase 2)") }
+                    NetlistEditor { id: netlistEditor }
                     Placeholder { text: qsTr("Block library and canvas (Phase 4-5)") }
                 }
             }

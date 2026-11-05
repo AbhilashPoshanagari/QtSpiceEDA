@@ -9,6 +9,8 @@ from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
 
+import bridge.simulator  # noqa: F401  registers the QtSpice QML types
+
 QML_DIR = Path(__file__).resolve().parents[1] / "ui" / "qml"
 MAIN_QML = QML_DIR / "Main.qml"
 
