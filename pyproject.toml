@@ -33,6 +33,7 @@ files = [
     "bridge/highlighter.py",
     "bridge/sim_worker.py",
     "bridge/simulator.py",
+    "bridge/waveform_model.py",
     "core/__init__.py",
     "core/netlist/__init__.py",
     "core/netlist/builder.py",
@@ -62,6 +63,7 @@ files = [
     "tests/ui/test_netlist_editor.py",
     "tests/ui/test_sim_worker.py",
     "tests/ui/test_simulator.py",
+    "tests/ui/test_waveform_model.py",
     "examples/rc_lowpass.cir",
     "CLAUDE.md",
 ]
