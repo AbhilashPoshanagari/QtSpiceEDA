@@ -24,6 +24,25 @@ dev = [
 [project.scripts]
 qtspice = "app.__main__:main"
 
+# Lets Qt Creator open this file as a project. Add new source files here.
+[tool.pyside6-project]
+files = [
+    "app/__init__.py",
+    "app/__main__.py",
+    "bridge/__init__.py",
+    "core/__init__.py",
+    "core/sim/__init__.py",
+    "core/sim/backend.py",
+    "core/sim/ngspice_adapter.py",
+    "core/sim/result.py",
+    "ui/qml/Main.qml",
+    "tests/conftest.py",
+    "tests/core/sim/test_ngspice_rc.py",
+    "tests/core/sim/test_result.py",
+    "tests/ui/test_main_window.py",
+    "CLAUDE.md",
+]
+
 [tool.setuptools.packages.find]
 include = ["app*", "core*", "bridge*"]
 

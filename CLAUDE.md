@@ -65,6 +65,8 @@ ruff check . && ruff format --check .
 - Type hints everywhere; dataclasses for data; no global mutable state.
 - Every core module has tests under tests/core/ mirroring its path.
 - Tests that need ngspice are marked @pytest.mark.ngspice and skip if it is missing.
+- When adding or removing a source file, update [tool.pyside6-project] files in
+  pyproject.toml (Qt Creator uses it to open the project).
 - One component per commit; message format "<area>: <what>".
 - Before saying a task is done: ruff and pytest must both pass.
 - For ngspice API details, read third_party/ngspice/include/sharedspice.h; do not guess.
