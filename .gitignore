@@ -15,3 +15,7 @@ third_party/ngspice/lib/*.lib
 third_party/ngspice/lib/*.so*
 third_party/ngspice/lib/*.dylib
 third_party/ngspice/bin/
+
+# Qt Creator per-user settings
+.qtcreator/
+*.pyproject.user
