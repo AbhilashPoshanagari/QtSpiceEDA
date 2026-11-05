@@ -13,6 +13,11 @@ Pane {
 
     signal place(string name)
 
+    function focusSearch() {
+        search.forceActiveFocus()
+        search.selectAll()
+    }
+
     property string current: list.currentIndex >= 0 && list.currentIndex < filtered.length
                              ? filtered[list.currentIndex] : ""
     property var names: SchematicController.placeableSymbols()

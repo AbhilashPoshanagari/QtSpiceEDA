@@ -35,7 +35,7 @@ from bridge.diagram_controller import RowModel
 from core.netlist.libindex import LIBRARY_SUFFIXES, LibraryIndex
 from core.netlist.model import ERROR
 from core.schematic import edit as edit_ops
-from core.schematic.connectivity import connect
+from core.schematic.connectivity import NetMap, connect
 from core.schematic.geometry import (
     GROUND,
     INSTANCE,
@@ -68,7 +68,12 @@ from core.schematic.model import (
     Wire,
     pin_points,
 )
-from core.schematic.netlister import NET_FLAG_SYMBOLS, netlist_part
+from core.schematic.netlister import (
+    NET_FLAG_SYMBOLS,
+    NetlistedSchematic,
+    netlist_part,
+    netlist_schematic,
+)
 from core.symbols.asy import Symbol
 from core.symbols.library import SymbolLibrary
 
@@ -343,6 +348,9 @@ class SchematicController(QObject):
         self._undo = QUndoStack(self)
         self._live: _Live | None = None
         self._clipboard: Schematic | None = None
+        self._simulator: QObject | None = None
+        self._problems: list[dict[str, object]] = []
+        self._ran: _Ran | None = None
         self._selection: set[tuple[str, int]] = set()
         self._symbol_cache: dict[str, Symbol | None] = {}
         self._geometry_cache: dict[str, dict[str, object]] = {}
@@ -1138,6 +1146,65 @@ class SchematicController(QObject):
         labels = self._schematic.labels
         return labels[index].name if 0 <= index < len(labels) else ""
 
+    # ---- check and run (S10)
+    #
+    # check() netlists the sheet (S3) and lists the problems; run() does the same and,
+    # without errors, hands the netlist text to the existing Simulator (rule 8: there is
+    # no second simulation path). The Simulator is attached once by Main.qml. The
+    # sheet that ran is kept (``ran``) so probes (S11) know its nets.
+
+    problemsChanged = Signal()
+    ranChanged = Signal()
+
+    @Slot(QObject)
+    def attachSimulator(self, simulator: QObject) -> None:  # noqa: N802
+        self._simulator = simulator
+
+    def _get_problems(self) -> list[dict[str, object]]:
+        return list(self._problems)
+
+    problems = Property("QVariantList", _get_problems, notify=problemsChanged)
+
+    def _base_dir(self) -> Path | None:
+        sim = self._simulator
+        path = str(sim.property("filePath") or "") if sim is not None else ""
+        return Path(path).parent if path else None
+
+    def _netlist(self) -> NetlistedSchematic:
+        result = netlist_schematic(self._schematic, self.lookup, self._base_dir())
+        self._problems = [
+            {"severity": d.severity, "message": d.message} for d in result.diagnostics
+        ]
+        self.problemsChanged.emit()
+        return result
+
+    @Slot(result=bool)
+    def check(self) -> bool:
+        """Netlist the sheet and list its problems; True when there are no errors."""
+        self.cancelLive()
+        return self._netlist().ok
+
+    @Slot(result=bool)
+    def run(self) -> bool:
+        """Netlist the sheet and start the Simulator on it; False if it did not start
+        (the reason is in ``problems`` or the Simulator's ``statusText``)."""
+        self.cancelLive()
+        result = self._netlist()
+        sim = self._simulator
+        if sim is None:
+            return False
+        if not result.ok:
+            errors = sum(1 for p in self._problems if p["severity"] == ERROR)
+            sim.set_status_text(f"Not started: the schematic has {errors} error(s)")  # type: ignore[attr-defined]
+            return False
+        started = bool(
+            sim.run(result.text, publish=False, extra_cards=RUN_CARDS)  # type: ignore[attr-defined]
+        )
+        if started:
+            self._ran = _Ran(self.schematic(), result.nets, self._undo.index())
+            self.ranChanged.emit()
+        return started
+
     # ---- settings
 
     def _read_list(self, key: str) -> list[str]:
@@ -1227,6 +1294,19 @@ def _flag_row(
         "direction": direction,
         "selected": selected,
     }
+
+
+# Cards added to every schematic run, just before .end (S11 adds savecurrents).
+RUN_CARDS: tuple[str, ...] = ()
+
+
+@dataclass
+class _Ran:
+    """The sheet as it was when it last ran, with its nets (for probing)."""
+
+    schematic: Schematic
+    nets: NetMap
+    undo_index: int
 
 
 @dataclass

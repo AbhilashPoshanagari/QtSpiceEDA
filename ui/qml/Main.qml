@@ -20,6 +20,7 @@ ApplicationWindow {
         DiagramController.attachWaveforms(WaveformModel)
         ProjectManager.attach(Simulator, DiagramController, WaveformModel)
         ProjectManager.attachSchematic(SchematicController)
+        SchematicController.attachSimulator(Simulator)
     }
 
     onClosing: close => {
@@ -233,8 +234,12 @@ ApplicationWindow {
         text: ProjectManager.statusText
     }
 
+    // Run and Check follow the left tab: the schematic when it is shown, else the netlist.
+    readonly property bool schematicShown: leftTabs.currentIndex === 2
+
     function runSimulation() {
-        if (Simulator.run(netlistEditor.text))
+        const started = schematicShown ? SchematicController.run() : Simulator.run(netlistEditor.text)
+        if (started)
             bottomTabs.currentIndex = 2  // Console while it runs
     }
 
@@ -270,7 +275,7 @@ ApplicationWindow {
             ToolButton {
                 objectName: "checkButton"
                 text: qsTr("Check")
-                onClicked: netlistEditor.check()
+                onClicked: window.schematicShown ? SchematicController.check() : netlistEditor.check()
             }
             ToolButton {
                 objectName: "runButton"
@@ -347,6 +352,7 @@ ApplicationWindow {
                         }
                     }
                     PartPicker {
+                        id: partPicker
                         onPlace: name => schematicCanvas.startPlace(name)
                     }
                 }
@@ -371,7 +377,10 @@ ApplicationWindow {
                         SplitView.minimumWidth: 160
                     }
                 }
-                SchematicCanvas { id: schematicCanvas }
+                SchematicCanvas {
+                    id: schematicCanvas
+                    onPartPickerRequested: partPicker.focusSearch()
+                }
             }
         }
 

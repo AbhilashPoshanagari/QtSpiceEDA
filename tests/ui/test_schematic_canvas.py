@@ -515,3 +515,84 @@ def test_text_tool_places_a_directive_and_double_click_edits_it(scene: Scene) ->
     scene.canvas.findChild(QObject, "commentBox").setProperty("checked", True)
     scene.canvas.findChild(QObject, "textOk").clicked.emit()
     assert scene.ctl.schematic().texts[-1] == TextItem(160, 304, ".tran 10m", False)
+
+
+# ---------------------------------------------------------------- S10
+
+
+def test_letter_keys_place_parts_when_the_canvas_has_focus(empty: Scene) -> None:
+    move_click(empty, 0, 0)  # focus the canvas
+    for k, symbol in (
+        (Qt.Key.Key_R, "res"),
+        (Qt.Key.Key_C, "cap"),
+        (Qt.Key.Key_L, "ind"),
+        (Qt.Key.Key_D, "diode"),
+    ):
+        key(empty.window, k)
+        assert empty.canvas.property("mode") == "place"
+        assert empty.ctl.property("placing") == symbol
+    key(empty.window, Qt.Key.Key_G)
+    assert empty.canvas.property("mode") == "ground"
+    key(empty.window, Qt.Key.Key_Escape)
+
+
+def test_letter_keys_do_nothing_while_typing_elsewhere(picker: Scene) -> None:
+    search = find_item(picker.window, "partSearch")
+    search.forceActiveFocus()
+    key(picker.window, Qt.Key.Key_R)
+    assert picker.canvas.property("mode") == "select"
+    assert search.property("text") == "r"
+
+
+def test_function_keys_pick_the_tools(empty: Scene) -> None:
+    for k, mode in (
+        (Qt.Key.Key_F3, "wire"),
+        (Qt.Key.Key_F5, "delete"),
+        (Qt.Key.Key_F7, "move"),
+        (Qt.Key.Key_F8, "drag"),
+    ):
+        key(empty.window, k)
+        assert empty.canvas.property("mode") == mode
+    key(empty.window, Qt.Key.Key_F4)
+    assert empty.canvas.findChild(QObject, "labelPopup").property("visible") is True
+
+
+def test_f2_asks_for_the_part_picker(empty: Scene) -> None:
+    with empty.qtbot.waitSignal(empty.canvas.partPickerRequested):
+        key(empty.window, Qt.Key.Key_F2)
+
+
+def test_delete_tool_and_f9_undo_shift_f9_redo(scene: Scene) -> None:
+    key(scene.window, Qt.Key.Key_F5)
+    move_click(scene, 304, 176)  # C1
+    assert [i.name for i in scene.ctl.schematic().instances] == ["V1", "R2"]
+    key(scene.window, Qt.Key.Key_F9)
+    assert scene.ctl.schematic() == rc()
+    key(scene.window, Qt.Key.Key_F9, Qt.KeyboardModifier.ShiftModifier)
+    assert len(scene.ctl.schematic().instances) == 2
+
+
+def test_drag_tool_drags_with_wires_following(scene: Scene) -> None:
+    key(scene.window, Qt.Key.Key_F8)
+    drag(scene.window, scene.at(304, 176), scene.at(368, 176))
+    assert connect(scene.ctl.schematic(), scene.ctl.lookup).pins[1] == ["OUT", "0"]
+    assert scene.ctl.property("undoText") == "drag"
+
+
+def test_help_panel_lists_the_shortcuts(scene: Scene) -> None:
+    key(scene.window, Qt.Key.Key_F1)
+    assert scene.canvas.findChild(QObject, "helpPanel").property("visible") is True
+    keys = [i.property("text") for i in find_items(scene.window, "shortcutKey")]
+    for wanted in ("R", "C", "L", "D", "G", "F2", "F3", "F4", "F5", "F7", "F8", "F9 / Ctrl+Z"):
+        assert wanted in keys
+
+
+def test_problems_show_under_the_sheet(scene: Scene) -> None:
+    strip = find_item(scene.canvas, "problemList")
+    assert strip.property("visible") is False
+    scene.ctl._edit("cut", lambda s: s.wires.pop(4))
+    scene.ctl.check()
+    scene.qtbot.wait(20)
+    assert strip.property("visible") is True
+    texts = [i.property("text") for i in find_items(scene.canvas, "problemItem")]
+    assert any("C1: pin B is not connected" in t for t in texts)

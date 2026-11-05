@@ -73,3 +73,32 @@ def test_run_and_stop_from_the_toolbar(qapp: object, qtbot) -> None:
         sim.shutdown()
         window.close()
         engine.deleteLater()
+
+
+@pytest.mark.ngspice
+def test_run_from_the_toolbar_runs_the_schematic_on_its_tab(qapp: object, qtbot) -> None:
+    import json
+
+    from core.schematic.model import Schematic
+
+    engine = create_engine()
+    window = engine.rootObjects()[0]
+    sim = engine.singletonInstance("QtSpice", "Simulator")
+    ctl = engine.singletonInstance("QtSpice", "SchematicController")
+    try:
+        rc = Path(__file__).resolve().parents[1] / "fixtures" / "schematics" / "rc" / "rc.json"
+        ctl.load_schematic(Schematic.from_dict(json.loads(rc.read_text("utf-8")))[0])
+        window.findChild(QObject, "leftTabs").setProperty("currentIndex", 2)
+        with qtbot.waitSignal(sim.resultReady, timeout=20_000):
+            window.findChild(QObject, "runButton").clicked.emit()
+        assert sim.result.analysis == "ac"
+        deck = window.findChild(QObject, "deckText") or None
+        sent = sim.property("sentDeck")
+        assert sent.startswith("AC RC filter\n") and "R2 in out 10k" in sent
+        if deck is not None:
+            assert deck.property("text") == sent
+        assert sim.property("netlistText") == ""  # the netlist editor is untouched
+    finally:
+        sim.shutdown()
+        window.close()
+        engine.deleteLater()

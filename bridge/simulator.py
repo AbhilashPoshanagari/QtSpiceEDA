@@ -248,6 +248,10 @@ class Simulator(QObject):
             self._progress = percent
             self.progressChanged.emit()
 
+    def set_status_text(self, text: str) -> None:
+        """Show ``text`` as the run status (used by the schematic's Run, S10)."""
+        self._set_status(text)
+
     def _set_status(self, text: str) -> None:
         if text != self._status_text:
             self._status_text = text
@@ -265,8 +269,10 @@ class Simulator(QObject):
         """Parse and validate ``text``. Returns True if there are no errors."""
         return self._check(text)[0]
 
-    def _check(self, text: str) -> tuple[bool, Circuit]:
-        self._last_text = text
+    def _check(self, text: str, publish: bool = True) -> tuple[bool, Circuit, list[Diagnostic]]:
+        """Parse and validate ``text``. With ``publish`` (the netlist editor's text) the
+        result becomes ``diagnostics``, ``deck`` and ``netlistAnalysis``; a schematic
+        run checks without touching what the netlist editor shows."""
         base_dir = Path(self._file_path).parent if self._file_path else None
         result = parse(text, base_dir)
         found: list[Diagnostic] = sorted(
@@ -274,6 +280,9 @@ class Simulator(QObject):
             key=lambda d: (d.line, d.col),
         )
         ok = not any(d.severity == ERROR for d in found)
+        if not publish:
+            return ok, result.circuit, found
+        self._last_text = text
         self._diagnostics = [d.to_dict() for d in found]
         self.diagnosticsChanged.emit()
         deck = build(result.circuit) if ok else ""
@@ -285,29 +294,37 @@ class Simulator(QObject):
         if first != self._netlist_analysis:
             self._netlist_analysis = first
             self.netlistAnalysisChanged.emit()
-        return ok, result.circuit
+        return ok, result.circuit, found
 
     @Slot(str, result=bool)
-    def run(self, text: str) -> bool:
+    def run(self, text: str, publish: bool = True, extra_cards: tuple[str, ...] = ()) -> bool:
         """Check ``text`` and start a simulation in the background.
 
         Returns False (and sets ``statusText``) if it did not start: the netlist has
         errors, there is no analysis, the analysis card is invalid, ngspice is missing
         or a run is already going.
+
+        Python callers (the schematic, S10) pass ``publish=False`` so the netlist
+        editor's diagnostics stay its own, and may add ``extra_cards`` (such as
+        ``.options savecurrents``) to the deck just before ``.end``.
         """
         if self._running:
             self._set_status("A simulation is already running")
             return False
-        ok, circuit = self._check(text)
+        ok, circuit, found = self._check(text, publish)
         if not ok:
-            errors = sum(1 for d in self._diagnostics if d["severity"] == ERROR)
+            errors = sum(1 for d in found if d.severity == ERROR)
             self._set_status(f"Not started: the netlist has {errors} error(s)")
             return False
-        card = self._analysis_card or self._netlist_analysis
+        own = _card(circuit.analyses[0]) if circuit.analyses else ""
+        card = self._analysis_card or (self._netlist_analysis if publish else own)
         if not card:
             self._set_status("Not started: no analysis (.op, .dc, .ac or .tran)")
             return False
         deck = build(circuit, card)
+        if extra_cards:
+            lines = deck.splitlines()
+            deck = "\n".join([*lines[:-1], *extra_cards, lines[-1]]) + "\n"
         card_errors = [d for d in parse(deck).diagnostics if d.severity == ERROR]
         if card_errors:
             self._set_status(f"Not started: {card}: {card_errors[0].message}")

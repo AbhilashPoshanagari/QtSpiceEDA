@@ -9,6 +9,7 @@ import pytest
 from PySide6.QtCore import QSettings
 
 from bridge.schematic_controller import SchematicController, SyncModel
+from bridge.simulator import Simulator
 from core.schematic.connectivity import connect
 from core.schematic.model import Instance, Schematic, TextItem, Wire
 
@@ -437,3 +438,71 @@ def test_texts_are_selectable_movable_and_deletable(ctrl: SchematicController) -
     assert (ctrl.schematic().texts[0].x, ctrl.schematic().texts[0].y) == (-64, 208)
     ctrl.deleteSelection()
     assert ctrl.schematic().texts == []
+
+
+# ---------------------------------------------------------------- S10: check and run
+
+
+@pytest.fixture
+def sim(qapp: object, ctrl: SchematicController) -> Simulator:
+    s = Simulator()
+    ctrl.attachSimulator(s)
+    yield s
+    s.shutdown()
+
+
+def test_check_lists_problems_naming_the_part(ctrl: SchematicController, qtbot) -> None:
+    assert ctrl.check() is True and ctrl.property("problems") == []
+    ctrl.setAttributes(2, "R2", {"Value": "10k"})
+    ctrl._edit("cut", lambda s: s.wires.pop(4))  # C1 pin B loses its ground
+    with qtbot.waitSignal(ctrl.problemsChanged):
+        assert ctrl.check() is False
+    messages = [p["message"] for p in ctrl.property("problems")]
+    assert "C1: pin B is not connected" in messages
+
+
+def test_run_with_errors_does_not_start(ctrl: SchematicController, sim: Simulator) -> None:
+    ctrl._edit("cut", lambda s: s.wires.pop(4))
+    assert ctrl.run() is False
+    assert sim.property("running") is False
+    assert sim.property("statusText").startswith("Not started: the schematic has")
+    assert any(p["severity"] == "error" for p in ctrl.property("problems"))
+
+
+def test_run_without_a_simulator_is_refused(qapp: object, tmp_path: Path) -> None:
+    c = SchematicController(settings=QSettings(str(tmp_path / "s.ini"), QSettings.Format.IniFormat))
+    c.load_schematic(rc())
+    assert c.run() is False
+
+
+def result_at(sim: Simulator, f: float) -> float:
+    import numpy as np
+
+    result = sim.result
+    assert result is not None and result.analysis == "ac"
+    x = result.vectors["frequency"].real
+    return float(abs(np.interp(f, x, abs(result.vectors["V(out)"]))))
+
+
+@pytest.mark.ngspice
+def test_rc_schematic_runs_and_a_new_value_changes_the_next_run(
+    ctrl: SchematicController, sim: Simulator, qtbot
+) -> None:
+    sim.setProperty("netlistText", "* the netlist editor's own text\n")
+    editor_diagnostics = sim.property("diagnostics")
+    ctrl.setAttributes(2, "R2", {"Value": "1k"})
+    with qtbot.waitSignal(sim.resultReady, timeout=20_000):
+        assert ctrl.run() is True
+    first = result_at(sim, 1591.5)  # RC = 1k * 100n: -3 dB at 1.59 kHz
+    assert first == pytest.approx(2**-0.5, rel=0.02)
+    assert "R2 in out 1k" in sim.property("sentDeck")
+    # The netlist editor's text and diagnostics are untouched by a schematic run.
+    assert sim.property("netlistText") == "* the netlist editor's own text\n"
+    assert sim.property("diagnostics") == editor_diagnostics
+
+    ctrl.setAttributes(2, "R2", {"Value": "2k"})
+    with qtbot.waitSignal(sim.resultReady, timeout=20_000):
+        assert ctrl.run() is True
+    second = result_at(sim, 1591.5)
+    assert second == pytest.approx(1 / (1 + 4) ** 0.5, rel=0.02)  # |H| = 1/sqrt(1+(2)^2)
+    assert "R2 in out 2k" in sim.property("sentDeck")

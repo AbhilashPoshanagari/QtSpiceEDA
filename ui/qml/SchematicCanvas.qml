@@ -18,6 +18,9 @@ import QtSpice
 // Ctrl+C / Ctrl+V (the copy floats until a click), Ctrl+Z / Ctrl+Y undo and redo.
 // S9: double-click a part for its attributes, a label to rename it, a text to edit it;
 // the "text" tool asks for a SPICE directive (or comment) and places it on a click.
+// S10: LTspice keys (see shortcutList, also shown by F1 / the "?" button), a delete
+// tool and an explicit drag tool; the problems of the last Check/Run are listed under
+// the sheet.
 // The model, hit-testing and undo live in SchematicController.
 Item {
     id: root
@@ -35,7 +38,7 @@ Item {
     readonly property real pickTolerance: 6 / zoom   // sheet units for ~6 px
 
     // "select", or a tool: "place" (S6), "wire", "label", "ground" (S7), "move",
-    // "paste" (S8), "text" (S9).
+    // "paste" (S8), "text" (S9), "delete", "drag" (S10).
     property string mode: "select"
     property string placeSymbol: ""
     property string labelName: ""
@@ -59,6 +62,10 @@ Item {
             return qsTr("Move: drag the selection; wires stay where they are; Esc to stop")
         if (mode === "paste")
             return qsTr("Paste: click to drop the copy; Esc to cancel")
+        if (mode === "delete")
+            return qsTr("Delete: click things to delete them; Esc to stop")
+        if (mode === "drag")
+            return qsTr("Drag: drag the selection; wires follow; Esc to stop")
         if (mode === "text")
             return qsTr("Click to place the %1; Esc to cancel")
                    .arg(pendingDirective ? qsTr("SPICE directive") : qsTr("comment"))
@@ -97,6 +104,65 @@ Item {
         panY = (viewport.height - (b[3] - b[1]) * zoom) / 2 - b[1] * zoom
     }
 
+    // S10: the LTspice keys. Letters only act while the canvas has focus, so typing in
+    // a search box or dialog never places parts.
+    readonly property var shortcutList: [
+        ["R", qsTr("Place a resistor")],
+        ["C", qsTr("Place a capacitor")],
+        ["L", qsTr("Place an inductor")],
+        ["D", qsTr("Place a diode")],
+        ["G", qsTr("Ground tool")],
+        ["F2", qsTr("Pick a part (part picker)")],
+        ["F3", qsTr("Wire tool")],
+        ["F4", qsTr("Net label tool")],
+        ["F5", qsTr("Delete tool: click things to delete them")],
+        ["F7", qsTr("Move tool: drag with wires detached")],
+        ["F8", qsTr("Drag tool: drag with wires following")],
+        ["F9 / Ctrl+Z", qsTr("Undo")],
+        ["Shift+F9 / Ctrl+Y", qsTr("Redo")],
+        ["Ctrl+R / Ctrl+E", qsTr("Rotate / mirror the selection or the part being placed")],
+        ["Delete", qsTr("Delete the selection")],
+        ["Ctrl+C / Ctrl+V", qsTr("Copy / paste (click to drop the copy)")],
+        ["Esc / right-click", qsTr("End a wire, then leave the tool")],
+        ["Double-click", qsTr("Edit a part's attributes, a label or a text")],
+        ["Wheel / middle-drag", qsTr("Zoom around the pointer / pan")],
+        ["F1", qsTr("This list")]
+    ]
+
+    signal partPickerRequested()
+
+    focus: true
+    Keys.onPressed: ev => {
+        if (ev.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))
+            return
+        const parts = { [Qt.Key_R]: "res", [Qt.Key_C]: "cap", [Qt.Key_L]: "ind", [Qt.Key_D]: "diode" }
+        if (parts[ev.key] !== undefined) {
+            startPlace(parts[ev.key])
+            ev.accepted = true
+        } else if (ev.key === Qt.Key_G) {
+            startTool("ground")
+            ev.accepted = true
+        }
+    }
+
+    Shortcut { sequence: "F1"; enabled: root.visible; onActivated: helpPanel.open() }
+    Shortcut { sequence: "F2"; enabled: root.visible; onActivated: { root.stopTool(); root.partPickerRequested() } }
+    Shortcut { sequence: "F3"; enabled: root.visible; onActivated: root.startTool("wire") }
+    Shortcut { sequence: "F4"; enabled: root.visible; onActivated: root.startLabel() }
+    Shortcut { sequence: "F5"; enabled: root.visible; onActivated: root.startTool("delete") }
+    Shortcut { sequence: "F7"; enabled: root.visible; onActivated: root.startTool("move") }
+    Shortcut { sequence: "F8"; enabled: root.visible; onActivated: root.startTool("drag") }
+    Shortcut {
+        sequence: "F9"
+        enabled: root.visible
+        onActivated: { root.stopTool(); SchematicController.undo() }
+    }
+    Shortcut {
+        sequence: "Shift+F9"
+        enabled: root.visible
+        onActivated: { root.stopTool(); SchematicController.redo() }
+    }
+
     // ---- tools
 
     function startPlace(name) {
@@ -132,7 +198,7 @@ Item {
 
     function startTool(name) {
         stopTool()
-        if (name !== "move")
+        if (name !== "move" && name !== "drag")
             SchematicController.clearSelection()
         mode = name
         wireTool.move(pointer)
@@ -217,12 +283,12 @@ Item {
     }
 
     function rotate() {
-        if (mode === "place" || mode === "select" || mode === "move")
+        if (mode === "place" || mode === "select" || mode === "move" || mode === "drag")
             SchematicController.rotateSelection()
     }
 
     function mirror() {
-        if (mode === "place" || mode === "select" || mode === "move")
+        if (mode === "place" || mode === "select" || mode === "move" || mode === "drag")
             SchematicController.mirrorSelection()
     }
 
@@ -265,7 +331,7 @@ Item {
     }
     Shortcut {
         sequences: [StandardKey.Delete, "Backspace"]
-        enabled: root.visible && (root.mode === "select" || root.mode === "move")
+        enabled: root.visible && ["select", "move", "drag"].indexOf(root.mode) >= 0
         onActivated: SchematicController.deleteSelection()
     }
     Shortcut {
@@ -395,6 +461,13 @@ Item {
                     objectName: "zoomLabel"
                     text: Math.round(root.zoom * 100) + " %"
                     Layout.preferredWidth: 56
+                }
+                ToolButton {
+                    objectName: "helpButton"
+                    text: "?"
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Keyboard shortcuts (F1)")
+                    onClicked: helpPanel.open()
                 }
                 Label {
                     objectName: "toolHint"
@@ -640,7 +713,15 @@ Item {
                         root.mode = "select"
                         return
                     }
-                    if (root.mode !== "select" && root.mode !== "move")
+                    if (root.mode === "delete") {
+                        const target = SchematicController.itemAt(p.x, p.y, root.pickTolerance)
+                        if (target.kind !== undefined) {
+                            SchematicController.select(target.kind, target.index, false)
+                            SchematicController.deleteSelection()
+                        }
+                        return
+                    }
+                    if (["select", "move", "drag"].indexOf(root.mode) < 0)
                         return
                     const add = (ev.modifiers & Qt.ControlModifier) !== 0
                     const hit = SchematicController.itemAt(p.x, p.y, root.pickTolerance)
@@ -713,13 +794,36 @@ Item {
                     }
                 }
                 onDoubleClicked: ev => {
-                    if (ev.button === Qt.LeftButton && (root.mode === "select" || root.mode === "move"))
+                    if (ev.button === Qt.LeftButton && ["select", "move", "drag"].indexOf(root.mode) >= 0)
                         root.editAt(root.toSheet(ev.x, ev.y))
                 }
                 onWheel: ev => {
                     root.zoomAt(ev.x, ev.y, Math.pow(1.25, ev.angleDelta.y / 120))
                     ev.accepted = true
                 }
+            }
+        }
+
+        // Problems of the last Check / Run of the schematic (S10).
+        ListView {
+            id: problemList
+            objectName: "problemList"
+            Layout.fillWidth: true
+            Layout.preferredHeight: Math.min(contentHeight, 96)
+            visible: count > 0
+            clip: true
+            model: SchematicController.problems
+            ScrollBar.vertical: ScrollBar {}
+            delegate: Label {
+                required property var modelData
+                objectName: "problemItem"
+                width: ListView.view.width
+                leftPadding: 8
+                topPadding: 2
+                bottomPadding: 2
+                text: (modelData.severity === "error" ? "✖ " : "⚠ ") + modelData.message
+                color: modelData.severity === "error" ? "#c0392b" : "#a0522d"
+                elide: Text.ElideRight
             }
         }
     }
@@ -765,6 +869,50 @@ Item {
     }
 
     AttributeDialog { id: attributeDialog }
+
+    Popup {
+        id: helpPanel
+        objectName: "helpPanel"
+        anchors.centerIn: parent
+        modal: true
+        padding: 12
+        contentItem: ColumnLayout {
+            spacing: 6
+            Label { text: qsTr("Schematic shortcuts"); font.bold: true }
+            GridLayout {
+                columns: 2
+                columnSpacing: 16
+                rowSpacing: 3
+                Repeater {
+                    model: root.shortcutList
+                    delegate: Label {
+                        required property var modelData
+                        required property int index
+                        objectName: "shortcutKey"
+                        text: modelData[0]
+                        font.bold: true
+                        Layout.row: index
+                        Layout.column: 0
+                    }
+                }
+                Repeater {
+                    model: root.shortcutList
+                    delegate: Label {
+                        required property var modelData
+                        required property int index
+                        text: modelData[1]
+                        Layout.row: index
+                        Layout.column: 1
+                    }
+                }
+            }
+            Button {
+                Layout.alignment: Qt.AlignRight
+                text: qsTr("Close")
+                onClicked: helpPanel.close()
+            }
+        }
+    }
 
     Popup {
         id: textPopup
