@@ -93,6 +93,7 @@ files = [
     "tests/ui/qml_harness.py",
     "tests/ui/test_analysis_panel.py",
     "tests/ui/test_block_canvas.py",
+    "tests/ui/test_block_diagram_demo.py",
     "tests/ui/test_diagram_controller.py",
     "tests/ui/test_function_editor.py",
     "tests/ui/test_highlighter.py",

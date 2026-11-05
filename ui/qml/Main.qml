@@ -11,7 +11,10 @@ ApplicationWindow {
     visible: true
     title: qsTr("QtSpice")
 
-    Component.onCompleted: Simulator.attachWaveforms(WaveformModel)
+    Component.onCompleted: {
+        Simulator.attachWaveforms(WaveformModel)
+        DiagramController.attachWaveforms(WaveformModel)
+    }
 
     function runSimulation() {
         if (Simulator.run(netlistEditor.text))
@@ -22,6 +25,13 @@ ApplicationWindow {
         target: Simulator
         function onResultReady() {
             bottomTabs.currentIndex = WaveformModel.hasAxis ? 0 : 2
+        }
+    }
+
+    Connections {
+        target: DiagramController
+        function onResultReady() {
+            bottomTabs.currentIndex = 0  // Waveforms
         }
     }
 
@@ -118,9 +128,25 @@ ApplicationWindow {
                 }
             }
 
-            AnalysisPanel {
+            // The right side follows the left tab: analysis settings for netlists,
+            // the block canvas and its properties for block diagrams.
+            StackLayout {
+                objectName: "rightStack"
                 SplitView.fillWidth: true
                 SplitView.minimumWidth: 220
+                currentIndex: leftTabs.currentIndex
+                AnalysisPanel {}
+                SplitView {
+                    orientation: Qt.Horizontal
+                    BlockCanvas {
+                        SplitView.fillWidth: true
+                        SplitView.minimumWidth: 300
+                    }
+                    PropertiesPanel {
+                        SplitView.preferredWidth: 220
+                        SplitView.minimumWidth: 160
+                    }
+                }
             }
         }
 
