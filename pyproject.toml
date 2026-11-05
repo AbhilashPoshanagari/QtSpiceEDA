@@ -30,6 +30,7 @@ files = [
     "app/__init__.py",
     "app/__main__.py",
     "bridge/__init__.py",
+    "bridge/highlighter.py",
     "core/__init__.py",
     "core/netlist/__init__.py",
     "core/netlist/builder.py",
@@ -49,6 +50,7 @@ files = [
     "tests/core/sim/test_ngspice_rc.py",
     "tests/core/sim/test_result.py",
     "tests/netlists/__init__.py",
+    "tests/ui/test_highlighter.py",
     "tests/ui/test_main_window.py",
     "CLAUDE.md",
 ]
