@@ -1,0 +1,9 @@
+Non-inverting amplifier, op-amp from an included file
+.include opamp.lib
+V1 in 0 DC 0 AC 1
+R1 inv 0 10k
+R2 inv out 90k
+X1 in inv out opamp gain=2e5
+RL out 0 10k
+.ac dec 10 1 100meg
+.end

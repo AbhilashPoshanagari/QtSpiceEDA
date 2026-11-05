@@ -1,0 +1,6 @@
+Missing ground: nothing connects to node 0
+V1 in ref DC 5
+R1 in out 1k
+R2 out ref 2k
+.op
+.end

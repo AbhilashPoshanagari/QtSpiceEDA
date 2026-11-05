@@ -1,0 +1,10 @@
+Diode half-wave rectifier
+V1 in 0 SIN(0 5 50)
+D1 in out dmod
+RL out 0 1k
+C1 out 0 10uF
+* The model card is split over two lines with "+".
+.model dmod D (is=1e-14 n=1.05
++ rs=0.5 cjo=2p)
+.tran 0.1m 60m
+.end

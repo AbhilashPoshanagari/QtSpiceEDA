@@ -1,0 +1,7 @@
+Unknown model
+V1 in 0 SIN(0 5 50)
+D1 in out dfast
+RL out 0 1k
+.model dmod D (is=1e-14)
+.tran 0.1m 40m
+.end

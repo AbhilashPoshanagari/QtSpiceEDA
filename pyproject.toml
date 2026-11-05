@@ -33,6 +33,7 @@ files = [
     "core/__init__.py",
     "core/netlist/__init__.py",
     "core/netlist/model.py",
+    "core/netlist/parser.py",
     "core/sim/__init__.py",
     "core/sim/backend.py",
     "core/sim/ngspice_adapter.py",
@@ -40,8 +41,10 @@ files = [
     "ui/qml/Main.qml",
     "tests/conftest.py",
     "tests/core/netlist/test_model.py",
+    "tests/core/netlist/test_parser.py",
     "tests/core/sim/test_ngspice_rc.py",
     "tests/core/sim/test_result.py",
+    "tests/netlists/__init__.py",
     "tests/ui/test_main_window.py",
     "CLAUDE.md",
 ]

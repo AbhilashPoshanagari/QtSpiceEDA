@@ -1,0 +1,6 @@
+* Behavioural op-amp, for .include from opamp_include.cir
+.subckt opamp inp inn out params: gain=1e5
+Rin inp inn 1meg
+E1 int 0 inp inn {gain}
+Rout int out 75
+.ends opamp

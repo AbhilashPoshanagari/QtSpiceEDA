@@ -1,0 +1,17 @@
+BJT common-emitter amplifier
+.param rc=4.7k
+VCC vcc 0 DC 12
+VIN in 0 DC 0 AC 1 SIN(0 10m 1k)
+CIN in b 10u
+R1 vcc b 47k
+R2 b 0 10k
+RC vcc c {rc}
+RE e 0 1k
+CE e 0 100u
+COUT c out 10u
+RL out 0 10k
+Q1 c b e q2n2222
+.model q2n2222 NPN (is=1e-14 bf=200 vaf=100)
+.op
+.ac dec 10 10 10MEG
+.end
