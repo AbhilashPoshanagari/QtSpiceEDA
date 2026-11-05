@@ -27,14 +27,17 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import numpy as np
 from PySide6.QtCore import Property, QModelIndex, QObject, QSettings, QUrl, Signal, Slot
 from PySide6.QtGui import QUndoCommand, QUndoStack
 from PySide6.QtQml import QmlElement, QmlSingleton
 
 from bridge.diagram_controller import RowModel
+from bridge.waveform_model import si
 from core.netlist.libindex import LIBRARY_SUFFIXES, LibraryIndex
 from core.netlist.model import ERROR
 from core.schematic import edit as edit_ops
+from core.schematic import probe as probe_ops
 from core.schematic.connectivity import NetMap, connect
 from core.schematic.geometry import (
     GROUND,
@@ -74,6 +77,8 @@ from core.schematic.netlister import (
     netlist_part,
     netlist_schematic,
 )
+from core.schematic.probe import Probe
+from core.sim.result import SimulationResult
 from core.symbols.asy import Symbol
 from core.symbols.library import SymbolLibrary
 
@@ -351,6 +356,11 @@ class SchematicController(QObject):
         self._simulator: QObject | None = None
         self._problems: list[dict[str, object]] = []
         self._ran: _Ran | None = None
+        self._waveforms: QObject | None = None
+        self._awaiting = False
+        self._probe_result: SimulationResult | None = None
+        self._probe_message = ""
+        self._probed: list[Probe] = []
         self._selection: set[tuple[str, int]] = set()
         self._symbol_cache: dict[str, Symbol | None] = {}
         self._geometry_cache: dict[str, dict[str, object]] = {}
@@ -369,6 +379,7 @@ class SchematicController(QObject):
         ):
             signal.connect(self.undoStateChanged)
         self._undo.indexChanged.connect(self.schematicEdited)
+        self.schematicEdited.connect(self.probeChanged)
         self.symbolsChanged.connect(self._symbols_rescanned)
 
     # ---- Python side
@@ -1159,6 +1170,7 @@ class SchematicController(QObject):
     @Slot(QObject)
     def attachSimulator(self, simulator: QObject) -> None:  # noqa: N802
         self._simulator = simulator
+        simulator.resultReady.connect(self._on_sim_result)  # type: ignore[attr-defined]
 
     def _get_problems(self) -> list[dict[str, object]]:
         return list(self._problems)
@@ -1202,8 +1214,196 @@ class SchematicController(QObject):
         )
         if started:
             self._ran = _Ran(self.schematic(), result.nets, self._undo.index())
+            self._awaiting = True
             self.ranChanged.emit()
         return started
+
+    # ---- probing (S11)
+    #
+    # After a schematic run the canvas probes: a wire gives V(net), a two-terminal
+    # part's body its current, a pin the current into that pin, a drag from net to net
+    # V(a,b), Alt+click a part its power. Probes need the result of *this* sheet:
+    # ``probeReady`` is false once the sheet is edited, or when another run (the
+    # netlist editor's) replaced the result. Probed traces stay probed for the next
+    # schematic run; all other traces start hidden, as in LTspice.
+
+    probeChanged = Signal()
+    probed = Signal(str)  # the name of the trace that was added or shown
+
+    @Slot(QObject)
+    def attachWaveforms(self, model: QObject) -> None:  # noqa: N802
+        self._waveforms = model
+
+    def _on_sim_result(self) -> None:
+        sim = self._simulator
+        if not self._awaiting or sim is None:
+            self.probeChanged.emit()
+            return
+        self._awaiting = False
+        self._probe_result = sim.result  # type: ignore[attr-defined]
+        model = self._waveforms
+        if model is not None and self._probe_result is not None and self._probe_result.axis:
+            model.show_only([])  # type: ignore[attr-defined]
+            for p in list(self._probed):
+                self._show(p, remember=False)
+        self.probeChanged.emit()
+
+    def _get_probe_ready(self) -> bool:
+        sim = self._simulator
+        ran = self._ran
+        result = self._probe_result
+        return (
+            sim is not None
+            and ran is not None
+            and result is not None
+            and sim.result is result  # type: ignore[attr-defined]
+            and ran.schematic == self._schematic
+        )
+
+    def _get_probe_message(self) -> str:
+        return self._probe_message
+
+    probeReady = Property(bool, _get_probe_ready, notify=probeChanged)  # noqa: N815
+    probeMessage = Property(str, _get_probe_message, notify=probeChanged)  # noqa: N815
+
+    def _say(self, text: str) -> str:
+        self._probe_message = text
+        self.probeChanged.emit()
+        return text
+
+    def _pin_owner(self, x: float, y: float, tol: float) -> tuple[int, int] | None:
+        assert self._ran is not None
+        best: tuple[float, int, int] | None = None
+        for i, inst in enumerate(self._ran.schematic.instances):
+            symbol = self.lookup(inst.symbol)
+            if symbol is None:
+                continue
+            for k, (px, py) in enumerate(pin_points(inst, symbol)):
+                d = math.hypot(px - x, py - y)
+                if d <= tol and (best is None or d < best[0]):
+                    best = (d, i, k)
+        return None if best is None else (best[1], best[2])
+
+    def _net_at(self, x: float, y: float, tol: float) -> str:
+        """The net under (x, y) in the sheet that ran: a pin, a wire or a flag."""
+        ran = self._ran
+        if ran is None:
+            return ""
+        owner = self._pin_owner(x, y, tol)
+        if owner is not None:
+            nets = ran.nets.pins[owner[0]]
+            return nets[owner[1]] if owner[1] < len(nets) else ""
+        hit = hit_test(ran.schematic, self.lookup, x, y, tol)
+        if hit is None:
+            return ""
+        if hit.kind == WIRE:
+            return ran.nets.wires[hit.index]
+        if hit.kind == GROUND:
+            return "0"
+        if hit.kind in (LABEL, PORT):
+            flag = items_of(ran.schematic, hit.kind)[hit.index]
+            point = (flag.x, flag.y)
+            for i, w in enumerate(ran.schematic.wires):
+                if point in w.ends or on_segment(point, w):
+                    return ran.nets.wires[i]
+            for i, inst in enumerate(ran.schematic.instances):
+                symbol = self.lookup(inst.symbol)
+                if symbol is not None and point in pin_points(inst, symbol):
+                    return ran.nets.pins[i][pin_points(inst, symbol).index(point)]
+            return flag.name
+        return ""
+
+    def _target(self, x: float, y: float, tol: float, alt: bool) -> tuple[str, Probe | None]:
+        """(badge, probe) for a click at (x, y): badge is V, I, P or ""."""
+        ran = self._ran
+        if ran is None or not self._get_probe_ready():
+            return "", None
+        s = ran.schematic
+        hit = hit_test(s, self.lookup, x, y, tol)
+        if alt:
+            if hit is not None and hit.kind == INSTANCE:
+                inst = s.instances[hit.index]
+                symbol = self.lookup(inst.symbol)
+                if symbol is not None:
+                    return "P", probe_ops.part_power(inst, symbol, ran.nets.pins[hit.index])
+            return "", None
+        owner = self._pin_owner(x, y, tol)
+        if owner is not None:
+            inst = s.instances[owner[0]]
+            symbol = self.lookup(inst.symbol)
+            if symbol is not None and symbol.prefix:
+                return "I", probe_ops.pin_current(inst, symbol, owner[1])
+        if hit is None or hit.kind == TEXT:
+            return "", None
+        if hit.kind == INSTANCE:
+            inst = s.instances[hit.index]
+            symbol = self.lookup(inst.symbol)
+            if symbol is None or not symbol.prefix:
+                return "", None
+            return "I", probe_ops.part_current(inst, symbol)
+        return "V", probe_ops.net_voltage(self._net_at(x, y, tol))
+
+    @Slot(float, float, float, bool, result=str)
+    def probeKind(self, x: float, y: float, tol: float, alt: bool) -> str:  # noqa: N802
+        """What a click here would probe: "V", "I", "P" or "" (for the pointer badge)."""
+        return self._target(x, y, tol, alt)[0]
+
+    @Slot(float, float, float, result=str)
+    def probeNet(self, x: float, y: float, tol: float) -> str:  # noqa: N802
+        """The net under (x, y), for dragging V(a,b); "" when there is none."""
+        return self._net_at(x, y, tol) if self._get_probe_ready() else ""
+
+    @Slot(float, float, float, bool, result=str)
+    def probeClick(self, x: float, y: float, tol: float, alt: bool) -> str:  # noqa: N802
+        """Probe what is at (x, y). Returns the trace name, or a message why not."""
+        _, found = self._target(x, y, tol, alt)
+        if found is None:
+            return self._say("")
+        return self._show(found)
+
+    @Slot(float, float, float, float, float, result=str)
+    def probeBetween(self, x1: float, y1: float, x2: float, y2: float, tol: float) -> str:  # noqa: N802
+        """A drag from one net to another: V(a,b)."""
+        if not self._get_probe_ready():
+            return self._say("")
+        a, b = self._net_at(x1, y1, tol), self._net_at(x2, y2, tol)
+        return self._show(probe_ops.voltage_between(a, b))
+
+    def _show(self, found: Probe, remember: bool = True) -> str:
+        if not found.ok:
+            return self._say(found.error)
+        result = self._probe_result
+        if result is None:
+            return self._say("")
+        empty = [
+            f
+            for _, factors in found.terms
+            for f in factors
+            if f in result.vectors and np.asarray(result.vectors[f]).size == 0
+        ]
+        if empty:
+            return self._say(
+                f"{found.name}: ngspice does not save {empty[0]} in a .{result.analysis} analysis"
+            )
+        data = probe_ops.evaluate(found, result.vectors)
+        if isinstance(data, str):
+            return self._say(f"{found.name}: the result has no {data}")
+        if not result.axis:  # .op: one value each
+            value = complex(np.ravel(data)[0])
+            shown = value.real if value.imag == 0 else abs(value)
+            return self._say(f"{found.name} = {si(shown, found.unit)}")
+        model = self._waveforms
+        if model is not None:
+            vector = found.vector
+            if vector is not None and vector in model.property("traceNames"):
+                model.setVisible(vector, True)  # type: ignore[attr-defined]
+            else:
+                model.add_trace(found.name, found.unit, data)  # type: ignore[attr-defined]
+        if remember and all(p.name != found.name for p in self._probed):
+            self._probed.append(found)
+        self._say(found.name)
+        self.probed.emit(found.name)
+        return found.name
 
     # ---- settings
 
@@ -1296,8 +1496,8 @@ def _flag_row(
     }
 
 
-# Cards added to every schematic run, just before .end (S11 adds savecurrents).
-RUN_CARDS: tuple[str, ...] = ()
+# Cards added to every schematic run, just before .end.
+RUN_CARDS: tuple[str, ...] = (".options savecurrents",)  # part currents for probes
 
 
 @dataclass

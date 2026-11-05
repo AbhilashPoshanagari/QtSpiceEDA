@@ -223,10 +223,25 @@ def _decode(raw: bytes | None) -> str:
     return raw.decode("utf-8", errors="replace") if raw else ""
 
 
+# Device currents saved by ".options savecurrents" (schematic runs, S11): @r1[i],
+# @q1[ic], @m1[id], @d1[id], @i1[current] ... (only devices at the top level).
+_DEVICE_CURRENT = re.compile(r"^@([^\[\]]+)\[([a-z]+)\]$", re.IGNORECASE)
+_TERMINAL_CURRENTS = frozenset({"ic", "ib", "ie", "is", "id", "ig"})
+
+
 def display_name(raw: str, unit: str) -> str:
-    """Turn ngspice vector names into what users write: out -> V(out), v1#branch -> I(v1)."""
+    """Turn ngspice vector names into what users write: out -> V(out), v1#branch -> I(v1),
+    @r1[i] -> I(r1), @q1[ic] -> Ic(q1), @m1[id] -> Id(m1), @d1[id] -> I(d1)."""
     if raw.lower().endswith("#branch"):
         return f"I({raw[: -len('#branch')]})"
+    device = _DEVICE_CURRENT.match(raw)
+    if device is not None:
+        name, what = device.group(1), device.group(2).lower()
+        if what in ("i", "current") or (what == "id" and name[:1].lower() == "d"):
+            return f"I({name})"
+        if what in _TERMINAL_CURRENTS:
+            return f"{what.capitalize()}({name})"
+        return raw
     if unit == "V" and "(" not in raw and "#" not in raw:
         return f"V({raw})"
     return raw

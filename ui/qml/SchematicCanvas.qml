@@ -21,6 +21,10 @@ import QtSpice
 // S10: LTspice keys (see shortcutList, also shown by F1 / the "?" button), a delete
 // tool and an explicit drag tool; the problems of the last Check/Run are listed under
 // the sheet.
+// S11: after a schematic run the canvas probes ("probe" mode): a wire gives V(net), a
+// two-terminal part its current, a pin the current into it, a drag from net to net
+// V(a,b), Alt+click a part its power. A badge at the pointer shows which. Editing the
+// sheet ends probing until the next run.
 // The model, hit-testing and undo live in SchematicController.
 Item {
     id: root
@@ -38,13 +42,17 @@ Item {
     readonly property real pickTolerance: 6 / zoom   // sheet units for ~6 px
 
     // "select", or a tool: "place" (S6), "wire", "label", "ground" (S7), "move",
-    // "paste" (S8), "text" (S9), "delete", "drag" (S10).
+    // "paste" (S8), "text" (S9), "delete", "drag" (S10), "probe" (S11).
     property string mode: "select"
     property string placeSymbol: ""
     property string labelName: ""
     property int renameLabelIndex: -1     // label popup: -1 = new label, else rename
     property int editTextIndex: -1        // text popup: -1 = new text, else edit
     property string pendingText: ""
+    property string probeBadge: ""          // "V", "I", "P", "V(a,b)" or ""
+    property string probeStartNet: ""       // net under the press, for V(a,b) drags
+    property point probeStart
+    property bool probeDragging: false
     property bool pendingDirective: true
     property point pointer: Qt.point(0, 0)   // last pointer position, sheet units
     readonly property string hint: {
@@ -62,6 +70,10 @@ Item {
             return qsTr("Move: drag the selection; wires stay where they are; Esc to stop")
         if (mode === "paste")
             return qsTr("Paste: click to drop the copy; Esc to cancel")
+        if (mode === "probe")
+            return SchematicController.probeMessage !== ""
+                   ? SchematicController.probeMessage
+                   : qsTr("Probe: wire = V, part = I, pin = I into it, drag net to net = V(a,b), Alt+click = power")
         if (mode === "delete")
             return qsTr("Delete: click things to delete them; Esc to stop")
         if (mode === "drag")
@@ -163,6 +175,26 @@ Item {
         onActivated: { root.stopTool(); SchematicController.redo() }
     }
 
+    // ---- probing (S11)
+
+    function startProbe() {
+        if (!SchematicController.probeReady)
+            return
+        stopTool()
+        mode = "probe"
+        root.forceActiveFocus()
+    }
+
+    Connections {
+        target: SchematicController
+        function onProbeChanged() {
+            if (SchematicController.probeReady && root.mode === "select")
+                root.startProbe()
+            else if (!SchematicController.probeReady && root.mode === "probe")
+                root.stopTool()
+        }
+    }
+
     // ---- tools
 
     function startPlace(name) {
@@ -177,6 +209,8 @@ Item {
     }
 
     function stopTool() {
+        probeBadge = ""
+        probeDragging = false
         if (mode === "place")
             SchematicController.stopPlacing()
         if (mode === "paste")
@@ -463,6 +497,16 @@ Item {
                     Layout.preferredWidth: 56
                 }
                 ToolButton {
+                    objectName: "probeButton"
+                    text: qsTr("Probe")
+                    checkable: true
+                    checked: root.mode === "probe"
+                    enabled: SchematicController.probeReady
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Probe the last run (comes on after Run)")
+                    onClicked: root.mode === "probe" ? root.stopTool() : root.startProbe()
+                }
+                ToolButton {
                     objectName: "helpButton"
                     text: "?"
                     ToolTip.visible: hovered
@@ -648,6 +692,40 @@ Item {
                 }
             }
 
+            Shape {
+                visible: root.probeDragging
+                ShapePath {
+                    strokeColor: "#c0392b"
+                    strokeWidth: 1.5
+                    strokeStyle: ShapePath.DashLine
+                    fillColor: "transparent"
+                    startX: root.probeStart.x
+                    startY: root.probeStart.y
+                    PathLine { x: mouse.mouseX; y: mouse.mouseY }
+                }
+            }
+
+            Rectangle {
+                objectName: "probeBadge"
+                visible: root.mode === "probe" && root.probeBadge !== "" && mouse.containsMouse
+                x: mouse.mouseX + 12
+                y: mouse.mouseY + 12
+                width: badgeText.implicitWidth + 8
+                height: badgeText.implicitHeight + 4
+                radius: 3
+                color: root.probeBadge === "I" ? "#1f6fb2"
+                       : (root.probeBadge === "P" ? "#8e44ad" : "#c0392b")
+                Text {
+                    id: badgeText
+                    objectName: "probeBadgeText"
+                    anchors.centerIn: parent
+                    text: root.probeBadge
+                    color: "white"
+                    font.bold: true
+                    font.pixelSize: 11
+                }
+            }
+
             Rectangle {
                 objectName: "rubberBand"
                 visible: root.banding
@@ -665,6 +743,7 @@ Item {
                 anchors.fill: parent
                 acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
                 hoverEnabled: true
+                cursorShape: root.mode === "probe" ? Qt.CrossCursor : Qt.ArrowCursor
                 property bool panning: false
                 property bool panned: false
                 property bool pressedOnItem: false   // a drag from here moves the selection
@@ -681,6 +760,12 @@ Item {
                     if (ev.button === Qt.MiddleButton || ev.button === Qt.RightButton) {
                         panning = true
                         panned = false
+                        return
+                    }
+                    if (root.mode === "probe") {
+                        root.probeStart = Qt.point(ev.x, ev.y)
+                        root.probeStartNet = SchematicController.probeNet(p.x, p.y, root.pickTolerance)
+                        root.probeDragging = false
                         return
                     }
                     if (root.mode === "place") {
@@ -750,6 +835,15 @@ Item {
                         root.panY += ev.y - lastY
                         lastX = ev.x
                         lastY = ev.y
+                    } else if (root.mode === "probe") {
+                        const alt = (ev.modifiers & Qt.AltModifier) !== 0
+                        if ((ev.buttons & Qt.LeftButton) && root.probeStartNet !== "") {
+                            const far = Math.abs(ev.x - root.probeStart.x) + Math.abs(ev.y - root.probeStart.y)
+                            root.probeDragging = root.probeDragging || far > 4
+                        }
+                        root.probeBadge = root.probeDragging
+                                ? "V(a,b)"
+                                : SchematicController.probeKind(p.x, p.y, root.pickTolerance, alt)
                     } else if (root.mode === "place") {
                         SchematicController.placeMoveTo(p.x, p.y)
                     } else if (root.mode === "wire") {
@@ -774,6 +868,18 @@ Item {
                         panning = false
                         if (!panned && ev.button === Qt.RightButton && root.mode !== "select")
                             root.cancelStep()
+                        return
+                    }
+                    if (root.mode === "probe" && ev.button === Qt.LeftButton) {
+                        const p = root.toSheet(ev.x, ev.y)
+                        const a = root.toSheet(root.probeStart.x, root.probeStart.y)
+                        if (root.probeDragging)
+                            SchematicController.probeBetween(a.x, a.y, p.x, p.y, root.pickTolerance)
+                        else
+                            SchematicController.probeClick(p.x, p.y, root.pickTolerance,
+                                                           (ev.modifiers & Qt.AltModifier) !== 0)
+                        root.probeDragging = false
+                        root.probeStartNet = ""
                         return
                     }
                     if (pressedOnItem) {

@@ -143,3 +143,21 @@ def test_export_csv(model: WaveformModel, tmp_path: Path) -> None:
     assert len(rows) == 252
     assert model.exportCsv(QUrl.fromLocalFile(str(tmp_path / "no" / "x.csv"))) is False
     assert "x.csv" in model.property("errorString")
+
+
+def test_vectors_of_the_wrong_length_are_skipped(qapp: object) -> None:
+    import numpy as np
+
+    from bridge.waveform_model import WaveformModel
+    from core.sim.result import SimulationResult
+
+    model = WaveformModel()
+    f = np.array([1.0, 10.0, 100.0])
+    result = SimulationResult(
+        "frequency",
+        {"frequency": f, "V(out)": np.ones(3, complex), "I(r1)": np.zeros(0)},
+        {"frequency": "Hz", "V(out)": "V", "I(r1)": "A"},
+        "ac",
+    )
+    model.set_result(result)
+    assert model.property("traceNames") == ["V(out)"]

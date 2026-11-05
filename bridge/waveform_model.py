@@ -76,6 +76,7 @@ class WaveformModel(QObject):
         self._x = np.zeros(0)
         self._traces: dict[str, _Trace] = {}
         self._ordered = True
+        self._order: slice = slice(None)
         self._error_string = ""
 
     # ---- loading
@@ -95,11 +96,14 @@ class WaveformModel(QObject):
             if len(x) > 1 and x[0] > x[-1]:  # e.g. ".dc V1 5 0 -1"
                 order = slice(None, None, -1)
             x = x[order]
+            self._order = order
             if ac:
                 x = np.log10(np.maximum(x, 1e-300))
             self._ordered = bool(np.all(np.diff(x) >= 0))
             self._x = x
             for name in result.trace_names():
+                if np.asarray(result.vectors[name]).shape != x.shape:
+                    continue  # e.g. device currents ngspice leaves empty in .ac (S11)
                 data = np.asarray(result.vectors[name])[order]
                 unit = result.units.get(name, "")
                 if ac:
@@ -113,6 +117,32 @@ class WaveformModel(QObject):
     @Slot()
     def clear(self) -> None:
         self.set_result(None)
+
+    def add_trace(self, name: str, unit: str, data: np.ndarray, visible: bool = True) -> bool:
+        """Add (or replace) a trace computed from the current result, such as a
+        schematic probe's V(a,b) (S11). ``data`` is in the result's own point order."""
+        if self._result is None or not self._result.axis:
+            return False
+        values = np.asarray(data)
+        if values.shape != np.asarray(self._result.vectors[self._result.axis]).shape:
+            return False
+        values = values[self._order]
+        if self._result.analysis == "ac":
+            trace = _Trace(name, unit, to_db(values), phase_deg(values))
+        else:
+            trace = _Trace(name, unit, np.real(values).astype(float), None)
+        trace.visible = visible
+        self._traces[name] = trace
+        self.resultChanged.emit()
+        self.visibilityChanged.emit()
+        return True
+
+    def show_only(self, names: list[str]) -> None:
+        """Make exactly the traces in ``names`` visible (the others stay listed)."""
+        wanted = set(names)
+        for trace in self._traces.values():
+            trace.visible = trace.name in wanted
+        self.visibilityChanged.emit()
 
     # ---- properties
 

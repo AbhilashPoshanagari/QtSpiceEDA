@@ -21,6 +21,7 @@ ApplicationWindow {
         ProjectManager.attach(Simulator, DiagramController, WaveformModel)
         ProjectManager.attachSchematic(SchematicController)
         SchematicController.attachSimulator(Simulator)
+        SchematicController.attachWaveforms(WaveformModel)
     }
 
     onClosing: close => {
@@ -248,6 +249,11 @@ ApplicationWindow {
         function onResultReady() {
             bottomTabs.currentIndex = WaveformModel.hasAxis ? 0 : 2
         }
+    }
+
+    Connections {
+        target: SchematicController
+        function onProbed(name) { bottomTabs.currentIndex = 0 }  // Waveforms
     }
 
     Connections {

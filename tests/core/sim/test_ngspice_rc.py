@@ -82,7 +82,21 @@ def test_missing_library_is_reported_not_raised(monkeypatch: pytest.MonkeyPatch)
 
 @pytest.mark.parametrize(
     ("raw", "unit", "expected"),
-    [("out", "V", "V(out)"), ("v1#branch", "A", "I(v1)"), ("time", "s", "time")],
+    [
+        ("out", "V", "V(out)"),
+        ("v1#branch", "A", "I(v1)"),
+        ("time", "s", "time"),
+        # S11: device currents from ".options savecurrents"
+        ("@r1[i]", "A", "I(r1)"),
+        ("@c1[i]", "A", "I(c1)"),
+        ("@i1[current]", "A", "I(i1)"),
+        ("@d1[id]", "A", "I(d1)"),
+        ("@q1[ic]", "A", "Ic(q1)"),
+        ("@q1[ie]", "A", "Ie(q1)"),
+        ("@m1[id]", "A", "Id(m1)"),
+        ("@m1[ib]", "A", "Ib(m1)"),
+        ("@q1[gm]", "S", "@q1[gm]"),
+    ],
 )
 def test_display_name(raw: str, unit: str, expected: str) -> None:
     assert display_name(raw, unit) == expected
