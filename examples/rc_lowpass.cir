@@ -1,0 +1,9 @@
+RC low-pass filter, RC = 1 ms, fc = 159 Hz
+* 1 V step (1 ns rise) and 1 V AC source driving a first-order RC low-pass.
+* Step response: V(out) = 1 - exp(-t/RC).  -3 dB point: 1 / (2 pi RC) = 159.15 Hz.
+V1 in 0 DC 0 AC 1 PULSE(0 1 0 1n 1n 1 2)
+R1 in out 1k
+C1 out 0 1u
+.tran 1u 5m
+.ac dec 50 1 100k
+.end
