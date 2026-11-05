@@ -19,6 +19,7 @@ dev = [
     "pytest-qt>=4.4",
     "ruff>=0.6",
     "pyinstaller>=6.10",
+    "jsonschema>=4.20",
 ]
 
 [project.scripts]
@@ -29,9 +30,11 @@ qtspice = "app.__main__:main"
 files = [
     "app/__init__.py",
     "app/__main__.py",
+    "app/smoke.py",
     "bridge/__init__.py",
     "bridge/diagram_controller.py",
     "bridge/highlighter.py",
+    "bridge/project_manager.py",
     "bridge/sim_worker.py",
     "bridge/simulator.py",
     "bridge/waveform_model.py",
@@ -53,6 +56,9 @@ files = [
     "core/netlist/model.py",
     "core/netlist/parser.py",
     "core/netlist/validate.py",
+    "core/project/__init__.py",
+    "core/project/io.py",
+    "core/project/schema.json",
     "core/sim/__init__.py",
     "core/sim/backend.py",
     "core/sim/decimate.py",
@@ -83,7 +89,9 @@ files = [
     "tests/core/netlist/test_model.py",
     "tests/core/netlist/test_parser.py",
     "tests/core/netlist/test_validate.py",
+    "tests/core/project/test_io.py",
     "tests/core/sim/test_decimate.py",
+    "tests/core/sim/test_ngspice_adapter.py",
     "tests/core/sim/test_ngspice_rc.py",
     "tests/core/sim/test_rc_example.py",
     "tests/core/sim/test_result.py",
@@ -99,16 +107,27 @@ files = [
     "tests/ui/test_highlighter.py",
     "tests/ui/test_main_window.py",
     "tests/ui/test_netlist_editor.py",
+    "tests/ui/test_project_manager.py",
+    "tests/ui/test_project_ui.py",
     "tests/ui/test_sim_worker.py",
     "tests/ui/test_simulator.py",
     "tests/ui/test_waveform_model.py",
     "tests/ui/test_waveform_view.py",
     "examples/rc_lowpass.cir",
+    "packaging/common.py",
+    "packaging/qtspice.py",
+    "packaging/qtspice-windows.spec",
+    "packaging/qtspice-macos.spec",
+    "packaging/qtspice-linux.spec",
+    ".github/workflows/ci.yml",
     "CLAUDE.md",
 ]
 
 [tool.setuptools.packages.find]
 include = ["app*", "core*", "bridge*"]
+
+[tool.setuptools.package-data]
+"core.project" = ["schema.json"]
 
 [tool.ruff]
 target-version = "py312"

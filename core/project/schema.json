@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qtspice.invalid/schema/project-1.json",
+  "title": "QtSpice project (.qsp), format version 1",
+  "description": "Results are not stored here: each entry of 'results' names an .npz file in the '<project stem>_results' folder next to the .qsp file.",
+  "type": "object",
+  "required": ["format", "version", "netlists", "diagrams", "block_sources", "analysis", "results"],
+  "additionalProperties": false,
+  "properties": {
+    "format": { "const": "qtspice-project" },
+    "version": { "const": 1 },
+    "netlists": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "text"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "$ref": "#/$defs/name" },
+          "text": { "type": "string" }
+        }
+      }
+    },
+    "diagrams": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "diagram"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "$ref": "#/$defs/name" },
+          "diagram": { "$ref": "#/$defs/diagram" }
+        }
+      }
+    },
+    "block_sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["document", "code"],
+        "additionalProperties": false,
+        "properties": {
+          "document": { "type": "string", "minLength": 1 },
+          "code": { "type": "string" }
+        }
+      }
+    },
+    "analysis": {
+      "type": "object",
+      "required": ["card", "diagram_t_end", "diagram_dt"],
+      "additionalProperties": false,
+      "properties": {
+        "card": {
+          "type": "string",
+          "description": "Analysis panel card such as '.tran 1u 1m'; empty means the netlist's own card."
+        },
+        "diagram_t_end": { "type": "number", "exclusiveMinimum": 0 },
+        "diagram_dt": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "file"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "$ref": "#/$defs/name" },
+          "file": { "type": "string", "pattern": "^[A-Za-z0-9_-]+\\.npz$" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "name": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+    "diagram": {
+      "description": "Diagram.to_dict() from core/blocks/diagram.py.",
+      "type": "object",
+      "required": ["blocks", "wires"],
+      "additionalProperties": false,
+      "properties": {
+        "blocks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "spec", "x", "y", "settings"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string" },
+              "spec": { "type": "string" },
+              "x": { "type": "number" },
+              "y": { "type": "number" },
+              "settings": { "type": "object" }
+            }
+          }
+        },
+        "wires": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["src", "dst"],
+            "additionalProperties": false,
+            "properties": {
+              "src": { "type": "string" },
+              "dst": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}
