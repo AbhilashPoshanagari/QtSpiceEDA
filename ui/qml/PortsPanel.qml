@@ -5,13 +5,14 @@ import QtSpice
 
 // Ports of the schematic (H1): one row per port flag with its direction, net and any
 // problem. Click a row to select the flag on the sheet; double-click to edit it.
-// The ports become the pins of a circuit symbol.
+// The ports become the pins of a circuit symbol: "Make Symbol..." (H2).
 Pane {
     id: root
     objectName: "portsPanel"
     padding: 6
 
     signal editPort(int index)
+    signal makeSymbolRequested()
 
     readonly property var rows: SchematicController.ports
 
@@ -23,9 +24,21 @@ Pane {
         anchors.fill: parent
         spacing: 4
 
-        Label {
-            text: qsTr("Ports (%1)").arg(root.rows.length)
-            font.bold: true
+        RowLayout {
+            Layout.fillWidth: true
+            Label {
+                text: qsTr("Ports (%1)").arg(root.rows.length)
+                font.bold: true
+                Layout.fillWidth: true
+            }
+            Button {
+                objectName: "makeSymbolButton"
+                text: qsTr("Make Symbol…")
+                enabled: root.rows.length > 0
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Turn this schematic into a symbol (.sub + .asy) for other schematics")
+                onClicked: root.makeSymbolRequested()
+            }
         }
         Label {
             objectName: "portsEmpty"

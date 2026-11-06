@@ -21,8 +21,10 @@ Dialog {
     property string netlistText: ""
     property var problems: []
     property var tickOrder: []   // nodes in the order they were ticked
-    readonly property bool canMake: nameField.text.trim() !== "" && problems.length === 0
-                                    && tickOrder.length > 0
+    readonly property string nameProblem: nameField.text.trim() === ""
+                                          ? "" : SchematicController.symbolNameProblem(nameField.text)
+    readonly property bool canMake: nameField.text.trim() !== "" && nameProblem === ""
+                                    && problems.length === 0 && tickOrder.length > 0
 
     signal makeSymbol(string name, var ports)
 
@@ -93,6 +95,14 @@ Dialog {
                 placeholderText: qsTr("e.g. rclowpass")
                 onAccepted: root.accept_()
             }
+        }
+        Label {
+            objectName: "netlistSymbolNameProblem"
+            visible: root.nameProblem !== ""
+            Layout.fillWidth: true
+            wrapMode: Text.WordWrap
+            color: "#c0392b"
+            text: root.nameProblem
         }
         Label {
             text: qsTr("Tick the nodes that become pins:")

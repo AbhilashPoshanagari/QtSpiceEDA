@@ -163,6 +163,7 @@ class ProjectManager(QObject):
     def attachSchematic(self, controller: QObject) -> None:  # noqa: N802 - QML API
         """Make the schematic editor's sheet part of the project."""
         self._schematic_ctl = controller
+        controller.set_project_file(self._file_path)  # type: ignore[attr-defined]
         controller.load_schematic(self._schematic)  # type: ignore[attr-defined]
         controller.schematicEdited.connect(self._update_modified)  # type: ignore[attr-defined]
         if self._simulator is not None and self._diagram is not None:
@@ -426,6 +427,8 @@ class ProjectManager(QObject):
         if path != self._file_path:
             self._file_path = path
             self.filePathChanged.emit()
+        if self._schematic_ctl is not None:
+            self._schematic_ctl.set_project_file(path)  # type: ignore[attr-defined]
 
     def _set_modified(self, modified: bool) -> None:
         if modified != self._modified:

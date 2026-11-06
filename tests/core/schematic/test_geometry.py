@@ -131,3 +131,19 @@ def test_bounds() -> None:
     )
     x1, y1, x2, y2 = bounds(s, lookup)  # type: ignore[misc]
     assert x1 == -16 and y1 == -10 and x2 > 64 and y2 == 32
+
+
+def test_pin_names_show_beside_aligned_pins() -> None:
+    symbol, _ = AsyParser.parse_text(
+        "Version 4\nSymbolType BLOCK\nRECTANGLE Normal 0 0 64 64\nSYMATTR Prefix X\n"
+        "PIN -16 32 LEFT 20\nPINATTR PinName IN\nPINATTR SpiceOrder 1\n"
+        "PIN 80 32 RIGHT 20\nPINATTR PinName OUT\nPINATTR SpiceOrder 2\n"
+        "PIN 32 -16 TOP 20\nPINATTR PinName VCC\nPINATTR SpiceOrder 3\n"
+        "PIN 32 80 NONE 0\nPINATTR PinName HIDDEN\nPINATTR SpiceOrder 4\n",
+        "blk",
+    )
+    texts = instance_texts(Instance("blk", "X1", 0, 0), symbol)
+    pins = [(t["text"], t["x"], t["y"], t["align"]) for t in texts if t["text"] != "X1"]
+    assert pins == [("IN", 4, 32, "left"), ("OUT", 60, 32, "right"), ("VCC", 32, 4, "top")]
+    turned = instance_texts(Instance("blk", "X1", 0, 0, 90), symbol)
+    assert [t["align"] for t in turned if t["text"] == "IN"] == ["top"]

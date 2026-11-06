@@ -68,6 +68,83 @@ ApplicationWindow {
             netlistEditor.loadUrl(url)
     }
 
+    // ---- circuit symbols (H2)
+    //
+    // makeSymbol() writes <name>.sub + <name>.asy into the project folder. An unsaved
+    // project is saved first (Save As); an existing pair is replaced only after asking.
+    function makeSymbol(request, overwrite) {
+        const r = request.source === "netlist"
+                ? SchematicController.makeSymbolFromNetlist(request.text, request.name,
+                                                            request.ports, overwrite)
+                : SchematicController.makeSymbol(request.name, overwrite)
+        if (!r.ok && r.needsSave) {
+            symbolResult.show(qsTr("Save the project"), r.message)
+            saveAs(() => window.makeSymbol(request, false))
+            return
+        }
+        if (!r.ok && r.exists) {
+            replaceSymbolDialog.request = request
+            replaceSymbolDialog.message = r.message
+            replaceSymbolDialog.open()
+            return
+        }
+        const warnings = r.warnings && r.warnings.length > 0
+                         ? "\n\n" + qsTr("Warnings:") + "\n" + r.warnings.join("\n") : ""
+        symbolResult.show(r.ok ? qsTr("Symbol made") : qsTr("Symbol not made"), r.message + warnings)
+    }
+
+    MakeSymbolDialog {
+        id: makeSymbolDialog
+        onMakeSymbol: name => window.makeSymbol({ source: "schematic", name: name }, false)
+    }
+
+    NetlistPortsDialog {
+        id: netlistPortsDialog
+        onMakeSymbol: (name, ports) => window.makeSymbol(
+                          { source: "netlist", name: name, ports: ports,
+                            text: netlistPortsDialog.netlistText }, false)
+    }
+
+    Dialog {
+        id: replaceSymbolDialog
+        objectName: "replaceSymbolDialog"
+        property var request: null
+        property string message: ""
+        title: qsTr("Replace symbol?")
+        width: 420
+        anchors.centerIn: parent
+        modal: true
+        standardButtons: Dialog.Yes | Dialog.No
+        Label {
+            width: 380
+            wrapMode: Text.WordWrap
+            text: qsTr("%1. Replace them? Placed copies will use the new pins.")
+                  .arg(replaceSymbolDialog.message)
+        }
+        onAccepted: window.makeSymbol(request, true)
+    }
+
+    Dialog {
+        id: symbolResult
+        objectName: "symbolResultDialog"
+        property string message: ""
+        function show(title, message) {
+            symbolResult.title = title
+            symbolResult.message = message
+            open()
+        }
+        width: 460
+        anchors.centerIn: parent
+        modal: true
+        standardButtons: Dialog.Ok
+        Label {
+            objectName: "symbolResultText"
+            width: 420
+            wrapMode: Text.WordWrap
+            text: symbolResult.message
+        }
+    }
+
     Dialog {
         id: libraryWindow
         objectName: "libraryWindow"
@@ -224,6 +301,17 @@ ApplicationWindow {
                 text: qsTr("&Library Browser…")
                 onTriggered: libraryWindow.open()
             }
+            MenuSeparator {}
+            MenuItem {
+                objectName: "makeSymbolSchematicMenu"
+                text: qsTr("Make Symbol from &Schematic…")
+                onTriggered: makeSymbolDialog.openWith("")
+            }
+            MenuItem {
+                objectName: "makeSymbolNetlistMenu"
+                text: qsTr("Make Symbol from &Netlist…")
+                onTriggered: netlistPortsDialog.openFor(netlistEditor.text)
+            }
         }
     }
 
@@ -370,6 +458,7 @@ ApplicationWindow {
                             SplitView.preferredHeight: 220
                             SplitView.minimumHeight: 100
                             onEditPort: index => schematicCanvas.editPort(index)
+                            onMakeSymbolRequested: makeSymbolDialog.openWith("")
                         }
                     }
                 }

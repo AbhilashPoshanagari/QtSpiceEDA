@@ -19,11 +19,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from core.netlist.model import ERROR, WARNING, Diagnostic
+from core.netlist.model import ERROR, GROUND_NODES, WARNING, Diagnostic
 from core.schematic.connectivity import NetMap
 from core.schematic.model import PORT_DIRECTIONS, Schematic
 
-GROUND_NAMES = frozenset({"0", "gnd"})
+GROUND_NAMES = GROUND_NODES
 _BAD_CHARS = frozenset("(),={}[]\"';*")
 
 

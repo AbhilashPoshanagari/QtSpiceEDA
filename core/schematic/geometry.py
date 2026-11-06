@@ -6,7 +6,8 @@ hit-tests with these same numbers, so what is drawn is what is clicked.
 
 * ``symbol_svg`` turns a parsed .asy into one SVG path (LINE, RECTANGLE, CIRCLE, ARC),
   in the symbol's own coordinates; the editor applies ``orientation_matrix``.
-* ``instance_texts`` places the InstName (WINDOW 0) and Value (WINDOW 3) of a part.
+* ``instance_texts`` places the InstName (WINDOW 0) and Value (WINDOW 3) of a part, and
+  the names of pins whose PIN alignment is not NONE (H2: circuit symbols use them).
   Text stays upright; only its anchor and alignment follow rotation and mirror.
 * ``hit_test`` / ``items_in_rect`` find flags, wires and parts under the pointer.
 """
@@ -178,6 +179,31 @@ def instance_texts(inst: Instance, symbol: Symbol | None) -> list[dict[str, obje
             item["text"] = value2
             item["y"] = int(item["y"]) + 24  # type: ignore[call-overload]
             out.append(item)
+    out += _pin_names(inst, symbol)
+    return out
+
+
+# PIN alignment -> (anchor offset direction, text alignment word for ``_text``). As in
+# LTspice the name sits ``offset`` units from the pin: LEFT to its right, RIGHT to its
+# left, TOP below it, BOTTOM above it; NONE hides it. Text stays upright.
+_PIN_TEXT = {
+    "left": ((1, 0), "Left"),
+    "right": ((-1, 0), "Right"),
+    "top": ((0, 1), "VRight"),
+    "bottom": ((0, -1), "VLeft"),
+}
+
+
+def _pin_names(inst: Instance, symbol: Symbol) -> list[dict[str, object]]:
+    out = []
+    for pin in symbol.pins:
+        found = _PIN_TEXT.get(pin.align.casefold())
+        if found is None or not pin.name:
+            continue
+        (dx, dy), align = found
+        out.append(
+            _text(inst, pin.x + dx * pin.offset, pin.y + dy * pin.offset, align, 2, pin.name)
+        )
     return out
 
 

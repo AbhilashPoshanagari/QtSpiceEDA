@@ -41,6 +41,7 @@ from core.hierarchy.ports import (
     netlist_ports,
     schematic_ports,
 )
+from core.hierarchy.symbolgen import GeneratedSymbol, SymbolGenerator, symbol_name_problem
 from core.netlist.libindex import LIBRARY_SUFFIXES, LibraryIndex
 from core.netlist.model import ERROR
 from core.netlist.parser import parse
@@ -381,6 +382,7 @@ class SchematicController(QObject):
         self._texts: list[dict[str, object]] = []
         self._ports: list[dict[str, object]] = []
         self._port_rows: list[PortRow] = []
+        self._project_file = ""
         self._wire_path = ""
         self._selected_wire_path = ""
         for signal in (
@@ -993,6 +995,98 @@ class SchematicController(QObject):
         if not found.ports and found.ok:
             return [{"severity": ERROR, "message": "tick at least one node as a port"}]
         return [{"severity": d.severity, "message": d.message} for d in found.diagnostics]
+
+    # ---- circuit symbols (H2): the sheet or a netlist becomes <name>.sub + <name>.asy
+    #
+    # The files go into the project folder, so the project must have been saved. An
+    # existing pair is only replaced when ``overwrite`` is true (QML asks first).
+
+    symbolMade = Signal(str, str)  # name, path of the .asy
+
+    def set_project_file(self, path: str) -> None:
+        """The project's .qsp path ("" = not saved yet). Set by ProjectManager."""
+        self._project_file = str(path or "")
+
+    def project_folder(self) -> Path | None:
+        return Path(self._project_file).parent if self._project_file else None
+
+    @Slot(str, result=str)
+    def symbolNameProblem(self, name: str) -> str:  # noqa: N802
+        """Why ``name`` cannot be a new circuit symbol ("" when it can)."""
+        name = name.strip()
+        problem = symbol_name_problem(name)
+        if problem:
+            return problem
+        entry = self._symbols.find(name)
+        folder = self.project_folder()
+        own = folder is not None and entry is not None and entry.path.parent == folder
+        if entry is not None and not own:
+            return f"there is already a symbol called {entry.key} ({entry.source})"
+        return ""
+
+    @Slot(str, bool, result="QVariantMap")
+    def makeSymbol(self, name: str, overwrite: bool) -> dict[str, object]:  # noqa: N802
+        """Make a circuit symbol from the sheet; its port flags are the pins."""
+        self.cancelLive()
+        name = name.strip()
+        return self._make_symbol(
+            name,
+            overwrite,
+            lambda folder: SymbolGenerator.from_schematic(
+                name, self._schematic, self.lookup, self._base_dir() or folder
+            ),
+        )
+
+    @Slot(str, str, "QVariantList", bool, result="QVariantMap")
+    def makeSymbolFromNetlist(  # noqa: N802
+        self, text: str, name: str, ports: list, overwrite: bool
+    ) -> dict[str, object]:
+        """Make a circuit symbol from a netlist; ``ports`` are {node, direction} rows."""
+        name = name.strip()
+        chosen = _chosen(ports)
+        return self._make_symbol(
+            name,
+            overwrite,
+            lambda folder: SymbolGenerator.from_netlist(
+                name, text, chosen, self._base_dir() or folder
+            ),
+        )
+
+    def _make_symbol(
+        self, name: str, overwrite: bool, generate: Callable[[Path], GeneratedSymbol]
+    ) -> dict[str, object]:
+        def fail(message: str, **extra: object) -> dict[str, object]:
+            return {"ok": False, "message": message, **extra}
+
+        folder = self.project_folder()
+        if folder is None:
+            return fail(
+                "Save the project first: the symbol files go into the project folder",
+                needsSave=True,
+            )
+        problem = self.symbolNameProblem(name)
+        if problem:
+            return fail(problem)
+        made = generate(folder)
+        errors = [d.message for d in made.diagnostics if d.severity == ERROR]
+        warnings = [d.message for d in made.diagnostics if d.severity != ERROR]
+        if not made.ok:
+            return fail("; ".join(errors) or "the symbol could not be made", warnings=warnings)
+        sub, asy = made.paths(folder)
+        if (sub.exists() or asy.exists()) and not overwrite:
+            return fail(f"{asy.name} and {sub.name} already exist in {folder}", exists=True)
+        written = made.write(folder)
+        if written:
+            return fail("; ".join(d.message for d in written))
+        self.symbolMade.emit(name, str(asy))
+        return {
+            "ok": True,
+            "message": f"Made {asy.name} and {sub.name} in {folder}",
+            "asy": str(asy),
+            "sub": str(sub),
+            "pins": [p.name for p in made.ports],
+            "warnings": warnings,
+        }
 
     # ---- editing the selection (S8)
     #
