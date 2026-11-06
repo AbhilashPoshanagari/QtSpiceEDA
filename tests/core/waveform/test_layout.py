@@ -135,3 +135,16 @@ def test_layouts_dict() -> None:
     assert list(data) == ["tran", "ac"]
     back, found = layouts_from_dict({**data, "noise": {}})
     assert set(back) == {"tran", "ac"} and len(found) == 1  # unknown analysis warned
+
+
+def test_rename_trace_keeps_its_place() -> None:
+    layout = PlotLayout.default("tran")
+    layout.panes[0].traces = ["V(a)", "V(b)", "V(c)"]
+    assert layout.rename_trace(0, "V(b)", "2*V(b)")
+    assert layout.panes[0].traces == ["V(a)", "2*V(b)", "V(c)"]
+    assert layout.rename_trace(0, "2*V(b)", "V(c)")  # already shown: the old one goes
+    assert layout.panes[0].traces == ["V(a)", "V(c)"]
+    assert not layout.rename_trace(0, "V(zz)", "x")
+    assert not layout.rename_trace(0, "V(a)", "V(a)")
+    assert not layout.rename_trace(3, "V(a)", "x")
+    assert not layout.rename_trace(0, "V(a)", "")

@@ -87,6 +87,15 @@ class TraceStore:
         self._cache = {k: v for k, v in self._cache.items() if k[0] != name}
         return True
 
+    def remove(self, name: str) -> None:
+        self._traces.pop(name, None)
+        self._cache = {k: v for k, v in self._cache.items() if k[0] != name}
+
+    def raw(self, name: str) -> np.ndarray | None:
+        """The stored values (complex for AC), in ascending-x order."""
+        trace = self._traces.get(name)
+        return trace.values if trace else None
+
     # ---- values
 
     def values(self, name: str, kind: str = MAG) -> np.ndarray | None:

@@ -18,6 +18,8 @@ import QtSpice
 // outside removes, double-click shows only that trace. Click a name for cursor 1,
 // right-click for cursor 2 or both; drag a cursor line, or move the last-used cursor
 // one data point with the arrow keys. The readout shows both cursors and 2 − 1.
+// Add trace… (W8) plots a vector or an LTspice expression into a pane; right-click a
+// trace name to edit its expression.
 FocusScope {
     id: root
     objectName: "waveformView"
@@ -76,6 +78,10 @@ FocusScope {
 
     PlotConfigDialog {
         id: configDialog
+    }
+
+    AddTraceDialog {
+        id: addTraceDialog
     }
 
     RowLayout {
@@ -193,6 +199,13 @@ FocusScope {
                 }
                 ToolSeparator {}
                 ToolButton {
+                    objectName: "addTraceButton"
+                    text: qsTr("Add trace…")
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Plot a vector or an LTspice expression")
+                    onClicked: addTraceDialog.openFor(WaveformController.activePane)
+                }
+                ToolButton {
                     objectName: "configButton"
                     text: qsTr("Plot settings…")
                     onClicked: configDialog.openFor(WaveformController.activePane)
@@ -236,6 +249,8 @@ FocusScope {
                                                   * (paneSlots.count - 1)) / Math.max(1, paneSlots.count))
                             onStatus: text => root.statusText = text
                             onConfigure: index => configDialog.openFor(index)
+                            onAddTraceRequested: index => addTraceDialog.openFor(index)
+                            onEditTraceRequested: (index, name) => addTraceDialog.editTrace(index, name)
                             dragParent: root
                             activeCursor: root.activeCursor
                             onCursorMoved: which => {

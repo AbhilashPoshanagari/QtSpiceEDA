@@ -35,6 +35,8 @@ FocusScope {
     signal status(string text)  // the mouse position, for the status bar
     signal configure(int index)  // "Plot settings…" (WaveformView opens the dialog)
     signal cursorMoved(int which)  // a cursor was attached or moved here (W6)
+    signal addTraceRequested(int index)  // "Add trace…" (W8)
+    signal editTraceRequested(int index, string name)  // edit a trace's expression (W8)
     property int activeCursor: 1  // the cursor the arrow keys move
     property Item dragParent: null  // where a dragged trace name lives (the view)
 
@@ -107,7 +109,9 @@ FocusScope {
                 name: modelData.name
                 traceColor: modelData.color
                 present: modelData.present
+                error: modelData.error || ""
                 dragParent: pane.dragParent
+                onEditRequested: pane.editTraceRequested(pane.paneIndex, modelData.name)
                 onCursorRequested: which => {
                     if (WaveformController.attachCursor(which, pane.paneIndex, modelData.name))
                         pane.cursorMoved(which === 2 ? 2 : 1)
@@ -469,6 +473,12 @@ FocusScope {
             height: visible ? implicitHeight : 0
             onTriggered: WaveformController.detachCursors()
         }
+        MenuItem {
+            objectName: "addTraceItem"
+            text: qsTr("Add trace…")
+            onTriggered: pane.addTraceRequested(pane.paneIndex)
+        }
+        MenuSeparator {}
         MenuItem {
             text: qsTr("Add pane above")
             onTriggered: WaveformController.addPane(pane.paneIndex, true)

@@ -166,6 +166,20 @@ class PlotLayout:
         self.panes[pane].traces.remove(name)
         return True
 
+    def rename_trace(self, pane: int, old: str, new: str) -> bool:
+        """Replace trace ``old`` of pane ``pane`` by ``new`` in the same place (W8:
+        edit a trace's expression). If the pane already shows ``new``, ``old`` goes."""
+        if not new or old == new or not 0 <= pane < len(self.panes):
+            return False
+        traces = self.panes[pane].traces
+        if old not in traces:
+            return False
+        if new in traces:
+            traces.remove(old)
+        else:
+            traces[traces.index(old)] = new
+        return True
+
     def remove_everywhere(self, name: str) -> bool:
         changed = False
         for pane in self.panes:

@@ -20,6 +20,7 @@ one Y axis per GraphsView).
 from __future__ import annotations
 
 import copy
+import fnmatch
 import math
 import weakref
 from typing import Any
@@ -31,7 +32,9 @@ from PySide6.QtQml import QmlElement, QmlSingleton
 
 from bridge.waveform_model import si
 from core.netlist.parser import parse_number
+from core.waveform.expr import Data
 from core.waveform.layout import ANALYSES, PlotLayout, layouts_to_dict
+from core.waveform.plotdefs import DEFAULT_TEXT, parse_plotdefs
 from core.waveform.traces import MAG, PHASE, TraceStore, log_minor_ticks, nice_ticks, padded
 
 QML_IMPORT_NAME = "QtSpice"
@@ -92,6 +95,26 @@ class _LayoutCommand(QUndoCommand):
             ctl._set_layout(self.analysis, self.before)
 
 
+class _PlotDefsCommand(QUndoCommand):
+    """An edit of the plot definitions text (W9)."""
+
+    def __init__(self, ctl: WaveformController, before: str, after: str) -> None:
+        super().__init__("Edit plot definitions")
+        self._ctl = weakref.ref(ctl)
+        self.before = before
+        self.after = after
+
+    def redo(self) -> None:
+        ctl = self._ctl()
+        if ctl is not None:
+            ctl._apply_plot_defs(self.after)
+
+    def undo(self) -> None:
+        ctl = self._ctl()
+        if ctl is not None:
+            ctl._apply_plot_defs(self.before)
+
+
 @QmlElement
 @QmlSingleton
 class WaveformController(QObject):
@@ -103,6 +126,7 @@ class WaveformController(QObject):
     cursorsChanged = Signal()
     deleteModeChanged = Signal()
     layoutEdited = Signal()  # an undo step was done, undone or redone; or a load
+    plotDefsChanged = Signal()
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -122,6 +146,12 @@ class WaveformController(QObject):
         self._ranges: dict[int, tuple[float, float, float, float]] = {}
         self._cursors: list[dict[str, Any] | None] = [None, None]
         self._delete_mode = False
+        # W7/W9: traces that are expressions rather than result vectors
+        self._raw: set[str] = set()  # names that come from the result itself
+        self._expr_errors: dict[str, str] = {}
+        self._plot_defs_text = DEFAULT_TEXT
+        self._plot_defs = parse_plotdefs(DEFAULT_TEXT)
+        self._engine = self._plot_defs.engine()
 
     # ---- wiring
 
@@ -160,6 +190,7 @@ class WaveformController(QObject):
         self._ranges = {}
         if self._analysis and self._analysis not in self._layouts:
             self._layouts[self._analysis] = self._initial_layout()
+        self._evaluate_expressions()
         self.layoutChanged.emit()
         self.cursorsChanged.emit()
         self.layoutEdited.emit()
@@ -179,6 +210,8 @@ class WaveformController(QObject):
         new_result = result is not self._result
         self._result = result
         self._store = TraceStore.build(analysis, x, model.axis_unit(), traces)  # type: ignore[attr-defined]
+        self._raw = set(self._store.names())
+        self._expr_errors = {}
         self._analysis = analysis
         if analysis:
             if analysis not in self._layouts:
@@ -191,6 +224,7 @@ class WaveformController(QObject):
                 c if c is not None and self._store.has(c["name"]) else None for c in self._cursors
             ]
             self.cursorsChanged.emit()
+        self._evaluate_expressions()
         self.dataChanged.emit()
         self.layoutChanged.emit()
 
@@ -200,7 +234,7 @@ class WaveformController(QObject):
         model = self._model
         if model is not None:
             for name in self._store.names():
-                if model.isVisible(name):  # type: ignore[attr-defined]
+                if name in self._raw and model.isVisible(name):  # type: ignore[attr-defined]
                     layout.add_trace(min(layout.active, len(layout.panes) - 1), name)
         return layout
 
@@ -212,6 +246,7 @@ class WaveformController(QObject):
     def _set_layout(self, analysis: str, layout: PlotLayout) -> None:
         self._layouts[analysis] = layout.copy()
         if analysis == self._analysis:
+            self._evaluate_expressions()
             count = len(layout.panes)
             self._ranges = {k: v for k, v in self._ranges.items() if k < count}
             for i, c in enumerate(self._cursors):
@@ -260,7 +295,13 @@ class WaveformController(QObject):
         out = []
         for i, pane in enumerate(layout.panes):
             traces = [
-                {"name": n, "color": self.colorOf(n), "present": self._store.has(n)}
+                {
+                    "name": n,
+                    "color": self.colorOf(n),
+                    "present": self._store.has(n),
+                    "expression": n not in self._raw,
+                    "error": self._expr_errors.get(n, ""),
+                }
                 for n in pane.traces
             ]
             present = sum(1 for t in traces if t["present"])
@@ -283,7 +324,9 @@ class WaveformController(QObject):
         layout = self._layout()
         shown = set(layout.all_traces()) if layout else set()
         return [
-            {"name": n, "color": self.colorOf(n), "shown": n in shown} for n in self._store.names()
+            {"name": n, "color": self.colorOf(n), "shown": n in shown}
+            for n in self._store.names()
+            if n in self._raw
         ]
 
     def _get_x_log(self) -> bool:
@@ -359,6 +402,11 @@ class WaveformController(QObject):
     deleteMode = Property(  # noqa: N815
         bool, _get_delete_mode, _set_delete_mode, notify=deleteModeChanged
     )
+
+    def _get_plot_defs(self) -> str:
+        return self._plot_defs_text
+
+    plotDefs = Property(str, _get_plot_defs, notify=plotDefsChanged)  # noqa: N815
 
     @Slot(str, result=str)
     def colorOf(self, name: str) -> str:  # noqa: N802 - QML API
@@ -532,6 +580,141 @@ class WaveformController(QObject):
     @Slot(int, str, result=bool)
     def showOnly(self, pane: int, name: str) -> bool:  # noqa: N802 - QML API
         return self._edit(f"Show only {name}", lambda layout: layout.show_only(pane, name))
+
+    # ---- expressions (W7, W8)
+
+    def _data(self) -> Data:
+        result = self._result
+        axis_name = getattr(result, "axis", "") or ""
+        store = self._store
+        vectors = {n: (store.unit(n), store.raw(n)) for n in store.names() if n in self._raw}
+        if axis_name and axis_name not in vectors:
+            vectors[axis_name] = (store.axis_unit, store.x)
+        return Data(self._analysis, axis_name, store.x if len(store.x) else None, vectors)
+
+    def _evaluate_expressions(self) -> None:
+        """Compute every trace of the current layout that is not a result vector."""
+        layout = self._layout()
+        if layout is None:
+            return
+        data = None
+        for name in layout.all_traces():
+            if name in self._raw or self._store.has(name) or name in self._expr_errors:
+                continue
+            data = data or self._data()
+            result = self._engine.evaluate(name, data)
+            if (
+                result.ok
+                and result.values is not None
+                and self._store.add(name, result.unit, result.values)
+            ):
+                continue
+            self._expr_errors[name] = result.message or "cannot be computed for this run"
+
+    def _forget_expressions(self) -> None:
+        for name in self._store.names():
+            if name not in self._raw:
+                self._store.remove(name)
+        self._expr_errors = {}
+
+    @Slot(str, result="QStringList")
+    def vectorNames(self, pattern: str) -> list[str]:  # noqa: N802 - QML API
+        """Result vectors matching ``pattern`` (case-insensitive wildcards * and ?;
+        text without a wildcard matches anywhere in the name)."""
+        names = [n for n in self._store.names() if n in self._raw]
+        pattern = pattern.strip().lower()
+        if not pattern:
+            return names
+        if not any(c in pattern for c in "*?["):
+            return [n for n in names if pattern in n.lower()]
+        return [n for n in names if fnmatch.fnmatchcase(n.lower(), pattern)]
+
+    @Slot(str, result=str)
+    def checkExpression(self, text: str) -> str:  # noqa: N802 - QML API
+        """ "" when ``text`` can be plotted for the current run, else the reason."""
+        text = text.strip()
+        if not text:
+            return "type an expression"
+        if text in self._raw:
+            return ""
+        if not self._analysis:
+            found = self._engine.check(text)
+            return found[0].message if found else ""
+        result = self._engine.evaluate(text, self._data())
+        return result.message if not result.ok else ""
+
+    @Slot(str, int, result=str)
+    def plotExpression(self, text: str, pane: int) -> str:  # noqa: N802 - QML API
+        """Add trace ``text`` (a vector or an expression) to pane ``pane`` (-1: the
+        active pane). Returns "" or why it was not added."""
+        text = text.strip()
+        problem = self.checkExpression(text)
+        if problem:
+            return problem
+        layout = self._layout()
+        if layout is None:
+            return "there is no run to plot"
+        index = layout.active if pane < 0 else pane
+        if not 0 <= index < len(layout.panes):
+            return "no such pane"
+        if text in layout.panes[index].traces:
+            return "the pane already shows this trace"
+        self._expr_errors.pop(text, None)
+        self._edit(f"Add {text}", lambda lay: lay.add_trace(index, text))
+        return ""
+
+    @Slot(int, str, str, result=str)
+    def editTrace(self, pane: int, old: str, new: str) -> str:  # noqa: N802 - QML API
+        """Replace trace ``old`` of pane ``pane`` by expression ``new`` (W8)."""
+        new = new.strip()
+        if new == old:
+            return ""
+        problem = self.checkExpression(new)
+        if problem:
+            return problem
+        self._expr_errors.pop(new, None)
+        if not self._edit(f"Edit {old}", lambda lay: lay.rename_trace(pane, old, new)):
+            return "the trace is not in that pane"
+        return ""
+
+    # ---- plot definitions (W9)
+
+    def plot_defs_text(self) -> str | None:
+        """For the project: the text, or None when it is the shipped default."""
+        return None if self._plot_defs_text == DEFAULT_TEXT else self._plot_defs_text
+
+    def load_plot_defs(self, text: str | None) -> None:
+        """A project was opened (None = the default). Not an undo step."""
+        self._apply_plot_defs(DEFAULT_TEXT if text is None else text, edited=False)
+
+    def _apply_plot_defs(self, text: str, edited: bool = True) -> None:
+        self._plot_defs_text = text
+        self._plot_defs = parse_plotdefs(text)
+        self._engine = self._plot_defs.engine()
+        self._forget_expressions()
+        self._evaluate_expressions()
+        self.plotDefsChanged.emit()
+        self.dataChanged.emit()
+        self.layoutChanged.emit()
+        if edited:
+            self.layoutEdited.emit()
+
+    @Slot(str, result="QVariantList")
+    def checkPlotDefs(self, text: str) -> list[dict[str, Any]]:  # noqa: N802 - QML API
+        """Problems in a plot definitions text, as {line, col, severity, message}."""
+        return [d.to_dict() for d in parse_plotdefs(text).diagnostics]
+
+    @Slot(str, result=bool)
+    def setPlotDefs(self, text: str) -> bool:  # noqa: N802 - QML API
+        """Use ``text`` as the plot definitions; one undo step. False if unchanged."""
+        if text == self._plot_defs_text:
+            return False
+        self._undo.push(_PlotDefsCommand(self, self._plot_defs_text, text))
+        return True
+
+    @Slot(result=str)
+    def defaultPlotDefs(self) -> str:  # noqa: N802 - QML API
+        return DEFAULT_TEXT
 
     # ---- zoom (W3)
 

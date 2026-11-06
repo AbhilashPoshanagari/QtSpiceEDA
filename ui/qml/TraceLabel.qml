@@ -8,7 +8,7 @@ import QtSpice
 // - double-click shows only this trace in its pane;
 // - in Delete mode (WaveformController.deleteMode) a click removes it;
 // - otherwise a click attaches cursor 1 and right-click opens a menu for cursor 2,
-//   both cursors or removing the trace (W6).
+//   both cursors or removing the trace (W6), or editing its expression (W8).
 // Spike D: Drag.Internal + Drag.keys + one DropArea per pane; while dragging the chip
 // is re-parented to `dragParent` so it can leave its pane. Ctrl is read on release
 // (a DragEvent has no modifiers) and passed as Drag.proposedAction.
@@ -18,9 +18,11 @@ Item {
     required property string name
     required property color traceColor
     property bool present: true
+    property string error: ""  // why an expression trace cannot be drawn (W7)
     property Item dragParent: null
 
     signal cursorRequested(int which)  // 1, 2 or 3 (both)
+    signal editRequested()  // "Edit expression…" (W8)
 
     objectName: "label_" + paneIndex + "_" + name
     width: chip.implicitWidth
@@ -71,6 +73,8 @@ Item {
         drag.target: chip
         drag.threshold: 6
         cursorShape: WaveformController.deleteMode ? Qt.PointingHandCursor : Qt.OpenHandCursor
+        ToolTip.visible: containsMouse && label.error !== "" && !drag.active
+        ToolTip.text: label.error
 
         onPressed: event => {
             chip.Drag.proposedAction = Qt.MoveAction
@@ -131,6 +135,11 @@ Item {
             onTriggered: label.cursorRequested(3)
         }
         MenuSeparator {}
+        MenuItem {
+            objectName: "editExpressionItem"
+            text: qsTr("Edit expression…")
+            onTriggered: label.editRequested()
+        }
         MenuItem {
             text: qsTr("Show only this trace")
             onTriggered: WaveformController.showOnly(label.paneIndex, label.name)
