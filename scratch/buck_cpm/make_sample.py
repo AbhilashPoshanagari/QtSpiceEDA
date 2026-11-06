@@ -334,7 +334,7 @@ def build_diagram() -> dict:
     blocks = [
         ("Vref", "Constant", 40, 120, {"value": 3.3}),
         ("EA", "TypeIICompensator", 180, 200, {}),
-        ("CPM", "CPMModulator", 340, 200, {}),
+        ("CPM", "CPMModulator", 340, 200, {"Va": 0.3}),
         ("DT", "DeadTime", 480, 200, {}),
         ("Load", "LoadPulse", 520, 80, {}),
         ("Buck", "BuckPowerStage", 640, 200, {}),

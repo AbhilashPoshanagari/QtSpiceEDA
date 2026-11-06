@@ -85,7 +85,7 @@ version 2. See [README.md](README.md) for how to use the new features.
   plus its own `.lib`), `hierarchy/rc2.qsp` (one circuit symbol used twice),
   `rlc_bandpass.qsp` and `diode_log.qsp`.
 - `buck_cpm/buck_cpm.qsp`: a 1 MHz peak current mode synchronous buck (5 V to 3.3 V,
-  type II loop, 2 A load step) as a schematic with its own ngspice-ready model
+  type II loop with slope compensation, 2 A load step) as a schematic with its own ngspice-ready model
   library, and the same converter as a block diagram of Python blocks.
 - README covers the schematic editor and shortcuts, probing, library and symbol search
   paths, the waveform window and expression syntax.

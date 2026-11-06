@@ -2,10 +2,10 @@
 # The same converter as this project's schematic: power stage, CPM modulator,
 # dead time and a type II error amplifier. Fixed-step forward Euler, dt = 5 ns.
 #
-# Va = 0 (no slope compensation) as in the original LTspice example: at D = 0.66 peak
-# current mode is subharmonically unstable, so the inductor current ripple alternates
-# from cycle to cycle and the start-up transient is long. Set CPM's Va to 0.3 to see
-# the ripple settle to the ideal +-0.56 A.
+# CPM has Va = 0.3 V of slope compensation (the original LTspice example has Va = 0).
+# Set Va to 0 to see why it is needed: at D = 0.66 peak current mode is then
+# subharmonically unstable, the inductor current ripple alternates from cycle to cycle
+# and the start-up transient is long.
 
 
 @block
@@ -71,7 +71,7 @@ class CPMModulator:
     it resets when vs + Voffset + ramp reaches vc (limited to 0 .. Vcmax + Voffset), or at
     Dmax. Output 1 = switch on. Reset wins over set, as in the schematic's latch."""
 
-    def __init__(self, fs=1e6, Va=0.0, Vcmax=0.8, Dmin=0.0, Dmax=0.95, Voffset=1.0):
+    def __init__(self, fs=1e6, Va=0.3, Vcmax=0.8, Dmin=0.0, Dmax=0.95, Voffset=1.0):
         self.T, self.Va, self.Vcmax = 1 / fs, Va, Vcmax
         self.Dmin, self.Dmax, self.Voffset = Dmin, Dmax, Voffset
         self.phase = 0.0

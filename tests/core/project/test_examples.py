@@ -335,22 +335,39 @@ def test_buck_block_diagram_regulates_and_takes_the_load_step() -> None:
     assert time_mean(t, il, 125e-6, 140e-6) == pytest.approx(2.0, abs=0.1)  # 2 A load
     assert time_mean(t, vout, 150e-6, 160e-6) == pytest.approx(3.3, abs=0.01)
     window = (t >= 100e-6) & (t < 160e-6)
-    assert np.all(np.abs(vout[window] - 3.3) < 0.05)
-    assert np.all((ctrl[window] > 0.8) & (ctrl[window] < 1.8))  # the CPM control range
+    assert np.all(np.abs(vout[window] - 3.3) < 0.02)
+    assert np.all((ctrl[window] > 1.0) & (ctrl[window] < 1.8))  # the CPM control range
 
 
-def test_buck_block_diagram_with_slope_compensation_has_the_ideal_ripple() -> None:
-    """Va = 0.3 V removes the subharmonic oscillation: the steady ripple is
-    (Vin - Vout) * D * Ts / L = 1.7 V * 0.66 us / 1 uH = 1.12 A peak to peak."""
+# (Vin - Vout) * D * Ts / L = 1.7 V * 0.66 us / 1 uH: the ripple without subharmonics.
+IDEAL_RIPPLE = 1.12
+
+
+def run_buck_blocks(va: float, t_end: float) -> SimulationResult:
     project = load(BUCK)
     diagram = json.loads(json.dumps(project.diagrams[0].diagram))
     cpm = next(b for b in diagram["blocks"] if b["id"] == "CPM")
-    cpm["settings"]["Va"] = 0.3
+    assert cpm["settings"]["Va"] == 0.3  # the sample has slope compensation
+    cpm["settings"]["Va"] = va
     sources = {s.document: s.code for s in project.block_sources}
-    result = run_diagram(diagram, sources, 110e-6, 5e-9)
+    return run_diagram(diagram, sources, t_end, project.analysis.diagram_dt)
+
+
+def test_buck_block_diagram_has_the_ideal_ripple() -> None:
+    """Va = 0.3 V of slope compensation: the same ripple in every cycle."""
+    result = run_buck_blocks(0.3, 110e-6)
     t, il = result.vectors["time"], result.vectors["iL"]
     m = t >= 90e-6
-    assert il[m].max() - il[m].min() == pytest.approx(1.12, rel=0.1)
+    assert il[m].max() - il[m].min() == pytest.approx(IDEAL_RIPPLE, rel=0.1)
+
+
+def test_buck_block_diagram_without_slope_compensation_is_subharmonic() -> None:
+    """Va = 0 (as in the original LTspice example) at D = 0.66: the peak current
+    alternates from cycle to cycle, so the ripple is well above the ideal one."""
+    result = run_buck_blocks(0.0, 110e-6)
+    t, il = result.vectors["time"], result.vectors["iL"]
+    m = t >= 90e-6
+    assert il[m].max() - il[m].min() > 1.5 * IDEAL_RIPPLE
 
 
 @pytest.mark.ngspice
@@ -367,9 +384,11 @@ def test_buck_schematic_regulates_and_takes_the_load_step() -> None:
     assert time_mean(t, vout, 100e-6, 110e-6) == pytest.approx(3.3, abs=0.01)
     assert time_mean(t, il, 125e-6, 140e-6) == pytest.approx(2.0, abs=0.1)
     assert time_mean(t, vout, 150e-6, 160e-6) == pytest.approx(3.3, abs=0.01)
-    assert np.all(np.abs(vout - 3.3) < 0.05)
-    # The 1 MHz clock sets the latch at the start of every period it switches.
+    assert np.all(np.abs(vout - 3.3) < 0.02)
+    steady = t < 110e-6
+    assert il[steady].max() - il[steady].min() == pytest.approx(IDEAL_RIPPLE, rel=0.1)
+    # The 1 MHz clock sets the latch at the start of every period.
     high = pwm > 2.5
     rises = t[1:][high[1:] & ~high[:-1]]
-    assert len(rises) > 50
+    assert len(rises) >= 59
     assert np.all(np.abs(rises * 1e6 - np.round(rises * 1e6)) < 0.02)

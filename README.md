@@ -88,10 +88,10 @@ ngspice bundled) are made with `pyinstaller packaging/qtspice-<windows|macos|lin
   - **Blocks tab:** the same converter as Python blocks (power stage, CPM modulator,
     dead time, type II compensator), run at a 5 ns step. Opening the project asks
     you to trust its block code.
-  - Like the original, it has no slope compensation (`Va = 0`). At a duty cycle of
-    0.66 the inductor current ripple therefore alternates from cycle to cycle
-    (subharmonic oscillation). Set `Va=0.3` (the `CPM` block, or the `CPM_modulator`
-    `.param` line) to get the steady ±0.56 A ripple.
+  - The modulator has 0.3 V of slope compensation (`Va = 0.3`); the original has none.
+    The ripple is a steady ±0.56 A. Set `Va` to 0 (the `CPM` block, or the
+    `CPM_modulator` `.param` line) to see subharmonic oscillation: at a duty cycle of
+    0.66 the ripple then alternates from cycle to cycle.
 - **`rlc_bandpass.qsp`** (new in 0.2): a series RLC band-pass as a schematic, with a
   saved Bode pane of `V(n003)/V(n001)`. It peaks at 503 Hz with a bandwidth of 318 Hz;
   read it with the two cursors.

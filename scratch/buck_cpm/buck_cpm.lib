@@ -63,10 +63,11 @@ Ibias Vdd Vss {IQ}
 * Peak current mode modulator. A clock sets the latch at the start of each period; the
 * latch resets when vs + Voffset + ramp reaches the limited control voltage vc, or at
 * Dmax. PWM is the 0/5 V latch output; ramp is the artificial ramp.
-* Va = 0 (no slope compensation), as in the original example: at D > 0.5 this gives
-* subharmonic oscillation of the inductor current. Va=0.3 removes it.
+* Va = 0.3 V of slope compensation (the original example has Va = 0). At D = 0.66,
+* Va = 0 gives subharmonic oscillation of the inductor current; Va = 0.3 removes it
+* (it needs at least Rf * Vout / L / fs / 2 = 0.165 V).
 .subckt CPM_modulator vc vs PWM ramp
-.param fs=1meg Va=0 Vcmax=0.8 Dmin=0 Dmax=0.95 Voffset=1
+.param fs=1meg Va=0.3 Vcmax=0.8 Dmin=0 Dmax=0.95 Voffset=1
 Vdd vdd 0 5
 Vmid mid 0 2.5
 * control input, limited to about 0 .. Vcmax+Voffset
