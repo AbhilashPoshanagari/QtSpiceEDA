@@ -390,8 +390,10 @@ somewhere else that contains block code, QtSpice asks before loading the code.
   - There is no limit on End time / Step, and a run with a very large number of steps
     may run out of memory or hit the timeout.
 - **Projects:**
-  - Saving `name.qsp` manages the folder `name_results/` next to it, and removes `.npz`
-    files in it that are not results of this project. Don't keep other files there.
+  - Saving `name.qsp` writes its results to `name_results/` next to it, as
+    `netlist.npz` and `diagram.npz`, and deletes only result files that the project
+    itself listed. Other files in the folder are left alone, but a file with one of
+    those two names is overwritten.
   - Projects saved by 0.2 (format version 2) don't open in 0.1. Projects from 0.1 open
     in 0.2 and are saved as version 2.
   - The samples live in the app folder. Use **Save As…** to keep your own copy.

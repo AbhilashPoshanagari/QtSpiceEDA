@@ -8,9 +8,13 @@ A project is one JSON file (format in ``schema.json`` next to this module) plus 
     rc_results/diagram.npz
 
 ``save_project`` writes every file through a temporary file and a rename, so a failed
-save never leaves a half-written project. ``load_project`` never raises on a bad file:
-it returns a LoadResult whose ``errors`` say what is wrong (then ``project`` is None)
-and whose ``warnings`` list what was skipped, such as a missing result file.
+save never leaves a half-written project. The ``results`` list of the .qsp is the
+project's record of its own result files (O4): a save deletes only files named there
+by the .qsp it replaces, never any other file in the results folder.
+
+``load_project`` never raises on a bad file: it returns a LoadResult whose ``errors``
+say what is wrong (then ``project`` is None) and whose ``warnings`` list what was
+skipped, such as a missing result file.
 
 The .qsp text is deterministic: saving the same Project twice gives the same bytes.
 """
@@ -161,7 +165,9 @@ def save_project(path: str | Path, project: Project) -> None:
     """Write ``project`` to ``path`` and its results next to it.
 
     Result files of this project that are no longer in ``project.results`` are
-    removed. Raises ProjectError (or OSError) if anything cannot be written.
+    removed: only files that the .qsp being replaced lists as its results (O4). Other
+    files in the results folder are left alone, and the folder is removed only when it
+    is empty. Raises ProjectError (or OSError) if anything cannot be written.
     """
     path = Path(path)
     for kind, names in (
@@ -182,6 +188,7 @@ def save_project(path: str | Path, project: Project) -> None:
     text = project.to_json()  # before touching the disk: fails on NaN etc.
 
     folder = results_dir(path)
+    owned = _owned_result_files(path)  # read before the .qsp is replaced
     if project.results:
         folder.mkdir(parents=True, exist_ok=True)
         for name, result in project.results.items():
@@ -190,15 +197,37 @@ def save_project(path: str | Path, project: Project) -> None:
             os.replace(tmp, folder / f"{name}.npz")
     if folder.is_dir():
         keep = {f"{name}.npz" for name in project.results}
-        for old in folder.glob("*.npz"):
-            if old.name not in keep:
-                old.unlink()
+        for name in sorted(owned - keep):
+            (folder / name).unlink(missing_ok=True)
         if not any(folder.iterdir()):
             folder.rmdir()
 
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(text, encoding="utf-8", newline="\n")
     os.replace(tmp, path)
+
+
+def _owned_result_files(path: Path) -> set[str]:
+    """The result file names listed by the project file at ``path`` (before a save
+    replaces it): the only files a save may delete. A missing, unreadable or foreign
+    file owns nothing. Only plain ``<name>.npz`` names count, never a path."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return set()
+    if not isinstance(data, dict) or data.get("format") != FORMAT:
+        return set()
+    entries = data.get("results")
+    if not isinstance(entries, list):
+        return set()
+    owned: set[str] = set()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        name, file = entry.get("name"), entry.get("file")
+        if isinstance(name, str) and _NAME.fullmatch(name) and file == f"{name}.npz":
+            owned.add(file)
+    return owned
 
 
 # ---- loading

@@ -432,3 +432,81 @@ def test_plot_defs_must_be_text(tmp_path: Path) -> None:
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.validate(data, SCHEMA)
     assert not load_project(write(tmp_path, data)).ok
+
+
+# ---- O4: the results folder is safe
+
+
+def test_save_keeps_files_the_project_does_not_own(tmp_path: Path) -> None:
+    path = tmp_path / "rc.qsp"
+    folder = results_dir(path)
+    folder.mkdir()
+    mine = folder / "measured.npz"  # a user's own file, saved there before the project
+    mine.write_bytes(b"not ours")
+    (folder / "notes.txt").write_text("keep me")
+    project = sample_project()
+    save_project(path, project)
+    del project.results["diagram"]
+    save_project(path, project)
+    assert sorted(p.name for p in folder.iterdir()) == ["measured.npz", "netlist.npz", "notes.txt"]
+    project.results.clear()
+    save_project(path, project)
+    assert sorted(p.name for p in folder.iterdir()) == ["measured.npz", "notes.txt"]
+    assert mine.read_bytes() == b"not ours"
+
+
+def test_save_as_over_a_folder_with_no_project_deletes_nothing(tmp_path: Path) -> None:
+    path = tmp_path / "new.qsp"
+    folder = results_dir(path)
+    folder.mkdir()
+    (folder / "diagram.npz").write_bytes(b"left by someone else")
+    project = sample_project()
+    del project.results["diagram"]
+    save_project(path, project)
+    assert (folder / "diagram.npz").read_bytes() == b"left by someone else"
+
+
+def test_dropped_results_listed_by_the_old_file_are_removed(tmp_path: Path) -> None:
+    """The record is the .qsp on disk: a result dropped in a later session goes too."""
+    path = tmp_path / "rc.qsp"
+    save_project(path, sample_project())
+    reopened = load_project(path).project
+    assert reopened is not None
+    del reopened.results["netlist"]
+    save_project(path, reopened)
+    assert [p.name for p in results_dir(path).iterdir()] == ["diagram.npz"]
+
+
+@pytest.mark.parametrize(
+    "old_text",
+    [
+        "not json",
+        json.dumps({"format": "something-else", "results": [{"name": "a", "file": "a.npz"}]}),
+        json.dumps({"format": "qtspice-project", "results": "a.npz"}),
+        json.dumps(
+            {
+                "format": "qtspice-project",
+                "results": [
+                    {"name": "x", "file": "../victim.npz"},
+                    {"name": "../victim", "file": "../victim.npz"},
+                    {"name": "a\n", "file": "a\n.npz"},
+                    {"name": "b", "file": "c.npz"},
+                    "c.npz",
+                ],
+            }
+        ),
+    ],
+)
+def test_a_bad_or_foreign_old_file_owns_nothing(tmp_path: Path, old_text: str) -> None:
+    path = tmp_path / "p.qsp"
+    path.write_text(old_text, encoding="utf-8")
+    folder = results_dir(path)
+    folder.mkdir()
+    for name in ("a.npz", "c.npz"):
+        (folder / name).write_bytes(b"x")
+    victim = tmp_path / "victim.npz"
+    victim.write_bytes(b"x")
+    save_project(path, Project())
+    assert sorted(p.name for p in folder.iterdir()) == ["a.npz", "c.npz"]
+    assert victim.exists()
+    assert load_project(path).ok

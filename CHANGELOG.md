@@ -71,9 +71,12 @@ version 2. See [README.md](README.md) for how to use the new features.
 - Ctrl+click a trace name for average and RMS over the zoomed X range; Bode key and
   light plot theme (W10).
 
-### Fixes (O1, O5)
+### Fixes (O1, O4, O5)
 - A warning when line 1 of a netlist looks like an element, with an "Insert title
   line" quick-fix; an emptied editor shows "Empty netlist" instead of errors (O1).
+- Safe results folder: a save deletes only the result files that the project's own
+  .qsp lists, never other files in `name_results/`, and keeps the folder while
+  anything else is in it (O4).
 - One schematic per project: drawing over another netlist asks Replace or Keep, and a
   schematic-owned netlist is saved into the project (O5).
 
@@ -86,10 +89,8 @@ version 2. See [README.md](README.md) for how to use the new features.
 - A release check opens, saves and reopens the v0.1.0 sample projects.
 
 ### Not in this release
-- O2 (ngspice run errors mapped to a netlist line or part), O3 (block-run timeout
-  setting and step guard) and O4 (the results folder deletes only the project's own
-  files) are not done. Block runs still have a fixed 10 s timeout, and saving still
-  removes any `.npz` in `name_results/` that isn't one of the project's results.
+- O2 (ngspice run errors mapped to a netlist line or part) and O3 (block-run timeout
+  setting and step guard) are not done. Block runs still have a fixed 10 s timeout.
 
 ### Known limitations
 See [README.md](README.md#known-limitations-v02).
