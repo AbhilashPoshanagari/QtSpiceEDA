@@ -248,8 +248,54 @@ ApplicationWindow {
         }
     }
 
+    // The schematic was edited while the Netlist tab holds another netlist: the project
+    // keeps one netlist, so ask which one it is.
+    Dialog {
+        id: netlistChoiceDialog
+        objectName: "netlistChoiceDialog"
+        property string source: ""
+        title: qsTr("Replace the netlist?")
+        width: 460
+        anchors.centerIn: parent
+        modal: true
+        closePolicy: Popup.CloseOnEscape
+        Label {
+            width: 420
+            wrapMode: Text.WordWrap
+            text: (netlistChoiceDialog.source !== ""
+                   ? qsTr("The Netlist tab holds the netlist from %1.").arg(netlistChoiceDialog.source)
+                   : qsTr("The Netlist tab already holds a netlist."))
+                  + "\n\n"
+                  + qsTr("Replace it with the schematic? The netlist is removed now, and "
+                         + "Save writes the schematic's netlist into the project.\n\n"
+                         + "Keep it? The netlist stays as it is and is saved as typed; "
+                         + "you can still draw and run the schematic.")
+        }
+        footer: DialogButtonBox {
+            Button {
+                objectName: "replaceNetlistButton"
+                text: qsTr("Replace netlist")
+                DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
+            }
+            Button {
+                objectName: "keepNetlistButton"
+                text: qsTr("Keep netlist")
+                DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+            }
+        }
+        onAccepted: {
+            ProjectManager.chooseNetlistSource(true)
+            netlistEditor.clearText()
+        }
+        onRejected: ProjectManager.chooseNetlistSource(false)
+    }
+
     Connections {
         target: ProjectManager
+        function onNetlistChoiceRequested(source) {
+            netlistChoiceDialog.source = source
+            netlistChoiceDialog.open()
+        }
         function onTrustRequested(fileName, documents) {
             trustDialog.fileName = fileName
             trustDialog.documents = documents
@@ -458,7 +504,7 @@ ApplicationWindow {
                         }
                         PortsPanel {
                             id: portsPanel
-                            SplitView.preferredHeight: 220
+                            SplitView.preferredHeight: 150
                             SplitView.minimumHeight: 100
                             onEditPort: index => schematicCanvas.editPort(index)
                             onMakeSymbolRequested: makeSymbolDialog.openWith("")

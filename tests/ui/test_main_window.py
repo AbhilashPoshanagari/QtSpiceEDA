@@ -102,3 +102,45 @@ def test_run_from_the_toolbar_runs_the_schematic_on_its_tab(qapp: object, qtbot)
         sim.shutdown()
         window.close()
         engine.deleteLater()
+
+
+@pytest.mark.parametrize(
+    "button, source", [("replaceNetlistButton", "schematic"), ("keepNetlistButton", "netlist")]
+)
+def test_drawing_over_an_opened_netlist_asks_replace_or_keep(
+    qapp: object, qtbot, button: str, source: str
+) -> None:
+    import json
+
+    from PySide6.QtCore import QMetaObject, Qt
+
+    from core.schematic.model import Schematic
+
+    engine = create_engine()
+    window = engine.rootObjects()[0]
+    projects = engine.singletonInstance("QtSpice", "ProjectManager")
+    schematic = engine.singletonInstance("QtSpice", "SchematicController")
+    try:
+        editor = window.findChild(QObject, "editorText")
+        text = RC_EXAMPLE.read_text()
+        editor.setProperty("text", text)
+        dialog = window.findChild(QObject, "netlistChoiceDialog")
+        assert dialog.property("opened") is False
+        fixture = Path(__file__).resolve().parents[1] / "fixtures" / "schematics" / "rc" / "rc.json"
+        sheet = Schematic.from_dict(json.loads(fixture.read_text("utf-8")))[0]
+        schematic._edit("draw", lambda s: s.__dict__.update(sheet.__dict__))
+        qtbot.waitUntil(lambda: dialog.property("opened") is True, timeout=2000)
+        window.findChild(QObject, button).clicked.emit()
+        qtbot.waitUntil(lambda: dialog.property("visible") is False, timeout=2000)
+        assert projects.property("netlistSource") == source
+        if source == "schematic":
+            assert editor.property("text") == ""
+            status = window.findChild(QObject, "editorStatus").property("text")
+            assert status == "Empty netlist"
+            QMetaObject.invokeMethod(editor, "undo", Qt.ConnectionType.DirectConnection)
+            assert editor.property("text").replace("\r\n", "\n") == text.replace("\r\n", "\n")
+        else:
+            assert editor.property("text") == text
+    finally:
+        window.close()
+        engine.deleteLater()

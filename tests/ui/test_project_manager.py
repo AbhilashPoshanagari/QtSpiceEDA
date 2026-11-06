@@ -362,3 +362,102 @@ def test_circuit_symbols_are_saved_with_the_project_and_placeable_after_reopenin
         assert "rclp" not in again.schematic.placeableSymbols()
     finally:
         again.close()
+
+
+# ---------------------------------------------------------------- netlist or schematic
+#
+# A project keeps one netlist. Editing the schematic while the netlist editor holds
+# other text asks which one the project keeps; the schematic's netlist is written on
+# Save when the schematic owns it.
+
+
+def _edit_schematic(app: App) -> None:
+    from tests.ui.test_schematic_canvas import rc
+
+    sheet = rc()
+    app.schematic._edit("draw", lambda s: s.__dict__.update(sheet.__dict__))
+
+
+def test_editing_the_schematic_over_an_opened_netlist_asks_once(app: App, tmp_path: Path) -> None:
+    cir = tmp_path / "rc.cir"
+    cir.write_text(RC, encoding="utf-8")
+    app.sim.setProperty("netlistText", app.sim.openFile(str(cir)))
+    asked: list[str] = []
+    app.projects.netlistChoiceRequested.connect(asked.append)
+    _edit_schematic(app)
+    app.schematic._edit("wire", lambda s: s.wires.append(Wire(0, 0, 16, 0)))
+    assert asked == ["rc.cir"]  # once, until answered
+    assert app.projects.property("netlistSource") == ""
+
+
+def test_replace_saves_the_schematic_netlist_into_the_project(app: App, tmp_path: Path) -> None:
+    app.sim.setProperty("netlistText", RC)
+    asked: list[str] = []
+    app.projects.netlistChoiceRequested.connect(asked.append)
+    _edit_schematic(app)
+    assert asked == [""]
+    app.projects.chooseNetlistSource(True)
+    app.sim.setProperty("netlistText", "")  # what the dialog does in the editor
+    assert app.projects.property("netlistSource") == "schematic"
+    path = tmp_path / "p.qsp"
+    assert app.projects.saveAs(str(path))
+    generated = app.schematic.netlist_text()
+    assert "R2" in generated and generated.rstrip().endswith(".end")
+    assert app.sim.property("netlistText") == generated  # the editor shows it too
+    saved = load_project(path).project
+    assert saved is not None and saved.netlists[0].text == generated
+    assert saved.schematic == app.schematic.schematic()
+    assert app.projects.property("modified") is False
+
+    # Reopened: the netlist is the schematic's, so editing asks nothing.
+    assert app.projects.open(str(path))
+    assert app.projects.property("netlistSource") == "schematic"
+    app.schematic._edit("wire", lambda s: s.wires.append(Wire(0, 0, 16, 0)))
+    assert asked == [""]
+    assert app.projects.save()
+    assert load_project(path).project.netlists[0].text == app.schematic.netlist_text()  # type: ignore[union-attr]
+
+
+def test_keep_saves_the_netlist_as_typed(app: App, tmp_path: Path) -> None:
+    app.sim.setProperty("netlistText", RC)
+    _edit_schematic(app)
+    app.projects.chooseNetlistSource(False)
+    assert app.projects.property("netlistSource") == "netlist"
+    path = tmp_path / "p.qsp"
+    assert app.projects.saveAs(str(path))
+    saved = load_project(path).project
+    assert saved is not None and saved.netlists[0].text == RC
+    assert saved.schematic is not None
+    assert app.projects.open(str(path))
+    assert app.projects.property("netlistSource") == "netlist"
+
+
+def test_schematic_with_an_empty_netlist_takes_over_without_asking(
+    app: App, tmp_path: Path
+) -> None:
+    asked: list[str] = []
+    app.projects.netlistChoiceRequested.connect(asked.append)
+    _edit_schematic(app)
+    assert asked == []
+    assert app.projects.property("netlistSource") == "schematic"
+    assert app.projects.saveAs(str(tmp_path / "p.qsp"))
+    assert app.sim.property("netlistText") == app.schematic.netlist_text()
+
+
+def test_other_netlist_text_opens_the_choice_again(app: App) -> None:
+    _edit_schematic(app)
+    assert app.projects.property("netlistSource") == "schematic"
+    app.sim.setProperty("netlistText", RC)  # the user opened another netlist file
+    assert app.projects.property("netlistSource") == ""
+    asked: list[str] = []
+    app.projects.netlistChoiceRequested.connect(asked.append)
+    app.schematic._edit("wire", lambda s: s.wires.append(Wire(0, 0, 16, 0)))
+    assert len(asked) == 1
+
+
+def test_new_project_resets_the_choice(app: App) -> None:
+    app.sim.setProperty("netlistText", RC)
+    _edit_schematic(app)
+    app.projects.chooseNetlistSource(False)
+    assert app.projects.newProject()
+    assert app.projects.property("netlistSource") == ""

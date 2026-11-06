@@ -403,13 +403,22 @@ class SchematicController(QObject):
         """A copy of the sheet as it is now."""
         return copy.deepcopy(self._schematic)
 
-    def schematic_or_none(self) -> Schematic | None:
-        """The sheet for saving: None when it is empty (projects without one stay so)."""
+    def is_empty(self) -> bool:
         s = self._schematic
-        empty = not (
+        return not (
             s.title or s.instances or s.wires or s.labels or s.grounds or s.ports or s.texts
         )
-        return None if empty else self.schematic()
+
+    def schematic_or_none(self) -> Schematic | None:
+        """The sheet for saving: None when it is empty (projects without one stay so)."""
+        return None if self.is_empty() else self.schematic()
+
+    def netlist_text(self) -> str:
+        """The sheet as netlist text (title first, ``.end`` last), as Run would send it,
+        without touching ``problems``. "" for an empty sheet."""
+        if self.is_empty():
+            return ""
+        return netlist_schematic(self._schematic, self.lookup, self._base_dir()).text
 
     def load_schematic(self, schematic: Schematic | None) -> None:
         """Replace the sheet (opening a project). Clears the undo stack and selection."""

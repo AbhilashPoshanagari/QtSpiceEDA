@@ -23,6 +23,15 @@ file path (a SHA-256 of the code, kept in QSettings with the path). Otherwise
 ``confirmTrust(bool)``. Declining opens the netlist, analysis settings and results but
 no block code (blocks that need it are left off the canvas), as an untitled project,
 so saving cannot overwrite the original file without its code.
+
+A project holds one netlist and one schematic. ``netlistSource`` says which of them
+the saved netlist comes from: "schematic" (Save writes the schematic's netlist into
+the project), "netlist" (the netlist editor's text is saved as typed; the schematic is
+saved beside it) or "" (not decided yet). The first edit of the schematic while the
+netlist editor holds other text (say a netlist file the user opened) sends
+``netlistChoiceRequested``; QML asks the user and calls ``chooseNetlistSource(replace)``.
+With an empty netlist editor the schematic takes over without asking. Typing other text
+into the netlist editor later makes the choice open again.
 """
 
 from __future__ import annotations
@@ -91,6 +100,8 @@ class ProjectManager(QObject):
     statusTextChanged = Signal()
     trustRequested = Signal(str, int)  # file name, number of documents with code
     projectLoaded = Signal()
+    netlistSourceChanged = Signal()
+    netlistChoiceRequested = Signal(str)  # where the netlist came from (file name or "")
 
     def __init__(self, parent: QObject | None = None, settings: QSettings | None = None) -> None:
         super().__init__(parent)
@@ -117,6 +128,10 @@ class ProjectManager(QObject):
         self._saved_json = ""
         self._saved_results: tuple[object, object] = (None, None)
         self._pending: tuple[Path, Project, list[str]] | None = None
+        # Where the saved netlist comes from: "", "asking", "schematic" or "netlist".
+        self._netlist_source = ""
+        self._synced_text = ""  # the last netlist text written from the schematic
+        self._applying = False
 
     # ---- properties
 
@@ -145,6 +160,11 @@ class ProjectManager(QObject):
     errorString = Property(str, _get_error_string, notify=errorStringChanged)  # noqa: N815
     statusText = Property(str, _get_status_text, notify=statusTextChanged)  # noqa: N815
 
+    def _get_netlist_source(self) -> str:
+        return "" if self._netlist_source == "asking" else self._netlist_source
+
+    netlistSource = Property(str, _get_netlist_source, notify=netlistSourceChanged)  # noqa: N815
+
     # ---- wiring
 
     @Slot(QObject, QObject, QObject)
@@ -163,6 +183,7 @@ class ProjectManager(QObject):
             diagram.diagramEdited,
         ):
             signal.connect(self._update_modified)
+        simulator.netlistTextChanged.connect(self._on_netlist_text)
         self._mark_saved()
 
     @Slot(QObject)
@@ -174,7 +195,9 @@ class ProjectManager(QObject):
         controller.load_schematic(self._schematic)  # type: ignore[attr-defined]
         controller.schematicEdited.connect(self._update_modified)  # type: ignore[attr-defined]
         controller.projectSymbolsChanged.connect(self._update_modified)  # type: ignore[attr-defined]
+        controller.schematicEdited.connect(self._on_schematic_edited)  # type: ignore[attr-defined]
         if self._simulator is not None and self._diagram is not None:
+            self._decide_netlist_source()
             self._mark_saved()
 
     @Slot(QObject)
@@ -291,6 +314,14 @@ class ProjectManager(QObject):
         self._pending = None
         self._finish_open(path, project, warnings, trusted=trust)
 
+    @Slot(bool)
+    def chooseNetlistSource(self, replace: bool) -> None:  # noqa: N802 - QML API
+        """The user's answer to ``netlistChoiceRequested``: ``replace`` makes the
+        schematic the source of the project's netlist (QML clears the netlist editor; Save
+        writes the schematic's netlist); otherwise the netlist editor's text is kept."""
+        self._synced_text = ""
+        self._set_netlist_source("schematic" if replace else "netlist")
+
     @Slot(result=bool)
     def save(self) -> bool:
         """Save to the current file. False if there is none yet (use ``saveAs``) or the
@@ -346,6 +377,16 @@ class ProjectManager(QObject):
 
     def _apply(self, project: Project, path: str, trusted: bool) -> list[str]:
         """Put ``project`` into the bridge objects. Returns what was skipped."""
+        self._applying = True
+        try:
+            warnings = self._apply_parts(project, path, trusted)
+        finally:
+            self._applying = False
+        self._decide_netlist_source()
+        self._mark_saved()
+        return warnings
+
+    def _apply_parts(self, project: Project, path: str, trusted: bool) -> list[str]:
         sim, diagram = self._parts()
         self._extra_netlists = list(project.netlists[1:])
         self._extra_diagrams = list(project.diagrams[1:])
@@ -379,7 +420,6 @@ class ProjectManager(QObject):
         if netlist_result is None and diagram_result is not None and self._waveforms is not None:
             self._waveforms.set_result(diagram_result)  # type: ignore[attr-defined]
         self._set_file_path(path)
-        self._mark_saved()
         return warnings + skipped
 
     def _can_replace(self) -> bool:
@@ -393,6 +433,7 @@ class ProjectManager(QObject):
     # ---- saving
 
     def _save_to(self, path: Path) -> bool:
+        self._sync_netlist_from_schematic()
         project = self.current_project(path)
         try:
             save_project(path, project)
@@ -407,6 +448,72 @@ class ProjectManager(QObject):
         self._set_error("")
         self._set_status(f"Saved {path.name}")
         return True
+
+    # ---- netlist source (which editor the saved netlist comes from)
+
+    def _set_netlist_source(self, source: str) -> None:
+        old = self._get_netlist_source()
+        self._netlist_source = source
+        if self._get_netlist_source() != old:
+            self.netlistSourceChanged.emit()
+
+    def _netlist_text(self) -> str:
+        sim = self._simulator
+        return str(sim.property("netlistText") or "") if sim is not None else ""
+
+    def _decide_netlist_source(self) -> None:
+        """After a project opened: a schematic whose netlist is the project's netlist (or
+        with an empty netlist) owns it; a schematic beside other netlist text does not;
+        without a schematic nothing is decided yet."""
+        ctl = self._schematic_ctl
+        self._synced_text = ""
+        if ctl is None or ctl.is_empty():  # type: ignore[attr-defined]
+            self._set_netlist_source("")
+            return
+        text = self._netlist_text()
+        if not text.strip() or text == ctl.netlist_text():  # type: ignore[attr-defined]
+            self._synced_text = text
+            self._set_netlist_source("schematic")
+        else:
+            self._set_netlist_source("netlist")
+
+    @Slot()
+    def _on_netlist_text(self) -> None:
+        """Other text typed or opened in the netlist editor while the schematic owns the
+        netlist: the choice is open again."""
+        if self._applying or self._netlist_source != "schematic":
+            return
+        text = self._netlist_text()
+        if text.strip() and text != self._synced_text:
+            self._set_netlist_source("")
+
+    @Slot()
+    def _on_schematic_edited(self) -> None:
+        ctl = self._schematic_ctl
+        if self._applying or self._netlist_source != "" or ctl is None:
+            return
+        if ctl.is_empty():  # type: ignore[attr-defined]
+            return
+        if not self._netlist_text().strip():
+            self._set_netlist_source("schematic")
+            return
+        self._netlist_source = "asking"  # one question until it is answered
+        sim = self._simulator
+        source = str(sim.property("filePath") or "") if sim is not None else ""
+        name = Path(source).name if source and not self.isProjectFile(source) else ""
+        self.netlistChoiceRequested.emit(name)
+
+    def _sync_netlist_from_schematic(self) -> None:
+        """Save: when the schematic owns the netlist, the project's netlist is the
+        schematic's (the netlist editor shows it too)."""
+        ctl, sim = self._schematic_ctl, self._simulator
+        if self._netlist_source != "schematic" or ctl is None or sim is None:
+            return
+        text = ctl.netlist_text()  # type: ignore[attr-defined]
+        if not text:
+            return
+        self._synced_text = text
+        sim.setProperty("netlistText", text)
 
     # ---- modified flag
 
