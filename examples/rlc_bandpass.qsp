@@ -4,7 +4,7 @@
   "netlists": [
     {
       "name": "main",
-      "text": "RLC band-pass filter, R = 10, L = 10m, C = 1u, f0 = 1.592 kHz, Q = 10\n* A 1 V AC source drives a series L-C-R loop; the output is taken across R.\n* H(f) = V(out)/V(in) = R / (R + jwL + 1/(jwC)): 0 dB and 0 deg at f0 = 1/(2 pi sqrt(LC)),\n* -3 dB and +/-45 deg at fL = 1513.96 Hz and fH = 1673.12 Hz, so BW = f0/Q = 159.15 Hz.\n* Far from f0 the skirts rise and fall 20 dB/decade.\n* Read the bandwidth with two cursors on V(out)/V(in) in the Bode pane.\nV1 in 0 AC 1\nL1 in a 10m\nC1 a out 1u\nR1 out 0 10\n.ac dec 2000 10 100k\n.end\n"
+      "text": "QtSpice schematic\nV1 N001 0 12 AC\nL1 N001 N002 10mH\nC1 N002 N003 10uF\nR1 N003 0 20ohm\n.ac dec 2000 10 100k\n.end\n"
     }
   ],
   "diagrams": [
@@ -23,7 +23,7 @@
     }
   ],
   "analysis": {
-    "card": "",
+    "card": ".ac dec 2000 -10 300k",
     "diagram_t_end": 1.0,
     "diagram_dt": 0.001
   },
@@ -31,31 +31,159 @@
   "simulation": {
     "compat_mode": "ltpsa"
   },
+  "schematic": {
+    "title": "",
+    "instances": [
+      {
+        "symbol": "voltage",
+        "name": "V1",
+        "x": 128,
+        "y": 112,
+        "rotation": 0,
+        "mirror": false,
+        "attrs": {
+          "Value": "12 AC"
+        }
+      },
+      {
+        "symbol": "ind",
+        "name": "L1",
+        "x": 160,
+        "y": 96,
+        "rotation": 270,
+        "mirror": false,
+        "attrs": {
+          "Value": "10mH"
+        }
+      },
+      {
+        "symbol": "cap",
+        "name": "C1",
+        "x": 320,
+        "y": 96,
+        "rotation": 270,
+        "mirror": false,
+        "attrs": {
+          "Value": "10uF"
+        }
+      },
+      {
+        "symbol": "res",
+        "name": "R1",
+        "x": 448,
+        "y": 112,
+        "rotation": 0,
+        "mirror": false,
+        "attrs": {
+          "Value": "20ohm"
+        }
+      }
+    ],
+    "wires": [
+      [
+        288,
+        256,
+        288,
+        224
+      ],
+      [
+        288,
+        224,
+        128,
+        224
+      ],
+      [
+        128,
+        224,
+        128,
+        208
+      ],
+      [
+        464,
+        208,
+        464,
+        224
+      ],
+      [
+        464,
+        224,
+        288,
+        224
+      ],
+      [
+        128,
+        128,
+        128,
+        80
+      ],
+      [
+        128,
+        80,
+        160,
+        80
+      ],
+      [
+        256,
+        80,
+        320,
+        80
+      ],
+      [
+        384,
+        80,
+        464,
+        80
+      ],
+      [
+        464,
+        80,
+        464,
+        112
+      ]
+    ],
+    "labels": [],
+    "grounds": [
+      {
+        "x": 288,
+        "y": 256
+      }
+    ],
+    "ports": [],
+    "texts": [
+      {
+        "x": 64,
+        "y": 32,
+        "text": ".ac dec 2000 10 100k",
+        "directive": true
+      }
+    ]
+  },
   "plots": {
     "ac": {
       "x": {
         "auto": true,
-        "lo": 10.0,
-        "hi": 100000.0,
+        "lo": 2.7440842385029485,
+        "hi": 66083.71401656375,
         "log": true
       },
       "panes": [
         {
           "title": "H(f) = V(out)/V(in)",
           "traces": [
-            "V(out)/V(in)"
+            "V(out)/V(in)",
+            "V(n003)/V(n001)"
           ],
           "y": {
             "auto": true,
-            "lo": 0.0,
+            "lo": -1.0,
             "hi": 1.0,
             "log": false,
             "abs": false
           },
           "phase": {
             "auto": true,
-            "lo": -90.0,
-            "hi": 90.0,
+            "lo": -180.0,
+            "hi": 180.0,
             "log": false,
             "abs": false
           },

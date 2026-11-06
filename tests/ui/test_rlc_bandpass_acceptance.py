@@ -1,10 +1,12 @@
 """RLC band-pass acceptance (examples/rlc_bandpass.qsp) with a real ngspice .ac run.
 
-Series R = 10, L = 10 mH, C = 1 uF, output across R:
-    f0 = 1 / (2 pi sqrt(LC)) = 1591.55 Hz, Q = sqrt(L/C) / R = 10, BW = f0 / Q = 159.15 Hz
-    fL, fH = f0 (sqrt(1 + 1/(4Q^2)) -/+ 1/(2Q)) = 1513.96 Hz, 1673.12 Hz
+The example is drawn as a schematic, so its nets are the netlister's N001 (source and L)
+and N003 (across R). Series R = 20, L = 10 mH, C = 10 uF, output across R:
+    f0 = 1 / (2 pi sqrt(LC)) = 503.29 Hz, Q = sqrt(L/C) / R = 1.581, BW = f0 / Q = 318.31 Hz
+    fL, fH = f0 (sqrt(1 + 1/(4Q^2)) -/+ 1/(2Q)) = 368.70 Hz, 687.01 Hz
+The test runs the netlist's own .ac dec 2000 10 100k card.
 Checks the Bode pane (log frequency, magnitude in dB, phase on the right axis), the
-transfer-function expression V(out)/V(in), the -3 dB points and phase there, the
+transfer-function expression V(n003)/V(n001), the -3 dB points and phase there, the
 +/-20 dB/decade skirts, and the bandwidth read with two cursors the way a user does it
 (step each cursor with the arrow keys until the magnitude first reads -3 dB)."""
 
@@ -24,13 +26,13 @@ from tests.ui.test_waveform_acceptance import run
 from tests.ui.test_waveform_view import _child, _parts, _settle
 
 EXAMPLE = Path(__file__).resolve().parents[2] / "examples" / "rlc_bandpass.qsp"
-R, L, C = 10.0, 10e-3, 1e-6
+R, L, C = 20.0, 10e-3, 10e-6
 F0 = 1 / (2 * math.pi * math.sqrt(L * C))
 Q = math.sqrt(L / C) / R
 BW = F0 / Q
 FL = F0 * (math.sqrt(1 + 1 / (4 * Q * Q)) - 1 / (2 * Q))
 FH = F0 * (math.sqrt(1 + 1 / (4 * Q * Q)) + 1 / (2 * Q))
-H = "V(out)/V(in)"
+H = "V(n003)/V(n001)"
 MINUS_3DB = -10 * math.log10(2)  # -3.0103 dB
 
 
@@ -65,10 +67,10 @@ def _deg(text: str) -> float:
 
 
 def test_theory_values() -> None:
-    assert pytest.approx(1591.55, abs=0.01) == F0
-    assert pytest.approx(10) == Q
-    assert pytest.approx(159.155, abs=0.001) == BW
-    assert (pytest.approx(1513.96, abs=0.01), pytest.approx(1673.12, abs=0.01)) == (FL, FH)
+    assert pytest.approx(503.29, abs=0.01) == F0
+    assert pytest.approx(1.5811, abs=1e-4) == Q
+    assert pytest.approx(318.31, abs=0.01) == BW
+    assert (pytest.approx(368.70, abs=0.01), pytest.approx(687.01, abs=0.01)) == (FL, FH)
     assert pytest.approx(BW) == FH - FL and pytest.approx(F0 * F0) == FL * FH
 
 
@@ -77,15 +79,15 @@ def test_example_opens_as_a_bode_plot_of_the_transfer_function(opened) -> None:
     _, ctl = opened
     assert ctl.property("isAc") and ctl.property("xLog")
     [pane] = ctl.property("panes")
-    [trace] = pane["traces"]
-    assert trace["name"] == H and trace["present"] and trace["expression"]
+    [trace] = [t for t in pane["traces"] if t["name"] == H]
+    assert trace["present"] and trace["expression"]
 
 
 @pytest.mark.ngspice
 def test_magnitude_phase_and_minus_3db_points(opened) -> None:
     result, _ = opened
     f = result.vectors["frequency"].real
-    h = result.vectors["V(out)"] / result.vectors["V(in)"]
+    h = result.vectors["V(n003)"] / result.vectors["V(n001)"]
     db = 20 * np.log10(np.abs(h))
     ph = np.degrees(np.angle(h))
     lf = np.log10(f)
@@ -108,10 +110,10 @@ def test_magnitude_phase_and_minus_3db_points(opened) -> None:
     exact = R / (R + 1j * w * L + 1 / (1j * w * C))
     assert np.max(np.abs(db - 20 * np.log10(np.abs(exact)))) < 0.01
     assert np.max(np.abs(ph - np.degrees(np.angle(exact)))) < 0.1
-    # skirts: about +20 dB/decade far below f0 and -20 dB/decade far above
-    assert np.interp(2, lf, db) - np.interp(1, lf, db) == pytest.approx(20, abs=0.1)
+    # skirts: about +20 dB/decade far below f0 and -20 dB/decade far above (half decades)
+    assert np.interp(1.5, lf, db) - np.interp(1, lf, db) == pytest.approx(10, abs=0.1)
     assert np.interp(5, lf, db) - np.interp(4.5, lf, db) == pytest.approx(-10, abs=0.1)
-    assert ph[0] == pytest.approx(90, abs=0.5) and ph[-1] == pytest.approx(-90, abs=0.5)
+    assert ph[0] == pytest.approx(90, abs=1) and ph[-1] == pytest.approx(-90, abs=0.5)
 
 
 @pytest.mark.ngspice
@@ -126,7 +128,7 @@ def test_bandwidth_with_two_cursors(opened) -> None:
 
     ctl.setCursorX(1, F0)
     c1 = _cursor(ctl, 1)
-    assert c1["xText"] == "1.592 kHz" and abs(_db(c1["yText"])) < 0.01
+    assert c1["xText"] == "503.3 Hz" and abs(_db(c1["yText"])) < 0.01
     assert abs(_deg(c1["phaseText"])) < 1
     walk(1, -1)
     walk(2, +1)
