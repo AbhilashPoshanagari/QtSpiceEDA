@@ -45,6 +45,13 @@ Item {
         editor.forceActiveFocus()
         check()
     }
+    // Remove all text. TextArea.remove goes through the editor's own undo stack, so
+    // Ctrl+Z in the editor brings the netlist back.
+    function clearText() {
+        if (editor.length > 0)
+            editor.remove(0, editor.length)
+        check()
+    }
     function openDialog() {
         fileDialog.open()
     }
@@ -239,6 +246,8 @@ Item {
             text: {
                 if (Simulator.errorString.length > 0)
                     return Simulator.errorString
+                if (editor.text.trim().length === 0)
+                    return qsTr("Empty netlist")
                 const counts = qsTr("%n error(s)", "", root.errorCount) + ", "
                              + qsTr("%n warning(s)", "", root.warningCount)
                 return Simulator.filePath.length > 0 ? counts + "  —  " + Simulator.filePath

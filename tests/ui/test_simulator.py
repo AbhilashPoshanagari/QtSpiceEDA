@@ -281,3 +281,14 @@ def test_invalid_compat_mode_is_ignored(fake_sim) -> None:
     sim.setProperty("compatMode", "lt; quit")
     assert sim.property("compatMode") == "ltpsa"
     assert "invalid compatibility mode" in sim.property("statusText")
+
+
+@pytest.mark.parametrize("text", ["", "\n", "   \n\t"])
+def test_an_empty_editor_shows_no_errors_but_does_not_run(simulator: Simulator, text: str) -> None:
+    assert simulator.check(".title x\nR1 a 0 1k\n") is False  # some diagnostics first
+    assert simulator.property("diagnostics") != []
+    assert simulator.check(text) is False
+    assert simulator.property("diagnostics") == []
+    assert simulator.property("deck") == ""
+    assert simulator.run(text) is False
+    assert simulator.property("statusText").startswith("Not started")

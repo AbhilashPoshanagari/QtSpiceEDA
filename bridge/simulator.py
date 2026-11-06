@@ -159,7 +159,7 @@ class Simulator(QObject):
             # A panel card makes a netlist without analysis cards valid (and back):
             # re-check so the editor's diagnostics follow.
             if had_card != bool(card) and self._last_text is not None:
-                self._check(self._last_text)
+                self.check(self._last_text)
 
     def _get_netlist_analysis(self) -> str:
         return self._netlist_analysis
@@ -266,7 +266,22 @@ class Simulator(QObject):
 
     @Slot(str, result=bool)
     def check(self, text: str) -> bool:
-        """Parse and validate ``text``. Returns True if there are no errors."""
+        """Parse and validate ``text``. Returns True if there are no errors.
+
+        An empty editor (nothing but white space) is not an error to show: it has no
+        diagnostics, no deck and no analysis, and returns False. Run still refuses it."""
+        if not text.strip():
+            self._last_text = text
+            if self._diagnostics:
+                self._diagnostics = []
+                self.diagnosticsChanged.emit()
+            if self._deck:
+                self._deck = ""
+                self.deckChanged.emit()
+            if self._netlist_analysis:
+                self._netlist_analysis = ""
+                self.netlistAnalysisChanged.emit()
+            return False
         return self._check(text)[0]
 
     def _check(self, text: str, publish: bool = True) -> tuple[bool, Circuit, list[Diagnostic]]:
