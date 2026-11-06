@@ -184,3 +184,19 @@ def test_symbol_names() -> None:
     assert symbol_name_problem("rc_lp-2") == ""
     for bad in ("", "2rc", "a b", "a.b", "con", "x" * 65, "µ"):
         assert symbol_name_problem(bad), bad
+
+
+def test_a_body_without_ground_and_single_connection_ports_is_fine() -> None:
+    # Ports connect outside the symbol, so a lone series resistor is a valid symbol even
+    # though, as a whole netlist, it has no ground and two one-connection nodes.
+    made = SymbolGenerator.from_netlist(
+        "series", "* r\nR1 a b 1k\n.end\n", [("a", "in"), ("b", "out")]
+    )
+    assert made.ok, made.diagnostics
+    sheet = Schematic(
+        instances=[Instance("res", "R1", 0, 0, attrs={"Value": "1k"})],
+        ports=[PortFlag(16, 0, "A", "in"), PortFlag(16, 96, "B", "out")],
+    )
+    made = SymbolGenerator.from_schematic("series2", sheet, lookup)
+    assert made.ok, made.diagnostics
+    assert ".subckt series2 A B" in made.sub_text.splitlines()

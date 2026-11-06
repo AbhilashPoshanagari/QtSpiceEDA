@@ -35,7 +35,8 @@ from pathlib import Path
 
 from core.hierarchy.ports import Port, netlist_ports, schematic_ports
 from core.netlist.model import ERROR, WARNING, Diagnostic
-from core.netlist.parser import parse
+from core.netlist.parser import FIX_INSERT_TITLE, parse
+from core.netlist.validate import validate
 from core.schematic.model import Schematic
 from core.schematic.netlister import netlist_schematic
 from core.symbols.asy import ENCODING, Symbol
@@ -168,8 +169,18 @@ def _from_schematic(
                 "circuit symbol cannot become one (one level only)",
             )
     netlisted = netlist_schematic(schematic, lookup, base_dir)
-    out.diagnostics += netlisted.diagnostics
-    if not netlisted.ok:
+    # Connectivity, part and syntax problems count; the whole-circuit checks
+    # (validate) do not, because a port node is connected outside the symbol and the
+    # body need not have a ground. The .sub is validated as a subcircuit in _finish.
+    found_here = netlisted.nets.diagnostics + [d for p in netlisted.parts for d in p.diagnostics]
+    part_lines = {p.line for p in netlisted.parts if p.line}
+    text_lines = netlisted.text.splitlines()
+    for d in parse(netlisted.text, base_dir).diagnostics:
+        line = text_lines[d.line - 1].strip() if 0 < d.line <= len(text_lines) else ""
+        if d.fix != FIX_INSERT_TITLE and line not in part_lines:
+            found_here.append(Diagnostic(0, 0, d.severity, f"{line or 'schematic'}: {d.message}"))
+    out.diagnostics += found_here
+    if any(d.severity == ERROR for d in found_here):
         return _fail(out, "fix the schematic's errors first")
     found = schematic_ports(schematic, netlisted.nets)
     out.diagnostics += found.diagnostics
@@ -302,8 +313,15 @@ def _finish(
     lines.append(f".ends {out.name}")
     out.ports = ports
     out.sub_text = "\n".join(lines) + "\n"
-    check = parse(f"* check\n{out.sub_text}.end\n", base_dir)
-    for d in check.diagnostics:
+    # Validate the .sub as a subcircuit: only problems inside our .subckt block count
+    # (whole-netlist checks such as "no ground" do not apply to a symbol's body).
+    check_text = f"* check\n{out.sub_text}.end\n"
+    check = parse(check_text, base_dir)
+    numbered = check_text.splitlines()
+    first = numbered.index(f".subckt {out.name} {' '.join(p.node for p in ports)}") + 1
+    last = len(numbered) - 1  # the .ends line; .end follows it
+    inside = [d for d in validate(check.circuit, require_analysis=False) if first <= d.line <= last]
+    for d in check.diagnostics + inside:
         if d.severity == ERROR:
             out.diagnostics.append(Diagnostic(0, 0, ERROR, f"{out.name}.sub: {d.message}"))
     if any(d.severity == ERROR for d in out.diagnostics):
