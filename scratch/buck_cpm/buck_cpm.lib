@@ -1,0 +1,129 @@
+* QtSpice sample library: 1 MHz peak-current-mode synchronous buck (examples/buck_cpm)
+*
+* Hand-written for QtSpice. It follows the behaviour of the gate driver, dead-time and
+* CPM modulator models used in the CU Boulder power electronics course, rebuilt from
+* elements ngspice and QtSpice support (R C L V E G D M X): logic is CMOS inverters and
+* MOSFET switches, comparators are high-gain E-sources with diode clamps. No vendor
+* models. Instance parameters are fixed here (QtSpice 0.2 does not pass parameters
+* into symbols): edit the .param lines to change them.
+
+* ---------------------------------------------------------------- logic primitives
+.model qs_nl NMOS (LEVEL=1 VTO=1 KP=2m)
+.model qs_pl PMOS (LEVEL=1 VTO=-1 KP=2m)
+.model qs_d D (IS=1f N=1)
+
+* CMOS inverter: in -> out, powered from vdd/vss
+.subckt qs_inv in out vdd vss
+Mp out in vdd vdd qs_pl
+Mn out in vss vss qs_nl
+Cout out vss 0.1p
+.ends qs_inv
+
+* ---------------------------------------------------------------- dead_time
+* c: PWM input (0/5 V). c1 = c with its rising edge delayed by Td, c2 = not c with its
+* rising edge delayed by Td: two complementary, non-overlapping 0/5 V signals.
+.subckt dead_time c c1 c2
+.param Td=30n
+Vdd vdd 0 5
+X1 c cn vdd 0 qs_inv
+X2 cn cc vdd 0 qs_inv
+R1 cc cd 1k
+C1 cd 0 {Td/693}
+D1 cd cc qs_d
+X3 cd c1n vdd 0 qs_inv
+X4 c1n c1 vdd 0 qs_inv
+X5 c cb vdd 0 qs_inv
+R2 cb cbd 1k
+C2 cbd 0 {Td/693}
+D2 cbd cb qs_d
+X6 cbd c2n vdd 0 qs_inv
+X7 c2n c2 vdd 0 qs_inv
+.ends dead_time
+
+* ---------------------------------------------------------------- driver
+* Gate driver for a low-side or (bootstrapped) high-side MOSFET.
+* c: 0/5 V control referred to Vssin; out swings Vss..Vdd; RC propagation delay Tdelay.
+* (The undervoltage lockout of the course model is not modelled.)
+.subckt driver c Vdd Vss Vssin out
+.param Tdelay=20n IQ=1m Imax=3
+.param VT=2 Vddrated=12
+.param Rdelay=100
+E1 ciso Vss c Vssin 1
+R1 ciso cdel {Rdelay}
+C1 cdel Vss {Tdelay/Rdelay/0.69}
+X1 cdel gate Vdd Vss qs_inv
+M1 out gate Vdd Vdd drv_p
+M2 out gate Vss Vss drv_n
+Ibias Vdd Vss {IQ}
+.model drv_n NMOS (LEVEL=1 VTO={VT} KP={2*Imax/(Vddrated-VT)/(Vddrated-VT)})
+.model drv_p PMOS (LEVEL=1 VTO={-VT} KP={1.4*Imax/(Vddrated-VT)/(Vddrated-VT)})
+.ends driver
+
+* ---------------------------------------------------------------- CPM_modulator
+* Peak current mode modulator. A clock sets the latch at the start of each period; the
+* latch resets when vs + Voffset + ramp reaches the limited control voltage vc, or at
+* Dmax. PWM is the 0/5 V latch output; ramp is the artificial ramp.
+* Va = 0 (no slope compensation), as in the original example: at D > 0.5 this gives
+* subharmonic oscillation of the inductor current. Va=0.3 removes it.
+.subckt CPM_modulator vc vs PWM ramp
+.param fs=1meg Va=0 Vcmax=0.8 Dmin=0 Dmax=0.95 Voffset=1
+Vdd vdd 0 5
+Vmid mid 0 2.5
+* control input, limited to about 0 .. Vcmax+Voffset
+Rin vc 0 10meg
+Rb vc b 1k
+Vlim lim 0 {Vcmax+Voffset-0.55}
+Dlim b lim qs_d
+Dneg 0 b qs_d
+* current signal plus offset and artificial ramp
+Varamp a vs PULSE({Voffset} {Voffset+Va} 0 {0.99/fs} {0.01/fs} 0 {1/fs})
+E1 ramp 0 a vs 1
+* comparator: comp high when a > b
+Ecmp x mid a b 1000
+Rcmp x y 100k
+Dch y vdd qs_d
+Dcl 0 y qs_d
+X1 y yn vdd 0 qs_inv
+X2 yn comp vdd 0 qs_inv
+* set clock (narrow pulse at the start of each period) and Dmax reset
+Vclk clk 0 PULSE(0 5 0 1n 1n {Dmin/fs+5n} {1/fs})
+Vclk_Dmax clk_dmax 0 PULSE(0 5 {Dmax/fs} 1n 1n {(1-Dmax)/fs-2n} {1/fs})
+* latch: q held by a weak feedback resistor; set pulls q up, reset (stronger) pulls down
+Eset gs vdd clk 0 -1
+Mset q gs vdd vdd qs_ps
+Mr1 q comp 0 0 qs_ns
+Mr2 q clk_dmax 0 0 qs_ns
+Cq q 0 1p
+X3 q qn vdd 0 qs_inv
+X4 qn PWM vdd 0 qs_inv
+Rfb PWM q 5k
+.model qs_ps PMOS (LEVEL=1 VTO=-1 KP=5m)
+.model qs_ns NMOS (LEVEL=1 VTO=1 KP=20m)
+.ends CPM_modulator
+
+* ---------------------------------------------------------------- error amplifier
+* Generic op-amp: 100 dB DC gain, 30 MHz gain-bandwidth, output clamped near the rails.
+* Pins as the QtSpice built-in opamp symbol: In+ In- V+ V- OUT.
+.subckt ea_opamp inp inn vcc vee out
+Rin inp inn 10meg
+G1 vee n1 inp inn 1m
+R1 n1 vee 100meg
+C1 n1 vee {1m/(2*3.14159265*30meg)}
+Dh n1 vcc qs_d
+Dl vee n1 qs_d
+E1 o vee n1 vee 1
+Rout o out 10
+.ends ea_opamp
+
+* ---------------------------------------------------------------- power devices
+* Generic 30 V logic-level power NMOS (pins d g s): about 15 mOhm at Vgs = 4.5 V,
+* 1 nF gate-source and 0.2 nF gate-drain capacitance, the drain-bulk junction as the body
+* diode, and a 100 pF linear output capacitance (Coss), which also keeps the switch node
+* well behaved for the ngspice time step control.
+.subckt nfet_pwr d g s
+M1 d g s s nmos_pwr
+Coss d s 100p
+.model nmos_pwr NMOS (LEVEL=1 VTO=1.7 KP=25 IS=1e-12 CGSO=10u CGDO=2u RD=1m RS=1m)
+.ends nfet_pwr
+* Generic 1 A Schottky diode
+.model schottky_1a D (IS=10u N=1.2 RS=50m CJO=100p)

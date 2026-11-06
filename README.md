@@ -78,6 +78,20 @@ ngspice bundled) are made with `pyinstaller packaging/qtspice-<windows|macos|lin
   into the circuit symbol `rclp` with **Tools → Make Symbol from Schematic…** and placed
   twice in a row. The result is a second-order low-pass: −9.5 dB at the cell's corner
   frequency, falling at 40 dB/decade.
+- **`buck_cpm/buck_cpm.qsp`** (new in 0.2): a 1 MHz peak current mode synchronous buck
+  regulator, 5 V to 3.3 V, with a type II error amplifier and a 2 A load step at 110 µs.
+  It is redrawn from an LTspice course example (`SyncBuck_switching_CPM_CL.asc`).
+  - **Schematic:** the gate drivers, dead time, CPM modulator, op-amp and power devices
+    are QtSpice stand-ins in `buck_cpm.lib`, built from R C L V E G D M X only (no
+    vendor models). Their parameters are fixed in the library because 0.2 doesn't pass
+    parameters into symbols. The run takes a few seconds and saves 100–160 µs.
+  - **Blocks tab:** the same converter as Python blocks (power stage, CPM modulator,
+    dead time, type II compensator), run at a 5 ns step. Opening the project asks
+    you to trust its block code.
+  - Like the original, it has no slope compensation (`Va = 0`). At a duty cycle of
+    0.66 the inductor current ripple therefore alternates from cycle to cycle
+    (subharmonic oscillation). Set `Va=0.3` (the `CPM` block, or the `CPM_modulator`
+    `.param` line) to get the steady ±0.56 A ripple.
 - **`rlc_bandpass.qsp`** (new in 0.2): a series RLC band-pass as a schematic, with a
   saved Bode pane of `V(n003)/V(n001)`. It peaks at 503 Hz with a bandwidth of 318 Hz;
   read it with the two cursors.

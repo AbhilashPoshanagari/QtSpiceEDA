@@ -1,0 +1,144 @@
+# 1 MHz peak current mode synchronous buck, 5 V -> 3.3 V, as blocks.
+# The same converter as this project's schematic: power stage, CPM modulator,
+# dead time and a type II error amplifier. Fixed-step forward Euler, dt = 5 ns.
+#
+# Va = 0 (no slope compensation) as in the original LTspice example: at D = 0.66 peak
+# current mode is subharmonically unstable, so the inductor current ripple alternates
+# from cycle to cycle and the start-up transient is long. Set CPM's Va to 0.3 to see
+# the ripple settle to the ideal +-0.56 A.
+
+
+@block
+def LoadPulse(t, i1=2.0, delay=110e-6, rise=1e-6, width=30e-6, fall=1e-6):
+    """Load current step, like the schematic's Iload PULSE(0 2 110u 1u 1u 30u)."""
+    s = t - delay
+    if s < 0:
+        return 0.0
+    if s < rise:
+        return i1 * s / rise
+    if s < rise + width:
+        return i1
+    if s < rise + width + fall:
+        return i1 * (1 - (s - rise - width) / fall)
+    return 0.0
+
+
+@block(stateful=True, outputs=["vout", "iL", "vsw"], color="#c0504d")
+class BuckPowerStage:
+    """Synchronous buck power stage. c1 drives the high-side switch, c2 the low-side one
+    (0 or 1, after a gate-driver delay). With both off, the body diodes carry iL."""
+
+    def __init__(self, vin=5.0, L=1e-6, RL=15e-3, C=200e-6, Resr=0.8e-3, Rload=1000.0,
+                 Ron=13e-3, Vd=0.7, delay=20e-9, vc0=3.3, iL0=0.0):
+        self.vin, self.L, self.RL, self.C = vin, L, RL, C
+        self.Resr, self.Rload, self.Ron, self.Vd = Resr, Rload, Ron, Vd
+        self.vc, self.iL = vc0, iL0
+        self.delay = delay
+        self.queue = None  # gate-driver delay line, sized on the first step
+        self.vsw = 0.0
+        self.iload = 0.0
+
+    def _vout(self, iload):
+        # node: (vout - vc)/Resr + vout/Rload = iL - iload
+        g = 1 / self.Resr + 1 / self.Rload
+        return (self.vc / self.Resr + self.iL - iload) / g
+
+    def output(self):
+        return self._vout(self.iload), self.iL, self.vsw
+
+    def step(self, c1, c2, iload, dt):
+        if self.queue is None:
+            self.queue = [(0.0, 0.0)] * max(0, round(self.delay / dt))
+        self.queue.append((c1, c2))
+        c1, c2 = self.queue.pop(0)
+        if c1 > 0.5:
+            vsw = self.vin - self.iL * self.Ron
+        elif c2 > 0.5:
+            vsw = -self.iL * self.Ron
+        elif self.iL > 0:
+            vsw = -self.Vd  # low-side body diode
+        else:
+            vsw = self.vin + self.Vd  # high-side body diode
+        vout = self._vout(iload)
+        self.vsw, self.iload = vsw, iload
+        self.iL += (vsw - self.iL * self.RL - vout) / self.L * dt
+        self.vc += (vout - self.vc) / self.Resr / self.C * dt
+
+
+@block(stateful=True, color="#4f81bd")
+class CPMModulator:
+    """Peak current mode modulator. A clock sets the latch at the start of each period;
+    it resets when vs + Voffset + ramp reaches vc (limited to 0 .. Vcmax + Voffset), or at
+    Dmax. Output 1 = switch on. Reset wins over set, as in the schematic's latch."""
+
+    def __init__(self, fs=1e6, Va=0.0, Vcmax=0.8, Dmin=0.0, Dmax=0.95, Voffset=1.0):
+        self.T, self.Va, self.Vcmax = 1 / fs, Va, Vcmax
+        self.Dmin, self.Dmax, self.Voffset = Dmin, Dmax, Voffset
+        self.phase = 0.0
+        self.q = 0.0
+
+    def output(self):
+        return self.q
+
+    def step(self, vc, vs, dt):
+        b = min(max(vc, 0.0), self.Vcmax + self.Voffset)
+        a = vs + self.Voffset + self.Va * self.phase / self.T
+        reset = a > b or self.phase >= self.Dmax * self.T
+        if self.phase < dt / 2:  # clock edge: set
+            self.q = 1.0
+        if reset and self.phase >= self.Dmin * self.T:
+            self.q = 0.0
+        self.phase += dt
+        if self.phase >= self.T - dt / 2:
+            self.phase = 0.0
+
+
+@block(stateful=True, outputs=["c1", "c2"], color="#4f81bd")
+class DeadTime:
+    """c1 = pwm and c2 = not pwm, each with its rising edge delayed by Td."""
+
+    def __init__(self, Td=30e-9):
+        self.Td = Td
+        self.high_for = 0.0  # how long pwm has been 1
+        self.low_for = 0.0
+        self.c1 = self.c2 = 0.0
+
+    def output(self):
+        return self.c1, self.c2
+
+    def step(self, pwm, dt):
+        if pwm > 0.5:
+            self.high_for += dt
+            self.low_for = 0.0
+        else:
+            self.low_for += dt
+            self.high_for = 0.0
+        self.c1 = 1.0 if self.high_for > self.Td else 0.0
+        self.c2 = 1.0 if self.low_for > self.Td else 0.0
+
+
+@block(stateful=True, color="#9bbb59")
+class TypeIICompensator:
+    """Ideal inverting op-amp with R1 from vout to the inverting input and
+    C3 || (R2 + C2) from there to the output; the + input is vref.
+    Output limited to the 0 .. 5 V supply."""
+
+    def __init__(self, R1=1.2e3, R2=15e3, C2=220e-12, C3=10e-12, vmin=0.0, vmax=5.0):
+        self.R1, self.R2, self.C2, self.C3 = R1, R2, C2, C3
+        self.vmin, self.vmax = vmin, vmax
+        self.v3 = 0.0  # across C3 (= R2 + C2 branch), inverting input minus output
+        self.v2 = 0.0  # across C2
+        self.y = 0.0
+
+    def output(self):
+        return self.y
+
+    def step(self, vout, vref, dt):
+        # In the linear range the inverting input sits at vref. With the output at a
+        # rail it no longer does: it is the output plus the voltage across C3.
+        self.y = min(max(vref - self.v3, self.vmin), self.vmax)
+        vfb = self.y + self.v3
+        i1 = (vout - vfb) / self.R1
+        i2 = (self.v3 - self.v2) / self.R2
+        self.v3 += (i1 - i2) / self.C3 * dt
+        self.v2 += i2 / self.C2 * dt

@@ -4,6 +4,7 @@ low-pass schematic, op-amp amplifier with its own .lib, circuit symbol used twic
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -33,13 +34,17 @@ SAMPLES = [
     "hierarchy/rc2.qsp",
     "hierarchy/rclp_cell.qsp",
     "opamp_amp/opamp_amp.qsp",
+    "buck_cpm/buck_cpm.qsp",
 ]
 SCHEMATIC_SAMPLES = [
     "rlc_bandpass.qsp",
     "rc_filter_schematic.qsp",
     "hierarchy/rc2.qsp",
     "opamp_amp/opamp_amp.qsp",
+    "buck_cpm/buck_cpm.qsp",
 ]
+# Samples whose block diagram needs its own Python blocks (opening asks to trust them).
+BLOCK_CODE_SAMPLES = ["buck_cpm/buck_cpm.qsp"]
 
 
 def test_examples_folder_holds_only_the_listed_samples() -> None:
@@ -81,10 +86,12 @@ def simulate(text: str, card: str | None = None) -> SimulationResult:
 
 
 @pytest.mark.parametrize("name", SAMPLES)
-def test_sample_loads_without_block_code(name: str) -> None:
+def test_sample_loads_and_has_block_code_only_if_listed(name: str) -> None:
     project = load(name)
-    # Only built-in blocks: opening a sample never asks to trust code.
-    assert all(not s.code.strip() for s in project.block_sources)
+    # Only built-in blocks, so opening the sample never asks to trust code, except in
+    # the samples listed as needing their own blocks.
+    has_code = any(s.code.strip() for s in project.block_sources)
+    assert has_code == (name in BLOCK_CODE_SAMPLES)
     assert project.results == {}
 
 
@@ -245,3 +252,124 @@ def test_opamp_sample_has_gain_ten() -> None:
     gain = 1 / (1 + 10 / 1e5)  # 10 with an open-loop gain of 100k
     np.testing.assert_allclose(vout, 10 * gain * vin, atol=2e-3)
     assert vout.max() == pytest.approx(5.0, rel=1e-3)
+
+
+# ---------------------------------------------------------------- buck converter
+
+BUCK = "buck_cpm/buck_cpm.qsp"
+
+
+def time_mean(t: np.ndarray, x: np.ndarray, lo: float, hi: float) -> float:
+    """Time-weighted mean of x over [lo, hi): ngspice's time points are not uniform."""
+    m = (t >= lo) & (t < hi)
+    return float(np.trapezoid(x[m], t[m]) / (t[m][-1] - t[m][0]))
+
+
+def test_buck_sample_netlists_to_the_ltspice_topology() -> None:
+    """The schematic is the circuit of SyncBuck_switching_CPM_CL.asc, with the
+    sample's own stand-in models (no vendor files) and the inductor current sensed
+    by Vsense."""
+    project, result = netlist_sample(BUCK)
+    assert sorted(project.symbols) == [
+        "ccvs.asy",
+        "cpm_modulator.asy",
+        "dead_time.asy",
+        "driver.asy",
+        "nfet_pwr.asy",
+    ]
+    lines = set(result.text.splitlines())
+    for line in [
+        "XM1 in N001 sw nfet_pwr",
+        "XM2 sw N002 0 nfet_pwr",
+        "L1 sw N003 1u ic=0",
+        "Vsense N003 N004 0",
+        "RL N004 out 15m",
+        "C1 N005 0 200u ic={Vref}",
+        "Iload out 0 PULSE(0 2 110u 1u 1u 30u 160u)",
+        "XU3 c1 bootstrap sw 0 N006 driver",
+        "XU4 c2 in 0 0 N007 driver",
+        "D1 in bootstrap schottky_1a",
+        "Cb bootstrap sw 10u ic=5",
+        "XU2 c c1 c2 dead_time",
+        "XU1 ctrl vs c ramp CPM_modulator",
+        "Hsense vs 0 Vsense {Rf}",
+        "XU5 N008 fb in 0 ctrl ea_opamp",
+        "R1 fb out 1.2k",
+        "C3 fb ctrl 10p",
+        "R2 fb N009 15k",
+        "C2 N009 ctrl 220p",
+        ".tran 10n 160u 100u 10n uic",
+        ".param Rf=0.1 Vref=3.3",
+    ]:
+        assert line in lines, line
+    # One library, included once; no B or A devices (QtSpice and ngspice both run it).
+    assert sum(line.startswith(".include") for line in lines) == 1
+    lib = (EXAMPLES / "buck_cpm" / "buck_cpm.lib").read_text(encoding="utf-8")
+    assert parse("t\n.include buck_cpm.lib\n.end\n", EXAMPLES / "buck_cpm").diagnostics == []
+    assert "LTC" not in lib and "LT1630" not in lib
+
+
+def test_buck_symbols_match_their_subcircuits() -> None:
+    """Each sample symbol's SpiceOrder pins are its .subckt ports, in order."""
+    lib = (EXAMPLES / "buck_cpm" / "buck_cpm.lib").read_text(encoding="utf-8").lower()
+    ports = {
+        line.split()[1]: line.split()[2:] for line in lib.splitlines() if line.startswith(".subckt")
+    }
+    for asy in ["cpm_modulator", "dead_time", "driver", "nfet_pwr"]:
+        symbol, diagnostics = AsyParser.parse(EXAMPLES / "buck_cpm" / f"{asy}.asy")
+        assert diagnostics == []
+        pins = [p.attrs["PinName"].lower() for p in symbol.pins]
+        assert pins == ports[symbol.attr("Value").lower()], asy
+
+
+def test_buck_block_diagram_regulates_and_takes_the_load_step() -> None:
+    project = load(BUCK)
+    sources = {s.document: s.code for s in project.block_sources}
+    settings = project.analysis
+    assert (settings.diagram_t_end, settings.diagram_dt) == (160e-6, 5e-9)
+    result = run_diagram(
+        project.diagrams[0].diagram, sources, settings.diagram_t_end, settings.diagram_dt
+    )
+    t, vout, il, ctrl = (result.vectors[k] for k in ("time", "vout", "iL", "ctrl"))
+    assert time_mean(t, vout, 100e-6, 110e-6) == pytest.approx(3.3, abs=0.01)
+    assert time_mean(t, il, 125e-6, 140e-6) == pytest.approx(2.0, abs=0.1)  # 2 A load
+    assert time_mean(t, vout, 150e-6, 160e-6) == pytest.approx(3.3, abs=0.01)
+    window = (t >= 100e-6) & (t < 160e-6)
+    assert np.all(np.abs(vout[window] - 3.3) < 0.05)
+    assert np.all((ctrl[window] > 0.8) & (ctrl[window] < 1.8))  # the CPM control range
+
+
+def test_buck_block_diagram_with_slope_compensation_has_the_ideal_ripple() -> None:
+    """Va = 0.3 V removes the subharmonic oscillation: the steady ripple is
+    (Vin - Vout) * D * Ts / L = 1.7 V * 0.66 us / 1 uH = 1.12 A peak to peak."""
+    project = load(BUCK)
+    diagram = json.loads(json.dumps(project.diagrams[0].diagram))
+    cpm = next(b for b in diagram["blocks"] if b["id"] == "CPM")
+    cpm["settings"]["Va"] = 0.3
+    sources = {s.document: s.code for s in project.block_sources}
+    result = run_diagram(diagram, sources, 110e-6, 5e-9)
+    t, il = result.vectors["time"], result.vectors["iL"]
+    m = t >= 90e-6
+    assert il[m].max() - il[m].min() == pytest.approx(1.12, rel=0.1)
+
+
+@pytest.mark.ngspice
+def test_buck_schematic_regulates_and_takes_the_load_step() -> None:
+    _, result = netlist_sample(BUCK)
+    adapter = NgspiceAdapter()
+    adapter.load(result.deck)
+    adapter.run()
+    data = adapter.results()
+    t = np.real(data.vectors["time"])
+    vout, il = np.real(data.vectors["V(out)"]), np.real(data.vectors["I(vsense)"])
+    pwm = np.real(data.vectors["V(c)"])
+    assert t[0] == pytest.approx(100e-6, abs=1e-8) and t[-1] == pytest.approx(160e-6)
+    assert time_mean(t, vout, 100e-6, 110e-6) == pytest.approx(3.3, abs=0.01)
+    assert time_mean(t, il, 125e-6, 140e-6) == pytest.approx(2.0, abs=0.1)
+    assert time_mean(t, vout, 150e-6, 160e-6) == pytest.approx(3.3, abs=0.01)
+    assert np.all(np.abs(vout - 3.3) < 0.05)
+    # The 1 MHz clock sets the latch at the start of every period it switches.
+    high = pwm > 2.5
+    rises = t[1:][high[1:] & ~high[:-1]]
+    assert len(rises) > 50
+    assert np.all(np.abs(rises * 1e6 - np.round(rises * 1e6)) < 0.02)

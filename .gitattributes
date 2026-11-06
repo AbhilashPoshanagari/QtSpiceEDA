@@ -5,3 +5,4 @@ examples/hierarchy/*.asy -text
 examples/hierarchy/*.sub -text
 examples/opamp_amp/*.asy -text
 examples/opamp_amp/*.lib -text
+examples/buck_cpm/*.asy -text

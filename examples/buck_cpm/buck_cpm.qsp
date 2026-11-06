@@ -1,0 +1,879 @@
+{
+ "format": "qtspice-project",
+ "version": 2,
+ "netlists": [],
+ "diagrams": [
+  {
+   "name": "buck_cpm_blocks",
+   "diagram": {
+    "blocks": [
+     {
+      "id": "Vref",
+      "spec": "Constant",
+      "x": 40.0,
+      "y": 120.0,
+      "settings": {
+       "value": 3.3
+      }
+     },
+     {
+      "id": "EA",
+      "spec": "TypeIICompensator",
+      "x": 180.0,
+      "y": 200.0,
+      "settings": {}
+     },
+     {
+      "id": "CPM",
+      "spec": "CPMModulator",
+      "x": 340.0,
+      "y": 200.0,
+      "settings": {}
+     },
+     {
+      "id": "DT",
+      "spec": "DeadTime",
+      "x": 480.0,
+      "y": 200.0,
+      "settings": {}
+     },
+     {
+      "id": "Load",
+      "spec": "LoadPulse",
+      "x": 520.0,
+      "y": 80.0,
+      "settings": {}
+     },
+     {
+      "id": "Buck",
+      "spec": "BuckPowerStage",
+      "x": 640.0,
+      "y": 200.0,
+      "settings": {}
+     },
+     {
+      "id": "Rf",
+      "spec": "Gain",
+      "x": 480.0,
+      "y": 380.0,
+      "settings": {
+       "k": 0.1
+      }
+     },
+     {
+      "id": "ScopeVc",
+      "spec": "Scope",
+      "x": 340.0,
+      "y": 60.0,
+      "settings": {
+       "label": "ctrl"
+      }
+     },
+     {
+      "id": "ScopeVout",
+      "spec": "Scope",
+      "x": 840.0,
+      "y": 80.0,
+      "settings": {
+       "label": "vout"
+      }
+     },
+     {
+      "id": "ScopeIL",
+      "spec": "Scope",
+      "x": 840.0,
+      "y": 200.0,
+      "settings": {
+       "label": "iL"
+      }
+     },
+     {
+      "id": "ScopeSw",
+      "spec": "Scope",
+      "x": 840.0,
+      "y": 320.0,
+      "settings": {
+       "label": "vsw"
+      }
+     }
+    ],
+    "wires": [
+     {
+      "src": "Load.y",
+      "dst": "Buck.iload"
+     },
+     {
+      "src": "DT.c1",
+      "dst": "Buck.c1"
+     },
+     {
+      "src": "DT.c2",
+      "dst": "Buck.c2"
+     },
+     {
+      "src": "CPM.y",
+      "dst": "DT.pwm"
+     },
+     {
+      "src": "Rf.y",
+      "dst": "CPM.vs"
+     },
+     {
+      "src": "EA.y",
+      "dst": "CPM.vc"
+     },
+     {
+      "src": "Buck.iL",
+      "dst": "Rf.u"
+     },
+     {
+      "src": "Buck.vout",
+      "dst": "EA.vout"
+     },
+     {
+      "src": "Vref.y",
+      "dst": "EA.vref"
+     },
+     {
+      "src": "Buck.vout",
+      "dst": "ScopeVout.u"
+     },
+     {
+      "src": "Buck.iL",
+      "dst": "ScopeIL.u"
+     },
+     {
+      "src": "EA.y",
+      "dst": "ScopeVc.u"
+     },
+     {
+      "src": "Buck.vsw",
+      "dst": "ScopeSw.u"
+     }
+    ]
+   }
+  }
+ ],
+ "block_sources": [
+  {
+   "document": "buck_blocks",
+   "code": "# 1 MHz peak current mode synchronous buck, 5 V -> 3.3 V, as blocks.\n# The same converter as this project's schematic: power stage, CPM modulator,\n# dead time and a type II error amplifier. Fixed-step forward Euler, dt = 5 ns.\n#\n# Va = 0 (no slope compensation) as in the original LTspice example: at D = 0.66 peak\n# current mode is subharmonically unstable, so the inductor current ripple alternates\n# from cycle to cycle and the start-up transient is long. Set CPM's Va to 0.3 to see\n# the ripple settle to the ideal +-0.56 A.\n\n\n@block\ndef LoadPulse(t, i1=2.0, delay=110e-6, rise=1e-6, width=30e-6, fall=1e-6):\n    \"\"\"Load current step, like the schematic's Iload PULSE(0 2 110u 1u 1u 30u).\"\"\"\n    s = t - delay\n    if s < 0:\n        return 0.0\n    if s < rise:\n        return i1 * s / rise\n    if s < rise + width:\n        return i1\n    if s < rise + width + fall:\n        return i1 * (1 - (s - rise - width) / fall)\n    return 0.0\n\n\n@block(stateful=True, outputs=[\"vout\", \"iL\", \"vsw\"], color=\"#c0504d\")\nclass BuckPowerStage:\n    \"\"\"Synchronous buck power stage. c1 drives the high-side switch, c2 the low-side one\n    (0 or 1, after a gate-driver delay). With both off, the body diodes carry iL.\"\"\"\n\n    def __init__(self, vin=5.0, L=1e-6, RL=15e-3, C=200e-6, Resr=0.8e-3, Rload=1000.0,\n                 Ron=13e-3, Vd=0.7, delay=20e-9, vc0=3.3, iL0=0.0):\n        self.vin, self.L, self.RL, self.C = vin, L, RL, C\n        self.Resr, self.Rload, self.Ron, self.Vd = Resr, Rload, Ron, Vd\n        self.vc, self.iL = vc0, iL0\n        self.delay = delay\n        self.queue = None  # gate-driver delay line, sized on the first step\n        self.vsw = 0.0\n        self.iload = 0.0\n\n    def _vout(self, iload):\n        # node: (vout - vc)/Resr + vout/Rload = iL - iload\n        g = 1 / self.Resr + 1 / self.Rload\n        return (self.vc / self.Resr + self.iL - iload) / g\n\n    def output(self):\n        return self._vout(self.iload), self.iL, self.vsw\n\n    def step(self, c1, c2, iload, dt):\n        if self.queue is None:\n            self.queue = [(0.0, 0.0)] * max(0, round(self.delay / dt))\n        self.queue.append((c1, c2))\n        c1, c2 = self.queue.pop(0)\n        if c1 > 0.5:\n            vsw = self.vin - self.iL * self.Ron\n        elif c2 > 0.5:\n            vsw = -self.iL * self.Ron\n        elif self.iL > 0:\n            vsw = -self.Vd  # low-side body diode\n        else:\n            vsw = self.vin + self.Vd  # high-side body diode\n        vout = self._vout(iload)\n        self.vsw, self.iload = vsw, iload\n        self.iL += (vsw - self.iL * self.RL - vout) / self.L * dt\n        self.vc += (vout - self.vc) / self.Resr / self.C * dt\n\n\n@block(stateful=True, color=\"#4f81bd\")\nclass CPMModulator:\n    \"\"\"Peak current mode modulator. A clock sets the latch at the start of each period;\n    it resets when vs + Voffset + ramp reaches vc (limited to 0 .. Vcmax + Voffset), or at\n    Dmax. Output 1 = switch on. Reset wins over set, as in the schematic's latch.\"\"\"\n\n    def __init__(self, fs=1e6, Va=0.0, Vcmax=0.8, Dmin=0.0, Dmax=0.95, Voffset=1.0):\n        self.T, self.Va, self.Vcmax = 1 / fs, Va, Vcmax\n        self.Dmin, self.Dmax, self.Voffset = Dmin, Dmax, Voffset\n        self.phase = 0.0\n        self.q = 0.0\n\n    def output(self):\n        return self.q\n\n    def step(self, vc, vs, dt):\n        b = min(max(vc, 0.0), self.Vcmax + self.Voffset)\n        a = vs + self.Voffset + self.Va * self.phase / self.T\n        reset = a > b or self.phase >= self.Dmax * self.T\n        if self.phase < dt / 2:  # clock edge: set\n            self.q = 1.0\n        if reset and self.phase >= self.Dmin * self.T:\n            self.q = 0.0\n        self.phase += dt\n        if self.phase >= self.T - dt / 2:\n            self.phase = 0.0\n\n\n@block(stateful=True, outputs=[\"c1\", \"c2\"], color=\"#4f81bd\")\nclass DeadTime:\n    \"\"\"c1 = pwm and c2 = not pwm, each with its rising edge delayed by Td.\"\"\"\n\n    def __init__(self, Td=30e-9):\n        self.Td = Td\n        self.high_for = 0.0  # how long pwm has been 1\n        self.low_for = 0.0\n        self.c1 = self.c2 = 0.0\n\n    def output(self):\n        return self.c1, self.c2\n\n    def step(self, pwm, dt):\n        if pwm > 0.5:\n            self.high_for += dt\n            self.low_for = 0.0\n        else:\n            self.low_for += dt\n            self.high_for = 0.0\n        self.c1 = 1.0 if self.high_for > self.Td else 0.0\n        self.c2 = 1.0 if self.low_for > self.Td else 0.0\n\n\n@block(stateful=True, color=\"#9bbb59\")\nclass TypeIICompensator:\n    \"\"\"Ideal inverting op-amp with R1 from vout to the inverting input and\n    C3 || (R2 + C2) from there to the output; the + input is vref.\n    Output limited to the 0 .. 5 V supply.\"\"\"\n\n    def __init__(self, R1=1.2e3, R2=15e3, C2=220e-12, C3=10e-12, vmin=0.0, vmax=5.0):\n        self.R1, self.R2, self.C2, self.C3 = R1, R2, C2, C3\n        self.vmin, self.vmax = vmin, vmax\n        self.v3 = 0.0  # across C3 (= R2 + C2 branch), inverting input minus output\n        self.v2 = 0.0  # across C2\n        self.y = 0.0\n\n    def output(self):\n        return self.y\n\n    def step(self, vout, vref, dt):\n        # In the linear range the inverting input sits at vref. With the output at a\n        # rail it no longer does: it is the output plus the voltage across C3.\n        self.y = min(max(vref - self.v3, self.vmin), self.vmax)\n        vfb = self.y + self.v3\n        i1 = (vout - vfb) / self.R1\n        i2 = (self.v3 - self.v2) / self.R2\n        self.v3 += (i1 - i2) / self.C3 * dt\n        self.v2 += i2 / self.C2 * dt\n"
+  }
+ ],
+ "analysis": {
+  "card": "",
+  "diagram_t_end": 0.00016,
+  "diagram_dt": 5e-09
+ },
+ "results": [],
+ "simulation": {
+  "compat_mode": "ltpsa"
+ },
+ "schematic": {
+  "title": "1 MHz peak current mode synchronous buck, 5 V to 3.3 V",
+  "instances": [
+   {
+    "symbol": "nfet_pwr",
+    "name": "M1",
+    "x": 160,
+    "y": -160,
+    "rotation": 0,
+    "mirror": false,
+    "attrs": {}
+   },
+   {
+    "symbol": "nfet_pwr",
+    "name": "M2",
+    "x": 160,
+    "y": 64,
+    "rotation": 0,
+    "mirror": false,
+    "attrs": {}
+   },
+   {
+    "symbol": "ind",
+    "name": "L1",
+    "x": 288,
+    "y": 16,
+    "rotation": 270,
+    "mirror": false,
+    "attrs": {
+     "Value": "1u ic=0"
+    }
+   },
+   {
+    "symbol": "voltage",
+    "name": "Vsense",
+    "x": 416,
+    "y": 0,
+    "rotation": 270,
+    "mirror": false,
+    "attrs": {
+     "Value": "0"
+    }
+   },
+   {
+    "symbol": "res",
+    "name": "RL",
+    "x": 560,
+    "y": 16,
+    "rotation": 270,
+    "mirror": false,
+    "attrs": {
+     "Value": "15m"
+    }
+   },
+   {
+    "symbol": "res",
+    "name": "Resr",
+    "x": 688,
+    "y": 32,
+    "rotation": 0,
+    "mirror": false,
+    "attrs": {
+     "Value": "0.8m"
+    }
+   },
+   {
+    "symbol": "cap",
+    "name": "C1",
+    "x": 688,
+    "y": 160,
+    "rotation": 0,
+    "mirror": false,
+    "attrs": {
+     "Value": "200u ic={Vref}"
+    }
+   },
+   {
+    "symbol": "res",
+    "name": "Rload",
+    "x": 816,
+    "y": 32,
+    "rotation": 0,
+    "mirror": false,
+    "attrs": {
+     "Value": "1k"
+    }
+   },
+   {
+    "symbol": "current",
+    "name": "Iload",
+    "x": 960,
+    "y": 16,
+    "rotation": 0,
+    "mirror": false,
+    "attrs": {
+     "Value": "PULSE(0 2 110u 1u 1u 30u 160u)"
+    }
+   },
+   {
+    "symbol": "driver",
+    "name": "U3",
+    "x": -112,
+    "y": -112,
+    "rotation": 0,
+    "mirror": false,
+    "attrs": {}
+   },
+   {
+    "symbol": "res",
+    "name": "Rg1",
+    "x": 32,
+    "y": -96,
+    "rotation": 270,
+    "mirror": false,
+    "attrs": {
+     "Value": "5"
+    }
+   },
+   {
+    "symbol": "driver",
+    "name": "U4",
+    "x": -112,
+    "y": 112,
+    "rotation": 0,
+    "mirror": false,
+    "attrs": {}
+   },
+   {
+    "symbol": "res",
+    "name": "Rg2",
+    "x": 32,
+    "y": 128,
+    "rotation": 270,
+    "mirror": false,
+    "attrs": {
+     "Value": "5"
+    }
+   },
+   {
+    "symbol": "voltage",
+    "name": "Vg",
+    "x": -416,
+    "y": -272,
+    "rotation": 0,
+    "mirror": false,
+    "attrs": {
+     "Value": "5"
+    }
+   },
+   {
+    "symbol": "diode",
+    "name": "D1",
+    "x": -176,
+    "y": -240,
+    "rotation": 270,
+    "mirror": false,
+    "attrs": {
+     "Value": "schottky_1a"
+    }
+   },
+   {
+    "symbol": "cap",
+    "name": "Cb",
+    "x": 16,
+    "y": -256,
+    "rotation": 0,
+    "mirror": false,
+    "attrs": {
+     "Value": "10u ic=5"
+    }
+   },
+   {
+    "symbol": "dead_time",
+    "name": "U2",
+    "x": -400,
+    "y": 0,
+    "rotation": 0,
+    "mirror": false,
+    "attrs": {}
+   },
+   {
+    "symbol": "cpm_modulator",
+    "name": "U1",
+    "x": -400,
+    "y": 320,
+    "rotation": 0,
+    "mirror": true,
+    "attrs": {}
+   },
+   {
+    "symbol": "res",
+    "name": "Rramp",
+    "x": -496,
+    "y": 384,
+    "rotation": 0,
+    "mirror": false,
+    "attrs": {
+     "Value": "1meg"
+    }
+   },
+   {
+    "symbol": "ccvs",
+    "name": "Hsense",
+    "x": -224,
+    "y": 336,
+    "rotation": 0,
+    "mirror": false,
+    "attrs": {
+     "Value": "Vsense {Rf}"
+    }
+   },
+   {
+    "symbol": "opamp",
+    "name": "U5",
+    "x": 192,
+    "y": 336,
+    "rotation": 0,
+    "mirror": true,
+    "attrs": {
+     "SpiceModel": "ea_opamp"
+    }
+   },
+   {
+    "symbol": "voltage",
+    "name": "Vref",
+    "x": 336,
+    "y": 416,
+    "rotation": 0,
+    "mirror": false,
+    "attrs": {
+     "Value": "{Vref}"
+    }
+   },
+   {
+    "symbol": "res",
+    "name": "R1",
+    "x": 400,
+    "y": 384,
+    "rotation": 270,
+    "mirror": false,
+    "attrs": {
+     "Value": "1.2k"
+    }
+   },
+   {
+    "symbol": "cap",
+    "name": "C3",
+    "x": 400,
+    "y": 288,
+    "rotation": 90,
+    "mirror": false,
+    "attrs": {
+     "Value": "10p"
+    }
+   },
+   {
+    "symbol": "res",
+    "name": "R2",
+    "x": 400,
+    "y": 240,
+    "rotation": 90,
+    "mirror": false,
+    "attrs": {
+     "Value": "15k"
+    }
+   },
+   {
+    "symbol": "cap",
+    "name": "C2",
+    "x": 272,
+    "y": 240,
+    "rotation": 90,
+    "mirror": false,
+    "attrs": {
+     "Value": "220p"
+    }
+   }
+  ],
+  "wires": [
+   [
+    208,
+    -64,
+    208,
+    0
+   ],
+   [
+    208,
+    0,
+    208,
+    64
+   ],
+   [
+    208,
+    0,
+    288,
+    0
+   ],
+   [
+    384,
+    0,
+    432,
+    0
+   ],
+   [
+    512,
+    0,
+    560,
+    0
+   ],
+   [
+    656,
+    0,
+    704,
+    0
+   ],
+   [
+    704,
+    0,
+    832,
+    0
+   ],
+   [
+    832,
+    0,
+    960,
+    0
+   ],
+   [
+    704,
+    0,
+    704,
+    32
+   ],
+   [
+    704,
+    128,
+    704,
+    160
+   ],
+   [
+    832,
+    0,
+    832,
+    32
+   ],
+   [
+    960,
+    0,
+    960,
+    32
+   ],
+   [
+    -32,
+    -112,
+    32,
+    -112
+   ],
+   [
+    128,
+    -112,
+    160,
+    -112
+   ],
+   [
+    -32,
+    112,
+    32,
+    112
+   ],
+   [
+    128,
+    112,
+    160,
+    112
+   ],
+   [
+    -416,
+    -256,
+    -176,
+    -256
+   ],
+   [
+    -112,
+    -256,
+    32,
+    -256
+   ],
+   [
+    -112,
+    -256,
+    -112,
+    -192
+   ],
+   [
+    -480,
+    352,
+    -480,
+    384
+   ],
+   [
+    -320,
+    352,
+    -224,
+    352
+   ],
+   [
+    240,
+    400,
+    336,
+    400
+   ],
+   [
+    336,
+    400,
+    336,
+    432
+   ],
+   [
+    240,
+    368,
+    400,
+    368
+   ],
+   [
+    304,
+    256,
+    272,
+    256
+   ]
+  ],
+  "labels": [
+   {
+    "x": 208,
+    "y": 0,
+    "name": "sw"
+   },
+   {
+    "x": 208,
+    "y": -160,
+    "name": "in"
+   },
+   {
+    "x": 704,
+    "y": 0,
+    "name": "out"
+   },
+   {
+    "x": -192,
+    "y": -144,
+    "name": "c1"
+   },
+   {
+    "x": -112,
+    "y": -32,
+    "name": "sw"
+   },
+   {
+    "x": -192,
+    "y": 80,
+    "name": "c2"
+   },
+   {
+    "x": -112,
+    "y": 32,
+    "name": "in"
+   },
+   {
+    "x": -416,
+    "y": -256,
+    "name": "in"
+   },
+   {
+    "x": -112,
+    "y": -256,
+    "name": "bootstrap"
+   },
+   {
+    "x": 32,
+    "y": -192,
+    "name": "sw"
+   },
+   {
+    "x": -480,
+    "y": 0,
+    "name": "c"
+   },
+   {
+    "x": -320,
+    "y": -16,
+    "name": "c1"
+   },
+   {
+    "x": -320,
+    "y": 16,
+    "name": "c2"
+   },
+   {
+    "x": -320,
+    "y": 288,
+    "name": "ctrl"
+   },
+   {
+    "x": -480,
+    "y": 288,
+    "name": "c"
+   },
+   {
+    "x": -480,
+    "y": 352,
+    "name": "ramp"
+   },
+   {
+    "x": -224,
+    "y": 352,
+    "name": "vs"
+   },
+   {
+    "x": 176,
+    "y": 320,
+    "name": "in"
+   },
+   {
+    "x": 112,
+    "y": 384,
+    "name": "ctrl"
+   },
+   {
+    "x": 400,
+    "y": 368,
+    "name": "fb"
+   },
+   {
+    "x": 496,
+    "y": 368,
+    "name": "out"
+   },
+   {
+    "x": 400,
+    "y": 304,
+    "name": "fb"
+   },
+   {
+    "x": 336,
+    "y": 304,
+    "name": "ctrl"
+   },
+   {
+    "x": 400,
+    "y": 256,
+    "name": "fb"
+   },
+   {
+    "x": 208,
+    "y": 256,
+    "name": "ctrl"
+   }
+  ],
+  "grounds": [
+   {
+    "x": 208,
+    "y": 160
+   },
+   {
+    "x": 704,
+    "y": 224
+   },
+   {
+    "x": 832,
+    "y": 128
+   },
+   {
+    "x": 960,
+    "y": 112
+   },
+   {
+    "x": -192,
+    "y": -80
+   },
+   {
+    "x": -112,
+    "y": 192
+   },
+   {
+    "x": -192,
+    "y": 144
+   },
+   {
+    "x": -416,
+    "y": -176
+   },
+   {
+    "x": -480,
+    "y": 480
+   },
+   {
+    "x": -224,
+    "y": 432
+   },
+   {
+    "x": 176,
+    "y": 448
+   },
+   {
+    "x": 336,
+    "y": 512
+   }
+  ],
+  "ports": [],
+  "texts": [
+   {
+    "x": -480,
+    "y": 560,
+    "text": ".tran 10n 160u 100u 10n uic\n.param Rf=0.1 Vref=3.3",
+    "directive": true
+   },
+   {
+    "x": -480,
+    "y": 640,
+    "text": "1 MHz peak current mode (CPM) synchronous buck POL regulator, 5 V -> 3.3 V, 2 A load step at 110 us.\nRedrawn from the LTspice course example SyncBuck_switching_CPM_CL.asc. The driver, dead time, CPM modulator, error amplifier\nand power devices are QtSpice stand-ins in buck_cpm.lib (no vendor models). Vsense (0 V) senses the inductor current.",
+    "directive": false
+   }
+  ]
+ },
+ "symbols": [
+  "cpm_modulator.asy",
+  "dead_time.asy",
+  "driver.asy",
+  "nfet_pwr.asy",
+  "ccvs.asy"
+ ],
+ "plots": {
+  "tran": {
+   "x": {
+    "auto": true,
+    "lo": 0.0,
+    "hi": 1.0,
+    "log": false
+   },
+   "panes": [
+    {
+     "title": "Output voltage",
+     "traces": [
+      "V(out)"
+     ],
+     "y": {
+      "auto": true,
+      "lo": -1.0,
+      "hi": 1.0,
+      "log": false,
+      "abs": false
+     },
+     "phase": {
+      "auto": true,
+      "lo": -1.0,
+      "hi": 1.0,
+      "log": false,
+      "abs": false
+     },
+     "grid": true
+    },
+    {
+     "title": "Inductor current and control",
+     "traces": [
+      "I(vsense)",
+      "V(ctrl)"
+     ],
+     "y": {
+      "auto": true,
+      "lo": -1.0,
+      "hi": 1.0,
+      "log": false,
+      "abs": false
+     },
+     "phase": {
+      "auto": true,
+      "lo": -1.0,
+      "hi": 1.0,
+      "log": false,
+      "abs": false
+     },
+     "grid": true
+    },
+    {
+     "title": "Switch node and PWM",
+     "traces": [
+      "V(sw)",
+      "V(c)"
+     ],
+     "y": {
+      "auto": true,
+      "lo": -1.0,
+      "hi": 1.0,
+      "log": false,
+      "abs": false
+     },
+     "phase": {
+      "auto": true,
+      "lo": -1.0,
+      "hi": 1.0,
+      "log": false,
+      "abs": false
+     },
+     "grid": true
+    }
+   ]
+  }
+ }
+}
