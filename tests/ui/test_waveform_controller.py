@@ -212,3 +212,72 @@ def test_ac_pane_draws_phase_on_the_right_axis(parts) -> None:
     ys = [series[1].at(i).y() for i in range(series[1].count())]
     assert min(ys) >= info["yMin"] - 1e-9 and max(ys) <= info["yMax"] + 1e-9
     assert ctl.formatX(math.log10(159.155)) == "159.2 Hz"
+
+
+# ---- W3: zoom
+
+
+def x_range(ctl: WaveformController) -> tuple[float, float]:
+    return ctl.property("xMin"), ctl.property("xMax")
+
+
+def test_box_zoom_sets_x_for_all_panes_and_y_for_one(parts) -> None:
+    model, ctl = parts
+    model.set_result(tran_result(1001))
+    ctl.addPane(0, False)
+    ctl.dropTrace(0, "V(in)", 1, False)
+    fill(ctl, 0)
+    fill(ctl, 1)
+    assert ctl.zoomBox(0, 1e-3, 2e-3, 0.2, 0.6)
+    assert x_range(ctl) == pytest.approx((1e-3, 2e-3))
+    assert fill(ctl, 0)[0]["yMin"] == pytest.approx(0.2)
+    assert fill(ctl, 0)[0]["yMax"] == pytest.approx(0.6)
+    info = fill(ctl, 1)[0]  # the other pane autoscales on the new X range
+    assert info["yMin"] < 1 < info["yMax"]
+    assert ctl.property("canZoomBack")
+    assert not ctl.zoomBox(0, 1e-3, 1e-3, 0, 1)  # an empty box
+
+
+def test_zoom_back_auto_range_and_undo(parts) -> None:
+    model, ctl = parts
+    model.set_result(tran_result(1001))
+    full = x_range(ctl)
+    ctl.zoomBox(0, 1e-3, 4e-3, 0, 1)
+    ctl.zoomBox(0, 2e-3, 3e-3, 0, 1)
+    assert ctl.zoomBack()
+    assert x_range(ctl) == pytest.approx((1e-3, 4e-3))
+    assert ctl.zoomBack() and x_range(ctl) == pytest.approx(full)
+    assert not ctl.zoomBack() and not ctl.property("canZoomBack")
+    # Undo walks back through the zoom backs and the zooms, history included.
+    ctl.undo()
+    assert x_range(ctl) == pytest.approx((1e-3, 4e-3)) and ctl.property("canZoomBack")
+    ctl.undo()
+    assert x_range(ctl) == pytest.approx((2e-3, 3e-3))
+    ctl.redo()
+    ctl.redo()
+    assert x_range(ctl) == pytest.approx(full)
+    ctl.zoomBox(0, 2e-3, 3e-3, 0, 1)
+    assert ctl.autoRange() and x_range(ctl) == pytest.approx(full)
+    assert not ctl.autoRange()  # already automatic: no undo step
+    assert ctl.property("undoText") == "Auto-range"
+    assert ctl.zoomBack() and x_range(ctl) == pytest.approx((2e-3, 3e-3))
+
+
+def test_wheel_and_pan_steps_merge_into_one_undo_step(parts) -> None:
+    model, ctl = parts
+    model.set_result(tran_result(1001))
+    for _ in range(3):
+        assert ctl.zoomX(0.5, 2.5e-3)
+    assert x_range(ctl) == pytest.approx((2.5e-3 - 0.3125e-3, 2.5e-3 + 0.3125e-3))
+    assert ctl.panX(1e-4)
+    ctl.undo()
+    assert x_range(ctl) == pytest.approx((0, 5e-3)) and not ctl.property("canUndo")
+    assert ctl.zoomX(1.25, 2.5e-3) is False or x_range(ctl) == pytest.approx((0, 5e-3))
+
+
+def test_delta_x_shows_frequency(parts) -> None:
+    model, ctl = parts
+    model.set_result(tran_result(1001))
+    assert ctl.formatDeltaX(1e-3, 2e-3) == "1 ms  (1/Δ = 1 kHz)"
+    model.set_result(diode_result())
+    assert ctl.formatDeltaX(0.1, 0.3) == "200 mV"

@@ -8,8 +8,11 @@ import QtSpice
 // (WaveformController); each pane autoscales its own Y. The layout of the panes is kept
 // per analysis type and saved in the project. Every pane and trace change is undoable.
 //
-// Mouse in a pane: wheel zooms X around the pointer, middle-drag pans, right-click
-// opens the pane menu (add / delete panes, axes, Plot settings…).
+// Mouse in a pane: drag a box to zoom (Esc cancels; X zooms every pane, Y only that
+// one), wheel zooms X around the pointer, middle-drag pans, double-click auto-ranges,
+// right-click opens the pane menu (add / delete panes, zoom back, axes, settings).
+// Zooms are undoable and Zoom back walks the zoom history. The status bar shows the
+// mouse position, and while dragging the box size with 1/Δx as a frequency.
 FocusScope {
     id: root
     objectName: "waveformView"
@@ -158,6 +161,12 @@ FocusScope {
                     onClicked: WaveformController.redo()
                 }
                 ToolSeparator {}
+                ToolButton {
+                    objectName: "zoomBackButton"
+                    text: qsTr("Zoom back")
+                    enabled: WaveformController.canZoomBack
+                    onClicked: WaveformController.zoomBack()
+                }
                 ToolButton {
                     objectName: "autoRangeButton"
                     text: qsTr("Auto-range")

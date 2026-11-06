@@ -5,15 +5,18 @@ adapted to the LTspice-style window."""
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import numpy as np
 import pytest
-from PySide6.QtCore import QObject
+from PySide6.QtCore import QObject, QPoint, QPointF, Qt
 from PySide6.QtQuick import QQuickItem
+from PySide6.QtTest import QTest
 
 from core.sim.result import SimulationResult
 from tests.ui.fakes import tran_result
+from tests.ui.mouse import drag
 from tests.ui.qml_harness import qml_window
 from tests.ui.test_waveform_model import ac_result
 
@@ -191,3 +194,64 @@ def test_ac_then_tran_and_back(qapp: object, tmp_path: Path, qtbot, qtlog) -> No
             assert all(s["count"] > 0 for s in series)
     warnings = [r.message for r in qtlog.records if "Unable to assign" in r.message]
     assert warnings == []
+
+
+# ---- W3: zoom box, zoom back, status bar
+
+
+def _plot_point(pane: QObject, fx: float, fy: float):
+    """Window point at fractions (fx, fy) of the pane's plot area."""
+    p = pane.mapToScene(
+        QPointF(
+            pane.property("plotLeft") + fx * pane.property("plotWidth"),
+            pane.property("plotTop") + fy * pane.property("plotHeight"),
+        )
+    )
+    return QPoint(round(p.x()), round(p.y()))
+
+
+def test_drag_box_zooms_and_esc_cancels(qapp: object, tmp_path: Path, qtbot) -> None:
+    with qml_window(tmp_path, "WaveformView") as (engine, window, view):
+        model, ctl = _parts(engine)
+        model.set_result(tran_result(5001))
+        ctl.addPane(0, False)
+        _settle(qtbot)
+        top, bottom = _panes(view, ctl)
+        status = _child(view, "statusBar")
+        seen: list[str] = []
+        drag(
+            window,
+            _plot_point(top, 0.2, 0.2),
+            _plot_point(top, 0.6, 0.8),
+            before_release=lambda: seen.append(status.property("text")),
+        )
+        _settle(qtbot)
+        assert ctl.property("xMin") == pytest.approx(1e-3, rel=0.02)
+        assert ctl.property("xMax") == pytest.approx(3e-3, rel=0.02)
+        assert bottom.property("x0") == top.property("x0")  # one X for all panes
+        assert "Δx = " in seen[0] and "1/Δ = " in seen[0]  # 2 ms -> 500 Hz
+        freq = float(re.search(r"1/Δ = ([\d.]+) Hz", seen[0]).group(1))
+        assert freq == pytest.approx(500, rel=0.02)
+
+        # Esc while dragging: no zoom.
+        before = (ctl.property("xMin"), ctl.property("xMax"))
+
+        def press_esc() -> None:
+            QTest.keyClick(window, Qt.Key.Key_Escape)
+
+        drag(
+            window, _plot_point(top, 0.1, 0.1), _plot_point(top, 0.9, 0.9), before_release=press_esc
+        )
+        _settle(qtbot)
+        assert (ctl.property("xMin"), ctl.property("xMax")) == before
+        assert not _child(view, "zoomBox").property("visible")
+
+        # A click (no box) does not zoom either.
+        drag(window, _plot_point(top, 0.5, 0.5), _plot_point(top, 0.5, 0.5))
+        assert (ctl.property("xMin"), ctl.property("xMax")) == before
+
+        _child(view, "zoomBackButton").clicked.emit()
+        _settle(qtbot)
+        assert ctl.property("xMax") == pytest.approx(5e-3)
+        ctl.undo()
+        assert ctl.property("xMax") == pytest.approx(3e-3, rel=0.02)

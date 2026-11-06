@@ -211,7 +211,33 @@ FocusScope {
         color: "#b06000"
     }
 
+    // Zoom box (W3): drag with the left button; Esc cancels.
+    Rectangle {
+        id: zoomBox
+        objectName: "zoomBox"
+        visible: mouse.boxing
+        x: pane.plotLeft + Math.min(mouse.startX, mouse.endX)
+        y: pane.plotTop + Math.min(mouse.startY, mouse.endY)
+        width: Math.abs(mouse.endX - mouse.startX)
+        height: Math.abs(mouse.endY - mouse.startY)
+        color: "#203a7bd5"
+        border.color: "#3a7bd5"
+        border.width: 1
+    }
+
+    Keys.onEscapePressed: event => {
+        if (mouse.boxing) {
+            mouse.boxing = false
+            mouse.cancelled = true
+            pane.status("")
+            event.accepted = true
+        } else {
+            event.accepted = false
+        }
+    }
+
     // ---- mouse
+    // Left drag: zoom box. Middle drag: pan X. Wheel: zoom X. Double-click: auto-range.
     MouseArea {
         id: mouse
         objectName: "plotMouse"
@@ -222,7 +248,14 @@ FocusScope {
         hoverEnabled: true
         acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
         property bool panning: false
+        property bool boxing: false
+        property bool cancelled: false
         property real lastX: 0
+        property real startX: 0
+        property real startY: 0
+        property real endX: 0
+        property real endY: 0
+        readonly property real minBox: 4  // pixels; a smaller drag is a click
 
         cursorShape: panning ? Qt.ClosedHandCursor : Qt.CrossCursor
 
@@ -236,13 +269,41 @@ FocusScope {
                 paneMenu.popup()
                 return
             }
-            panning = true
-            lastX = event.x
+            cancelled = false
+            if (event.button === Qt.MiddleButton) {
+                panning = true
+                lastX = event.x
+                return
+            }
+            startX = endX = event.x
+            startY = endY = event.y
         }
-        onReleased: panning = false
+        onReleased: event => {
+            panning = false
+            if (!boxing)
+                return
+            boxing = false
+            if (cancelled)
+                return
+            WaveformController.zoomBox(pane.paneIndex, dataX(startX), dataX(endX),
+                                       dataY(startY), dataY(endY))
+        }
         onPositionChanged: event => {
-            pane.status(WaveformController.formatX(dataX(event.x)) + ",  "
-                        + WaveformController.formatY(pane.paneIndex, dataY(event.y)))
+            if (pressedButtons & Qt.LeftButton && !cancelled) {
+                endX = Math.max(0, Math.min(width, event.x))
+                endY = Math.max(0, Math.min(height, event.y))
+                if (Math.abs(endX - startX) >= minBox && Math.abs(endY - startY) >= minBox)
+                    boxing = true
+            }
+            if (boxing) {
+                pane.status(qsTr("zoom box  Δx = %1,  Δy = %2")
+                            .arg(WaveformController.formatDeltaX(dataX(startX), dataX(endX)))
+                            .arg(WaveformController.formatDeltaY(pane.paneIndex, dataY(startY),
+                                                                 dataY(endY))))
+            } else {
+                pane.status(WaveformController.formatX(dataX(event.x)) + ",  "
+                            + WaveformController.formatY(pane.paneIndex, dataY(event.y)))
+            }
             if (panning) {
                 WaveformController.panX(-(event.x - lastX) / pane.plotWidth * (pane.x1 - pane.x0))
                 lastX = event.x
@@ -272,6 +333,11 @@ FocusScope {
             onTriggered: WaveformController.deletePane(pane.paneIndex)
         }
         MenuSeparator {}
+        MenuItem {
+            text: qsTr("Zoom back")
+            enabled: WaveformController.canZoomBack
+            onTriggered: WaveformController.zoomBack()
+        }
         MenuItem {
             text: qsTr("Auto-range")
             onTriggered: WaveformController.autoRange()
