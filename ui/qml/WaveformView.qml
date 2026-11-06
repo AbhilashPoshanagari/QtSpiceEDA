@@ -13,12 +13,18 @@ import QtSpice
 // right-click opens the pane menu (add / delete panes, zoom back, axes, settings).
 // Zooms are undoable and Zoom back walks the zoom history. The status bar shows the
 // mouse position, and while dragging the box size with 1/Δx as a frequency.
+//
+// Trace names above a pane: drag to another pane moves, Ctrl+drop copies, drop
+// outside removes, double-click shows only that trace. Click a name for cursor 1,
+// right-click for cursor 2 or both; drag a cursor line, or move the last-used cursor
+// one data point with the arrow keys. The readout shows both cursors and 2 − 1.
 FocusScope {
     id: root
     objectName: "waveformView"
 
     readonly property bool isAc: WaveformController.isAc
     property string statusText: ""
+    property int activeCursor: 1  // the cursor the arrow keys move (W6)
 
     Component.onCompleted: {
         WaveformController.attach(WaveformModel)
@@ -194,6 +200,11 @@ FocusScope {
                 Item { Layout.fillWidth: true }
             }
 
+            CursorReadout {
+                Layout.fillWidth: true
+                Layout.preferredHeight: implicitHeight
+            }
+
             Item {
                 id: plotArea
                 Layout.fillWidth: true
@@ -226,6 +237,11 @@ FocusScope {
                             onStatus: text => root.statusText = text
                             onConfigure: index => configDialog.openFor(index)
                             dragParent: root
+                            activeCursor: root.activeCursor
+                            onCursorMoved: which => {
+                                root.activeCursor = which
+                                forceActiveFocus()
+                            }
                         }
                     }
                 }

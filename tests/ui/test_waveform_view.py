@@ -5,6 +5,7 @@ adapted to the LTspice-style window."""
 
 from __future__ import annotations
 
+import math
 import re
 from pathlib import Path
 
@@ -365,3 +366,61 @@ def test_log_y_note_and_grid(qapp: object, tmp_path: Path, qtbot) -> None:
         ctl.setShowAbs(0, True)
         _settle(qtbot)
         assert pane.property("hiddenPoints") == 1  # |0| is still 0
+
+
+# ---- W6: cursors
+
+
+def test_click_name_attaches_cursor_arrows_and_drag(qapp: object, tmp_path: Path, qtbot) -> None:
+    with qml_window(tmp_path, "WaveformView") as (engine, window, view):
+        model, ctl = _parts(engine)
+        model.set_result(tran_result(11))
+        _settle(qtbot)
+        QTest.mouseClick(
+            window,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+            item_center(_label(view, 0, "V(out)")),
+        )
+        _settle(qtbot)
+        [c1] = ctl.property("cursors")
+        assert c1["name"] == "V(out)"
+        readout = _child(view, "cursorReadout")
+        assert readout.property("visible")
+        line = _child(view, "cursorLine1")
+        pane = _child(view, "pane0")
+        assert line.property("x") + 4 == pytest.approx(pane.toPixelX(c1["dx"]), abs=0.5)
+
+        ctl.setCursorX(1, 1e-3)
+        pane.forceActiveFocus()
+        QTest.keyClick(window, Qt.Key.Key_Right)
+        assert ctl.property("cursors")[0]["x"] == pytest.approx(1.5e-3)
+        QTest.keyClick(window, Qt.Key.Key_Left)
+        QTest.keyClick(window, Qt.Key.Key_Left)
+        assert ctl.property("cursors")[0]["x"] == pytest.approx(0.5e-3)
+        _settle(qtbot)
+        assert _child(view, "cursor1X").property("text") == "500 µs"
+
+        line = _child(view, "cursorLine1")
+        drag(window, item_center(line), _plot_point(pane, 0.8, 0.5))
+        assert ctl.property("cursors")[0]["x"] == pytest.approx(4e-3, rel=0.02)
+        assert ctl.property("canUndo") is False  # cursors are not layout edits
+
+
+def test_ac_readout_at_159_hz(qapp: object, tmp_path: Path, qtbot) -> None:
+    with qml_window(tmp_path, "WaveformView") as (engine, _, view):
+        model, ctl = _parts(engine)
+        model.set_result(ac_result())
+        _settle(qtbot)
+        ctl.attachCursor(3, 0, "V(out)")
+        ctl.setCursorX(1, 1 / (2 * math.pi * 1e-3))
+        ctl.setCursorX(2, 1e3)
+        _settle(qtbot)
+        assert _child(view, "cursor1X").property("text") == "159.2 Hz"
+        assert _child(view, "cursor1Y").property("text").startswith("-3.01")
+        assert _child(view, "cursor1Phase").property("text") == "-45°"
+        assert _child(view, "cursorDx").property("text") == "840.8 Hz"
+        crosses = [
+            c for c in _child(view, "cursorLine1").childItems() if c.objectName() == "cursorCross"
+        ]
+        assert len(crosses) == 2  # magnitude and phase

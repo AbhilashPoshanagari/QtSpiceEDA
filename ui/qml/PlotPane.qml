@@ -33,7 +33,8 @@ FocusScope {
 
     signal status(string text)  // the mouse position, for the status bar
     signal configure(int index)  // "Plot settings…" (WaveformView opens the dialog)
-    signal cursorRequested(int which, string name)  // a trace name was clicked (W6)
+    signal cursorMoved(int which)  // a cursor was attached or moved here (W6)
+    property int activeCursor: 1  // the cursor the arrow keys move
     property Item dragParent: null  // where a dragged trace name lives (the view)
 
     function toPixelX(x) { return plotLeft + (x - x0) / (x1 - x0) * plotWidth }
@@ -106,7 +107,10 @@ FocusScope {
                 traceColor: modelData.color
                 present: modelData.present
                 dragParent: pane.dragParent
-                onCursorRequested: which => pane.cursorRequested(which, modelData.name)
+                onCursorRequested: which => {
+                    if (WaveformController.attachCursor(which, pane.paneIndex, modelData.name))
+                        pane.cursorMoved(which === 2 ? 2 : 1)
+                }
             }
         }
         Label {
@@ -261,6 +265,14 @@ FocusScope {
         border.width: 1
     }
 
+    // Arrow keys move the active cursor one data point (W6).
+    Keys.onLeftPressed: event => {
+        event.accepted = WaveformController.stepCursor(pane.activeCursor, -1)
+    }
+    Keys.onRightPressed: event => {
+        event.accepted = WaveformController.stepCursor(pane.activeCursor, 1)
+    }
+
     Keys.onEscapePressed: event => {
         if (mouse.boxing) {
             mouse.boxing = false
@@ -374,9 +386,88 @@ FocusScope {
         }
     }
 
+    // Cursors (W6): a vertical line in every pane (shared X); in the pane of the trace
+    // it follows, a cross where it meets the trace (and the phase, for AC). Drag a
+    // line to move its cursor.
+    // Two fixed slots, so a drag is not cut off when the cursor list changes.
+    Repeater {
+        model: 2
+        delegate: Item {
+            id: cursorItem
+            required property int index
+            readonly property int which: index + 1
+            readonly property var c: {
+                for (const item of WaveformController.cursors)
+                    if (item.which === which)
+                        return item
+                return null
+            }
+            readonly property real px: c ? pane.toPixelX(c.dx) : -100
+            readonly property bool here: c !== null && c.pane === pane.paneIndex
+            objectName: "cursorLine" + which
+            visible: c !== null && px >= pane.plotLeft - 1 && px <= pane.plotLeft + pane.plotWidth + 1
+            x: px - 4
+            y: pane.plotTop
+            width: 9
+            height: pane.plotHeight
+            z: 6
+
+            Rectangle {
+                x: 4
+                width: 1
+                height: parent.height
+                color: cursorItem.here ? cursorItem.c.color : "#909090"
+            }
+            Label {
+                x: 7
+                y: 1
+                text: cursorItem.which
+                font.pointSize: 7
+                font.bold: true
+            }
+            Repeater {
+                model: !cursorItem.here ? []
+                     : pane.isAc && cursorItem.c.dyPhase !== undefined
+                       ? [cursorItem.c.dy, cursorItem.c.dyPhase]
+                       : [cursorItem.c.dy]
+                delegate: Rectangle {
+                    required property real modelData
+                    required property int index
+                    objectName: "cursorCross"
+                    visible: isFinite(modelData)
+                    x: 4 - 6
+                    y: pane.toPixelY(modelData) - pane.plotTop - 0.5
+                    width: 13
+                    height: 1
+                    color: index === 0 ? "#202020" : "#808080"
+                }
+            }
+            MouseArea {
+                anchors.fill: parent
+                enabled: cursorItem.c !== null
+                cursorShape: Qt.SizeHorCursor
+                preventStealing: true
+                onPressed: {
+                    pane.forceActiveFocus()
+                    pane.cursorMoved(cursorItem.which)
+                }
+                onPositionChanged: event => {
+                    const p = mapToItem(pane, event.x, 0)
+                    WaveformController.setCursorDisplayX(cursorItem.which, pane.toX(p.x))
+                }
+            }
+        }
+    }
+
     Menu {
         id: paneMenu
         objectName: "paneMenu"
+        MenuItem {
+            text: qsTr("Remove cursors")
+            visible: WaveformController.cursors.length > 0
+            height: visible ? implicitHeight : 0
+            onTriggered: WaveformController.detachCursors()
+        }
         MenuItem {
             text: qsTr("Add pane above")
             onTriggered: WaveformController.addPane(pane.paneIndex, true)

@@ -337,3 +337,65 @@ def test_ac_opens_as_bode_with_minus_3db_and_minus_45_degrees(parts) -> None:
     mags = [(series[0].at(i).x(), series[0].at(i).y()) for i in range(series[0].count())]
     nearest = min(mags, key=lambda p: abs(p[0] - math.log10(fc)))
     assert nearest[1] == pytest.approx(-3.01, abs=0.1)
+
+
+# ---- W6: cursors
+
+
+def test_cursor_attach_move_step_and_readout(parts) -> None:
+    model, ctl = parts
+    model.set_result(tran_result(11))  # a point every 0.5 ms
+    assert ctl.attachCursor(1, 0, "V(out)")
+    assert not ctl.attachCursor(2, 0, "V(nope)")
+    [c1] = ctl.property("cursors")
+    assert c1["which"] == 1 and c1["name"] == "V(out)" and c1["pane"] == 0
+    assert ctl.property("cursorDiff") == {}
+    assert ctl.setCursorX(1, 1e-3)
+    [c1] = ctl.property("cursors")
+    assert c1["xText"] == "1 ms"
+    assert c1["yText"] == f"{(1 - math.exp(-1)) * 1000:.4g} mV"
+    assert ctl.stepCursor(1, 1)  # one data point
+    assert ctl.property("cursors")[0]["x"] == pytest.approx(1.5e-3)
+    assert ctl.stepCursor(1, -1) and ctl.stepCursor(1, -1)
+    assert ctl.property("cursors")[0]["x"] == pytest.approx(0.5e-3)
+    ctl.setCursorX(1, -1)  # clamped to the data
+    assert ctl.property("cursors")[0]["x"] == 0
+    assert not ctl.stepCursor(1, -1)
+
+    assert ctl.attachCursor(2, 0, "V(in)")
+    ctl.setCursorX(1, 1e-3)
+    ctl.setCursorX(2, 3e-3)
+    diff = ctl.property("cursorDiff")
+    assert diff["dxText"] == "2 ms" and diff["freqText"] == "500 Hz"
+    assert diff["dyText"].endswith("mV")
+
+
+def test_cursors_follow_layout_changes(parts) -> None:
+    model, ctl = parts
+    model.set_result(tran_result(101))
+    assert ctl.attachCursor(3, 0, "V(in)")  # both
+    assert [c["which"] for c in ctl.property("cursors")] == [1, 2]
+    ctl.removeTrace(0, "V(in)")
+    assert ctl.property("cursors") == []
+    ctl.undo()  # cursors are not undoable; the trace comes back without them
+    assert ctl.property("cursors") == []
+    ctl.attachCursor(1, 0, "V(out)")
+    ctl.detachCursors()
+    assert ctl.property("cursors") == []
+
+
+def test_ac_cursor_reads_minus_3db_and_minus_45_degrees_at_159_hz(parts) -> None:
+    model, ctl = parts
+    model.set_result(ac_result())
+    fill(ctl, 0)
+    assert ctl.attachCursor(1, 0, "V(out)")
+    assert ctl.setCursorX(1, 1 / (2 * math.pi * 1e-3))
+    [c1] = ctl.property("cursors")
+    assert c1["xText"] == "159.2 Hz"
+    assert c1["yText"].startswith("-3.01") and c1["yText"].endswith("dB")
+    assert c1["phaseText"] == "-45°"
+    assert "dyPhase" in c1
+    ctl.attachCursor(2, 0, "V(out)")
+    ctl.setCursorX(2, 10 / (2 * math.pi * 1e-3))
+    diff = ctl.property("cursorDiff")
+    assert diff["dyText"].startswith("-17") and diff["dPhaseText"].startswith("-39")

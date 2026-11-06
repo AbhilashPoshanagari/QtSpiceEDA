@@ -113,6 +113,25 @@ Item {
     Menu {
         id: labelMenu
         MenuItem {
+            objectName: "cursor1Item"
+            text: qsTr("Attach cursor 1")
+            enabled: label.present
+            onTriggered: label.cursorRequested(1)
+        }
+        MenuItem {
+            objectName: "cursor2Item"
+            text: qsTr("Attach cursor 2")
+            enabled: label.present
+            onTriggered: label.cursorRequested(2)
+        }
+        MenuItem {
+            objectName: "cursorBothItem"
+            text: qsTr("Attach both cursors")
+            enabled: label.present
+            onTriggered: label.cursorRequested(3)
+        }
+        MenuSeparator {}
+        MenuItem {
             text: qsTr("Show only this trace")
             onTriggered: WaveformController.showOnly(label.paneIndex, label.name)
         }
