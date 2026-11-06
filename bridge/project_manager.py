@@ -50,6 +50,7 @@ from core.project.io import (
     save_project,
 )
 from core.schematic.model import Schematic
+from core.waveform.layout import PlotLayout
 
 QML_IMPORT_NAME = "QtSpice"
 QML_IMPORT_MAJOR_VERSION = 1
@@ -109,6 +110,9 @@ class ProjectManager(QObject):
         self._schematic: Schematic | None = None
         self._schematic_ctl: QObject | None = None
         self._symbols: list[Path] = []  # circuit symbols (H3), absolute .asy paths
+        # Plot layouts (W1): kept as loaded while no WaveformController is attached.
+        self._plots: dict[str, PlotLayout] = {}
+        self._plots_ctl: QObject | None = None
         self._saved_json = ""
         self._saved_results: tuple[object, object] = (None, None)
         self._pending: tuple[Path, Project, list[str]] | None = None
@@ -172,6 +176,16 @@ class ProjectManager(QObject):
         if self._simulator is not None and self._diagram is not None:
             self._mark_saved()
 
+    @Slot(QObject)
+    def attachPlots(self, controller: QObject) -> None:  # noqa: N802 - QML API
+        """Make the waveform window's plot layouts (WaveformController) part of the
+        project."""
+        self._plots_ctl = controller
+        controller.load_layouts(self._plots)  # type: ignore[attr-defined]
+        controller.layoutEdited.connect(self._update_modified)  # type: ignore[attr-defined]
+        if self._simulator is not None and self._diagram is not None:
+            self._mark_saved()
+
     # ---- state
 
     def current_project(self, path: Path | None = None) -> Project:
@@ -198,6 +212,11 @@ class ProjectManager(QObject):
                 else self._schematic
             ),
             symbols=self._symbol_entries(path),
+            plots=(
+                self._plots_ctl.layouts()  # type: ignore[attr-defined]
+                if self._plots_ctl is not None
+                else {a: layout.copy() for a, layout in self._plots.items()}
+            ),
         )
 
     def _project_symbols(self) -> list[Path]:
@@ -324,6 +343,9 @@ class ProjectManager(QObject):
         self._extra_netlists = list(project.netlists[1:])
         self._extra_diagrams = list(project.diagrams[1:])
         self._schematic = project.schematic
+        self._plots = {a: layout.copy() for a, layout in project.plots.items()}
+        if self._plots_ctl is not None:
+            self._plots_ctl.load_layouts(self._plots)  # type: ignore[attr-defined]
         folder = Path(path).parent if path else Path.cwd()
         self._symbols = [(folder / s).resolve() for s in project.symbols]
         skipped = [f"circuit symbol {s} is missing" for s in self._symbols if not s.is_file()]

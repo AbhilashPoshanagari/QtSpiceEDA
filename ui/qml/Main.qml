@@ -22,6 +22,9 @@ ApplicationWindow {
         ProjectManager.attachSchematic(SchematicController)
         SchematicController.attachSimulator(Simulator)
         SchematicController.attachWaveforms(WaveformModel)
+        WaveformController.attach(WaveformModel)
+        WaveformController.attachProbes(SchematicController)
+        ProjectManager.attachPlots(WaveformController)
     }
 
     onClosing: close => {

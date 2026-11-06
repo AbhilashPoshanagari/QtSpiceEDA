@@ -346,3 +346,54 @@ def test_bad_symbol_lists_are_load_errors(tmp_path: Path) -> None:
     assert load_project(write(tmp_path, data)).errors == ["unknown field 'symbols'"]
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.validate(data, SCHEMA)
+
+
+# ---- plot layouts (W1)
+
+
+def _plots() -> dict:
+    from core.waveform.layout import Pane, PlotLayout
+
+    tran = PlotLayout.default("tran")
+    tran.panes = [Pane(["V(out)"], title="out"), Pane(["I(R1)"])]
+    return {"tran": tran, "ac": PlotLayout.default("ac")}
+
+
+def test_plots_round_trip_and_match_schema(tmp_path: Path) -> None:
+    project = sample_project()
+    project.plots = _plots()
+    path = tmp_path / "p.qsp"
+    save_project(path, project)
+    data = json.loads(path.read_text("utf-8"))
+    jsonschema.validate(data, SCHEMA)
+    assert list(data["plots"]) == ["tran", "ac"]
+    loaded = load_project(path)
+    assert loaded.ok and loaded.project is not None and loaded.warnings == []
+    assert {a: p.to_dict() for a, p in loaded.project.plots.items()} == {
+        a: p.to_dict() for a, p in project.plots.items()
+    }
+
+
+def test_plots_left_out_when_empty(tmp_path: Path) -> None:
+    path = tmp_path / "p.qsp"
+    save_project(path, Project())
+    assert "plots" not in json.loads(path.read_text("utf-8"))
+
+
+def test_bad_plots_only_warn(tmp_path: Path) -> None:
+    data = valid_dict()
+    data["plots"] = {"tran": {"panes": "x"}, "noise": {}}
+    result = load_project(write(tmp_path, data))
+    assert result.ok and result.project is not None
+    assert set(result.project.plots) == {"tran"} and len(result.warnings) == 2
+    data["plots"] = []
+    assert load_project(write(tmp_path, data)).ok
+
+
+def test_version_1_file_must_not_have_plots() -> None:
+    data = valid_dict()
+    data["version"] = 1
+    del data["simulation"]
+    data["plots"] = {}
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(data, SCHEMA)

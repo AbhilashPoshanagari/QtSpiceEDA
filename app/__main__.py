@@ -19,6 +19,7 @@ import bridge.diagram_controller  # noqa: F401  registers the QtSpice QML types
 import bridge.project_manager  # noqa: F401
 import bridge.schematic_controller  # noqa: F401
 import bridge.simulator  # noqa: F401
+import bridge.waveform_controller  # noqa: F401
 import bridge.waveform_model  # noqa: F401
 from app import __version__
 

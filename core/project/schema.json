@@ -7,7 +7,7 @@
   "required": ["format", "version", "netlists", "diagrams", "block_sources", "analysis", "results"],
   "additionalProperties": false,
   "if": { "properties": { "version": { "const": 1 } } },
-  "then": { "not": { "anyOf": [{ "required": ["simulation"] }, { "required": ["schematic"] }, { "required": ["symbols"] }] } },
+  "then": { "not": { "anyOf": [{ "required": ["simulation"] }, { "required": ["schematic"] }, { "required": ["symbols"] }, { "required": ["plots"] }] } },
   "else": { "required": ["simulation"] },
   "properties": {
     "format": { "const": "qtspice-project" },
@@ -79,6 +79,16 @@
       "type": "array",
       "items": { "type": "string", "pattern": "\\.[aA][sS][yY]$" }
     },
+    "plots": {
+      "description": "Format version 2, optional: the waveform window layout for each analysis type (PlotLayout.to_dict() from core/waveform/layout.py). Ranges are in real units (s, Hz, V, dB, degrees). Left out when there are none.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tran": { "$ref": "#/$defs/plotLayout" },
+        "ac": { "$ref": "#/$defs/plotLayout" },
+        "dc": { "$ref": "#/$defs/plotLayout" }
+      }
+    },
     "schematic": {
       "description": "Format version 2, optional: the project's one schematic (Schematic.to_dict() from core/schematic/model.py). Left out when there is none.",
       "$ref": "#/$defs/schematic"
@@ -97,6 +107,41 @@
     }
   },
   "$defs": {
+    "axis": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "auto": { "type": "boolean" },
+        "lo": { "type": "number" },
+        "hi": { "type": "number" },
+        "log": { "type": "boolean" },
+        "abs": { "type": "boolean", "description": "Y only: on a log axis plot |y| instead of hiding values <= 0." }
+      }
+    },
+    "plotLayout": {
+      "type": "object",
+      "required": ["x", "panes"],
+      "additionalProperties": false,
+      "properties": {
+        "x": { "$ref": "#/$defs/axis" },
+        "panes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "title": { "type": "string" },
+              "traces": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+              "y": { "$ref": "#/$defs/axis" },
+              "phase": { "$ref": "#/$defs/axis", "description": "AC only: the phase axis on the right, in degrees." },
+              "grid": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
     "name": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
     "point": { "type": "integer" },
     "word": { "type": "string", "pattern": "^\\S+$" },

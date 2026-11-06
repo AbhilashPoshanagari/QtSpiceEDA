@@ -59,6 +59,7 @@ class _Trace:
     y: np.ndarray  # display values: real part, or dB for AC
     phase: np.ndarray | None  # degrees, AC only
     visible: bool = True
+    raw: np.ndarray | None = None  # the values in ascending-x order (complex for AC)
 
 
 @QmlElement
@@ -74,6 +75,7 @@ class WaveformModel(QObject):
         super().__init__(parent)
         self._result: SimulationResult | None = None
         self._x = np.zeros(0)
+        self._x_real = np.zeros(0)
         self._traces: dict[str, _Trace] = {}
         self._ordered = True
         self._order: slice = slice(None)
@@ -88,6 +90,7 @@ class WaveformModel(QObject):
         self._result = result
         self._traces = {}
         self._x = np.zeros(0)
+        self._x_real = np.zeros(0)
         self._ordered = True
         if result is not None and result.axis:
             x = np.asarray(result.vectors[result.axis]).real.astype(float)
@@ -97,6 +100,7 @@ class WaveformModel(QObject):
                 order = slice(None, None, -1)
             x = x[order]
             self._order = order
+            self._x_real = x
             if ac:
                 x = np.log10(np.maximum(x, 1e-300))
             self._ordered = bool(np.all(np.diff(x) >= 0))
@@ -111,6 +115,7 @@ class WaveformModel(QObject):
                 else:
                     self._traces[name] = _Trace(name, unit, np.real(data).astype(float), None)
                 self._traces[name].visible = old_visible.get(name, True)
+                self._traces[name].raw = data
         self.resultChanged.emit()
         self.visibilityChanged.emit()
 
@@ -132,10 +137,23 @@ class WaveformModel(QObject):
         else:
             trace = _Trace(name, unit, np.real(values).astype(float), None)
         trace.visible = visible
+        trace.raw = values
         self._traces[name] = trace
         self.resultChanged.emit()
         self.visibilityChanged.emit()
         return True
+
+    def result(self) -> SimulationResult | None:
+        return self._result
+
+    def raw_data(self) -> tuple[np.ndarray, dict[str, tuple[str, np.ndarray]]]:
+        """(axis values, {name: (unit, values)}) in ascending-x order, real frequencies
+        and complex values for AC; probe traces included (for WaveformController)."""
+        traces = {name: (t.unit, t.raw) for name, t in self._traces.items() if t.raw is not None}
+        return self._x_real, traces
+
+    def axis_unit(self) -> str:
+        return self._x_unit()
 
     def show_only(self, names: list[str]) -> None:
         """Make exactly the traces in ``names`` visible (the others stay listed)."""

@@ -90,3 +90,52 @@ def to_db(values: np.ndarray) -> np.ndarray:
 def phase_deg(values: np.ndarray) -> np.ndarray:
     """Unwrapped phase in degrees."""
     return np.degrees(np.unwrap(np.angle(np.asarray(values))))
+
+
+class MinMaxPyramid:
+    """Min/max of ``y`` in blocks of 4, 16, 64, ... samples, built once per trace.
+
+    ``query`` gives the same kind of output as ``minmax_buckets`` (at most two points
+    per pixel, peaks kept) but its cost depends on the pixel count, not on how many
+    samples are in view: it reduces the coarsest level that still has at least four
+    blocks per pixel (spike C: 22 -> 32 fps with three 1 M point panes).
+    ``x`` must be ascending and ``y`` free of NaN.
+    """
+
+    MIN_BLOCKS = 256
+
+    def __init__(self, x: np.ndarray, y: np.ndarray) -> None:
+        self.x = np.asarray(x, dtype=float)
+        self.y = np.asarray(y, dtype=float)
+        n = min(len(self.x), len(self.y))
+        self.x, self.y = self.x[:n], self.y[:n]
+        self.levels: list[tuple[int, np.ndarray, np.ndarray, np.ndarray]] = []
+        block = 4
+        while n // block >= self.MIN_BLOCKS:
+            m = n // block * block
+            shaped = self.y[:m].reshape(-1, block)
+            self.levels.append((block, self.x[:m:block], shaped.min(axis=1), shaped.max(axis=1)))
+            block *= 4
+
+    def query(self, x0: float, x1: float, pixels: int) -> tuple[np.ndarray, np.ndarray]:
+        n = len(self.x)
+        if n == 0 or pixels < 1:
+            return np.zeros(0), np.zeros(0)
+        if x1 < x0:
+            x0, x1 = x1, x0
+        a = max(int(np.searchsorted(self.x, x0, "left")) - 1, 0)
+        b = min(int(np.searchsorted(self.x, x1, "right")) + 1, n)
+        best = None
+        for level in self.levels:
+            if (b - a) // level[0] >= 4 * pixels:
+                best = level
+        if best is None:
+            return minmax_buckets(self.x, self.y, x0, x1, pixels)
+        block, xs, lo, hi = best
+        i, j = a // block, min(-(-b // block), len(lo))
+        tail = max(b, j * block)  # samples after the last full block
+        px = np.concatenate([np.repeat(xs[i:j], 2), self.x[j * block : tail]])
+        py = np.empty(2 * (j - i))
+        py[0::2], py[1::2] = lo[i:j], hi[i:j]
+        py = np.concatenate([py, self.y[j * block : tail]])
+        return minmax_buckets(px, py, x0, x1, pixels)

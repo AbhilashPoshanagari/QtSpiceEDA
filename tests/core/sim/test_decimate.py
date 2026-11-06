@@ -5,7 +5,7 @@ import time
 import numpy as np
 import pytest
 
-from core.sim.decimate import minmax_buckets, phase_deg, to_db
+from core.sim.decimate import MinMaxPyramid, minmax_buckets, phase_deg, to_db
 
 
 def test_short_window_is_returned_unchanged() -> None:
@@ -75,3 +75,31 @@ def test_db_and_phase() -> None:
     assert np.isfinite(db[3])
     ph = phase_deg(np.exp(1j * np.linspace(0, -3 * np.pi, 50)))
     assert ph[-1] == pytest.approx(-540.0)
+
+
+def test_pyramid_matches_buckets_peaks_and_bounds_points() -> None:
+    x = np.linspace(0, 1, 1_000_000)
+    y = np.sin(2 * np.pi * 50 * x)
+    y[123_456] = 5.0  # a one-sample spike must survive
+    pyramid = MinMaxPyramid(x, y)
+    assert pyramid.levels
+    xs, ys = pyramid.query(0, 1, 800)
+    assert 0 < len(xs) <= 1600 and np.all(np.diff(xs) >= 0)
+    assert ys.max() == 5.0 and ys.min() == pytest.approx(-1, abs=1e-6)
+    zoomed_x, _ = pyramid.query(0.1, 0.1001, 800)
+    assert zoomed_x.min() <= 0.1 and zoomed_x.max() >= 0.1001
+
+
+def test_pyramid_short_and_empty() -> None:
+    assert MinMaxPyramid(np.zeros(0), np.zeros(0)).query(0, 1, 10)[0].size == 0
+    xs, _ = MinMaxPyramid(np.arange(10.0), np.arange(10.0)).query(0, 9, 100)
+    assert len(xs) == 10
+
+
+def test_pyramid_query_is_fast() -> None:
+    x = np.linspace(0, 1, 1_000_000)
+    pyramid = MinMaxPyramid(x, np.sin(x * 1e3))
+    start = time.perf_counter()
+    for _ in range(20):
+        pyramid.query(0, 1, 1200)
+    assert (time.perf_counter() - start) / 20 < 0.01
