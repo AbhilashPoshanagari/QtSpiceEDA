@@ -30,6 +30,7 @@ from PySide6.QtGui import QColor, QUndoCommand, QUndoStack
 from PySide6.QtQml import QmlElement, QmlSingleton
 
 from bridge.waveform_model import si
+from core.netlist.parser import parse_number
 from core.waveform.layout import ANALYSES, PlotLayout, layouts_to_dict
 from core.waveform.traces import MAG, PHASE, TraceStore, nice_ticks, padded
 
@@ -749,6 +750,12 @@ class WaveformController(QObject):
             ratio = 10.0 ** abs(b - a)
             return f"×{ratio:.4g}"
         return self.formatY(pane, abs(b - a))
+
+    @Slot(str, result=float)
+    def parseNumber(self, text: str) -> float:  # noqa: N802 - QML API
+        """A number typed in PlotConfigDialog (SPICE suffixes allowed); NaN if bad."""
+        value = parse_number(text.strip().rstrip("°"))
+        return math.nan if value is None else float(value)
 
     # ---- cursors (W6)
 

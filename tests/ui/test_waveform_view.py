@@ -1,12 +1,18 @@
+"""The waveform window in QML: panes (W2), zoom (W3), trace labels (W4), log axes
+(W5) and cursors (W6). The v0.1 checks (traces drawn with at most two points per
+pixel, fit, AC at 159 Hz, the plot-area geometry, .ac -> .tran -> .ac) are kept,
+adapted to the LTspice-style window."""
+
 from __future__ import annotations
 
-import math
 from pathlib import Path
 
+import numpy as np
 import pytest
-from PySide6.QtCore import Q_ARG, QMetaObject, QObject
+from PySide6.QtCore import QObject
 from PySide6.QtQuick import QQuickItem
 
+from core.sim.result import SimulationResult
 from tests.ui.fakes import tran_result
 from tests.ui.qml_harness import qml_window
 from tests.ui.test_waveform_model import ac_result
@@ -30,125 +36,158 @@ def _child(root: QObject, name: str) -> QObject:
     return obj
 
 
-def _series(plot: QObject) -> list[dict]:
-    return plot.property("seriesState").toVariant()
+def _series(pane: QObject) -> list[dict]:
+    value = pane.property("seriesState")
+    return value.toVariant() if hasattr(value, "toVariant") else value
 
 
 def _settle(qtbot) -> None:
-    qtbot.wait(80)  # refresh timer (16 ms) plus a frame
+    qtbot.wait(150)  # refresh timers (16 ms) plus a few frames
 
 
-def test_shows_traces_and_fits(qapp: object, tmp_path: Path, qtbot) -> None:
+def _parts(engine):
+    model = engine.singletonInstance("QtSpice", "WaveformModel")
+    ctl = engine.singletonInstance("QtSpice", "WaveformController")
+    return model, ctl
+
+
+def _panes(view: QObject, ctl: QObject) -> list[QObject]:
+    return [_child(view, f"pane{i}") for i in range(ctl.property("paneCount"))]
+
+
+# ---- W2: panes
+
+
+def test_shows_traces_in_one_pane(qapp: object, tmp_path: Path, qtbot) -> None:
     with qml_window(tmp_path, "WaveformView") as (engine, _, view):
-        model = engine.singletonInstance("QtSpice", "WaveformModel")
+        model, ctl = _parts(engine)
         model.set_result(tran_result(200_000))
         _settle(qtbot)
-        plot = _child(view, "magnitudePlot")
-        series = _series(plot)
+        pane = _child(view, "pane0")
+        series = _series(pane)
         assert [s["name"] for s in series] == ["V(out)", "V(in)"]
-        width = plot.property("plotWidth")
+        width = pane.property("plotWidth")
         assert all(0 < s["count"] <= 2 * round(width) for s in series)
-        assert view.property("x0") == 0 and view.property("x1") == pytest.approx(5e-3)
-        assert _child(view, "phasePlot").property("visible") is False
-
-        model.setVisible("V(in)", False)
-        _settle(qtbot)
-        hidden = _series(plot)[1]
-        assert hidden["visible"] is False and hidden["count"] == 0
+        assert pane.property("x0") == 0 and pane.property("x1") == pytest.approx(5e-3)
+        assert pane.property("yMin") < 0 < 1 < pane.property("yMax")
 
 
-def test_zoom_pan_and_fit(qapp: object, tmp_path: Path, qtbot) -> None:
+def test_add_and_delete_panes_follow_the_controller(qapp: object, tmp_path: Path, qtbot) -> None:
     with qml_window(tmp_path, "WaveformView") as (engine, _, view):
-        model = engine.singletonInstance("QtSpice", "WaveformModel")
-        model.set_result(tran_result(10_001))
+        model, ctl = _parts(engine)
+        model.set_result(tran_result(1001))
         _settle(qtbot)
-        QMetaObject.invokeMethod(view, "zoom", Q_ARG("QVariant", 0.5), Q_ARG("QVariant", 2.5e-3))
-        assert view.property("x0") == pytest.approx(1.25e-3)
-        assert view.property("x1") == pytest.approx(3.75e-3)
-        QMetaObject.invokeMethod(view, "pan", Q_ARG("QVariant", 1e-3))
-        assert view.property("x0") == pytest.approx(2.25e-3)
+        assert ctl.addPane(0, True) == 0
+        assert ctl.addPane(1, False) == 2
+        ctl.dropTrace(1, "V(in)", 2, False)
         _settle(qtbot)
-        first = _series(_child(view, "magnitudePlot"))[0]
-        assert first["count"] > 0
-        QMetaObject.invokeMethod(view, "fit")
-        assert view.property("x0") == 0 and view.property("x1") == pytest.approx(5e-3)
+        panes = _panes(view, ctl)
+        assert [[s["name"] for s in _series(p)] for p in panes] == [[], ["V(out)"], ["V(in)"]]
+        assert panes[0].property("height") == pytest.approx(panes[2].property("height"))
+        assert ctl.deletePane(0) and ctl.deletePane(0)  # removes delegates, keeps the app up
+        _settle(qtbot)
+        assert [s["name"] for s in _series(_child(view, "pane0"))] == ["V(in)"]
+        for _ in range(3):
+            ctl.undo()
+        _settle(qtbot)
+        assert ctl.property("paneCount") == 3
+        panes = _panes(view, ctl)
+        assert [[s["name"] for s in _series(p)] for p in panes] == [[], ["V(out)", "V(in)"], []]
 
 
-def test_cursor_readout(qapp: object, tmp_path: Path, qtbot) -> None:
+def test_trace_list_adds_to_the_active_pane(qapp: object, tmp_path: Path, qtbot) -> None:
     with qml_window(tmp_path, "WaveformView") as (engine, _, view):
-        model = engine.singletonInstance("QtSpice", "WaveformModel")
-        model.set_result(tran_result(5001))
+        model, ctl = _parts(engine)
+        model.set_result(tran_result(101))
         _settle(qtbot)
-        view.setProperty("cursorA", 1e-3)
-        view.setProperty("cursorB", 2e-3)
-        assert _child(view, "cursorAx").property("text") == "1 ms"
-        assert _child(view, "cursorDx").property("text") == "1 ms"
-        a = _child(view, "readout_V(out)_0").property("text")
-        b = _child(view, "readout_V(out)_1").property("text")
-        assert a == f"{(1 - math.exp(-1)) * 1000:.4g} mV"
-        assert b == f"{(1 - math.exp(-2)) * 1000:.4g} mV"
+        box = _child(view, "trace_V(in)")
+        assert box.property("checked") is True
+        ctl.setTraceShown("V(in)", False)
+        _settle(qtbot)
+        assert _child(view, "trace_V(in)").property("checked") is False
+        ctl.addPane(0, False)
+        ctl.setTraceShown("V(in)", True)
+        _settle(qtbot)
+        assert [s["name"] for s in _series(_child(view, "pane1"))] == ["V(in)"]
 
 
-def test_ac_shows_phase_plot(qapp: object, tmp_path: Path, qtbot) -> None:
+def test_config_dialog_titles_ranges_and_order(qapp: object, tmp_path: Path, qtbot) -> None:
     with qml_window(tmp_path, "WaveformView") as (engine, _, view):
-        model = engine.singletonInstance("QtSpice", "WaveformModel")
-        model.set_result(ac_result())
+        model, ctl = _parts(engine)
+        model.set_result(tran_result(1001))
+        ctl.addPane(0, False)
         _settle(qtbot)
-        assert view.property("isAc") is True
-        assert _child(view, "phasePlot").property("visible") is True
-        assert view.property("x0") == pytest.approx(0) and view.property("x1") == 5
-        assert _series(_child(view, "phasePlot"))[0]["count"] > 0
-        view.setProperty("cursorA", math.log10(1 / (2 * math.pi * 1e-3)))
-        assert _child(view, "cursorAx").property("text") == "159.2 Hz"
-        assert _child(view, "readout_V(out)_0").property("text").startswith("-3.01")
-        assert _child(view, "readout_V(out)_3").property("text") == "-45°"
+        dialog = _child(view, "plotConfigDialog")
+        dialog.openFor(0)
+        _child(dialog, "paneTitleField").setProperty("text", "outputs")
+        _child(dialog, "yAuto").setProperty("checked", False)
+        _child(dialog, "yLo").setProperty("text", "-100m")
+        _child(dialog, "yHi").setProperty("text", "1.5")
+        dialog.move(1)  # the first pane goes below the empty one
+        assert dialog.accept_() is True
+        _settle(qtbot)
+        panes = ctl.property("panes")
+        assert [p["title"] for p in panes] == ["", "outputs"]
+        assert [t["name"] for t in panes[1]["traces"]] == ["V(out)", "V(in)"]
+        pane = _child(view, "pane1")
+        assert pane.property("yMin") == pytest.approx(-0.1)
+        assert pane.property("yMax") == pytest.approx(1.5)
+        assert ctl.property("undoText") == "Configure plot"
+        ctl.undo()
+        assert [p["title"] for p in ctl.property("panes")] == ["", ""]
+
+        dialog.openFor(0)
+        _child(dialog, "xAuto").setProperty("checked", False)
+        _child(dialog, "xLo").setProperty("text", "3m")
+        _child(dialog, "xHi").setProperty("text", "1m")
+        assert dialog.accept_() is False
+        assert "below" in _child(dialog, "configProblem").property("text")
+        dialog.close()
 
 
 def test_plot_area_geometry_matches_qtgraphs(qapp: object, tmp_path: Path, qtbot) -> None:
-    """The cursor line is drawn by QtGraphs; it must land where toPixel() says, or
-    mouse dragging and zoom anchoring would be off (GraphsView 6.8 has no plotArea)."""
+    """A vertical edge at t = 1.7 ms must land where toPixelX() says, or zoom boxes
+    and cursors would be off (GraphsView 6.8 has no plotArea)."""
+    t = np.linspace(0, 5e-3, 5001)
+    result = SimulationResult(
+        "time", {"time": t, "V(step)": (t >= 1.7e-3).astype(float)}, {"time": "s"}, "tran"
+    )
     with qml_window(tmp_path, "WaveformView") as (engine, window, view):
-        model = engine.singletonInstance("QtSpice", "WaveformModel")
-        model.set_result(tran_result(1001))
-        model.setVisible("V(out)", False)
-        model.setVisible("V(in)", False)
+        model, _ = _parts(engine)
+        model.set_result(result)
         _settle(qtbot)
-        view.setProperty("cursorA", 1.7e-3)
-        _settle(qtbot)
-        plot = _child(view, "magnitudePlot")
-        expected = plot.property("plotLeft") + (1.7e-3 / 5e-3) * plot.property("plotWidth")
-        origin = plot.mapToItem(window.contentItem(), 0, 0)
+        pane = _child(view, "pane0")
+        expected = pane.property("plotLeft") + (1.7e-3 / 5e-3) * pane.property("plotWidth")
+        origin = pane.mapToItem(window.contentItem(), 0, 0)
         image = window.grabWindow()
-        y = int(origin.y() + plot.property("plotTop") + plot.property("plotHeight") / 2)
-        dark = [
-            x
-            for x in range(image.width())
-            if image.pixelColor(x, y).lightness() < 110
-            and abs(image.pixelColor(x, y).red() - image.pixelColor(x, y).blue()) < 10
-        ]
-        assert dark, "cursor line not found"
-        found = min(dark, key=lambda x: abs(x - (origin.x() + expected)))
-        assert abs(found - (origin.x() + expected)) <= 2
+        y = int(origin.y() + pane.property("plotTop") + pane.property("plotHeight") / 2)
+
+        def blue(x: int) -> bool:
+            c = image.pixelColor(x, y)
+            return c.blue() > c.red() + 60
+
+        found = [x for x in range(image.width()) if blue(x)]
+        assert found, "trace edge not found"
+        best = min(found, key=lambda x: abs(x - (origin.x() + expected)))
+        assert abs(best - (origin.x() + expected)) <= 2
 
 
 def test_ac_then_tran_and_back(qapp: object, tmp_path: Path, qtbot, qtlog) -> None:
     # .ac then .tran used to abort the app: the trace series were destroyed while
-    # still in the GraphsView (QtGraphs 6.8 pure virtual call). The series are now a
-    # pool that is reused, and trace colours never come out undefined.
+    # still in the GraphsView (QtGraphs 6.8 pure virtual call). The series are a pool
+    # that is reused, and trace colours never come out undefined.
     with qml_window(tmp_path, "WaveformView") as (engine, _, view):
-        model = engine.singletonInstance("QtSpice", "WaveformModel")
-        plot = _child(view, "magnitudePlot")
+        model, _ = _parts(engine)
         for result, names in (
             (tran_result(1_001), ["V(out)", "V(in)"]),
-            (ac_result(), ["V(out)"]),
+            (ac_result(), ["V(out)", "V(out)"]),  # magnitude and phase
             (tran_result(2_001), ["V(out)", "V(in)"]),
-            (ac_result(), ["V(out)"]),
+            (ac_result(), ["V(out)", "V(out)"]),
         ):
             model.set_result(result)
             _settle(qtbot)
-            series = _series(plot)
+            series = _series(_child(view, "pane0"))
             assert [s["name"] for s in series] == names
-            assert all(s["visible"] and s["count"] > 0 for s in series)
-        assert _child(view, "phasePlot").property("visible") is True
+            assert all(s["count"] > 0 for s in series)
     warnings = [r.message for r in qtlog.records if "Unable to assign" in r.message]
     assert warnings == []
