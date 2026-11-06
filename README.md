@@ -1,12 +1,19 @@
-# QtSpice 0.1
+# QtSpice 0.2
 
 QtSpice is a small desktop EDA application written in Python with Qt Quick. You can:
 
+- draw a circuit as a **schematic** with LTspice-style keys, run it, and click wires,
+  parts and pins to plot voltages, currents and power;
+- use vendor model **libraries** (`.lib`, `.lib file section`) and LTspice-format
+  **symbols** (`.asy`), with a library browser and your own search folders;
+- turn a schematic or netlist into a **circuit symbol** (`.sub` + `.asy`) and place it
+  in another schematic;
 - type, paste, open or drag in a SPICE netlist (`.cir`, `.net`, `.sp`) and see syntax
   and connectivity errors on the exact line;
 - simulate it with ngspice (`.op`, `.dc`, `.ac`, `.tran`) in the background;
-- look at the results in a waveform viewer with zoom/pan, two cursors with delta, a
-  log frequency axis for AC, and CSV export;
+- look at the results in a waveform window with stacked panes, box zoom with
+  history, drag-and-drop traces, log axes, a Bode view, two cursors, average/RMS, and
+  LTspice-style trace expressions (`V(out)/V(in)`, `dB(...)`);
 - write a Python function with `@block`, so it becomes a block with matching ports;
 - place, wire and run blocks in a block diagram with a fixed time step, with Scope
   blocks plotting into the same waveform viewer;
@@ -58,12 +65,27 @@ ngspice bundled) are made with `pyinstaller packaging/qtspice-<windows|macos|lin
 
 ### Try the samples
 
-`examples/` holds three projects. Open them with **File → Open…**:
+`examples/` holds these projects. Open them with **File → Open…**:
 
-- **`rc_filter.qsp`**: an RC low-pass, R = 1k and C = 1u. **Run** does the `.tran`: the
-  step response reaches 63 % at 1 ms. To get the Bode plot, choose `.ac` in the Analysis
-  panel and run again: it is −3 dB at 159 Hz. Put cursors A and B on the curve to read
-  the values.
+- **`rc_filter_schematic.qsp`** (new in 0.2): an RC low-pass drawn as a schematic,
+  R2 = 10k and C1 = 100n, with an `.ac` directive. Press **Run** on the Schematic tab,
+  then click the `OUT` wire: the Bode pane shows −3 dB at 159 Hz.
+- **`opamp_amp/opamp_amp.qsp`** (new in 0.2): a non-inverting amplifier with a gain of
+  1 + Rf/Rg = 10. The op-amp is the project symbol `opamp5.asy`, whose `ModelFile` pulls
+  in `opamp.lib` from the same folder. (`opamp.lib` is a hand-written placeholder model,
+  not a vendor file.) A 0.5 V, 1 kHz sine gives ±5 V at `out`.
+- **`hierarchy/rc2.qsp`** (new in 0.2): the RC cell in `hierarchy/rclp_cell.qsp`, made
+  into the circuit symbol `rclp` with **Tools → Make Symbol from Schematic…** and placed
+  twice in a row. The result is a second-order low-pass: −9.5 dB at the cell's corner
+  frequency, falling at 40 dB/decade.
+- **`rlc_bandpass.qsp`** (new in 0.2): a series RLC band-pass as a schematic, with a
+  saved Bode pane of `V(n003)/V(n001)`. It peaks at 503 Hz with a bandwidth of 318 Hz;
+  read it with the two cursors.
+- **`diode_log.qsp`** (new in 0.2): a diode `.dc` sweep from 1 nA to 10 mA, with the
+  current pane on a log Y axis.
+- **`rc_filter.qsp`**: an RC low-pass netlist, R = 1k and C = 1u. **Run** does the
+  `.tran`: the step response reaches 63 % at 1 ms. To get the Bode plot, choose `.ac` in
+  the Analysis panel and run again: it is −3 dB at 159 Hz.
 - **`diode_rectifier.qsp`**: a 5 V, 50 Hz half-wave rectifier with RC smoothing. Plot
   `V(in)` and `V(out)`: the output sits about one diode drop below the peak, with about
   0.4 V of ripple.
@@ -72,6 +94,146 @@ ngspice bundled) are made with `pyinstaller packaging/qtspice-<windows|macos|lin
   plots `r` and `y` in the Waveforms tab. `y` follows 1 − e^(−(t−0.5)/τ), with τ = 0.5 s.
 
 `examples/rc_lowpass.cir` is the same RC filter as a plain netlist.
+
+## Schematic editor
+
+A project has one schematic sheet. It is only another way to write a netlist: **Check**
+and **Run** on the Schematic tab netlist it (nets you don't name become `N001`, `N002`,
+…) and simulate it exactly like the netlist editor. Problems are listed under the
+sheet. If the project already has a netlist when you start drawing, QtSpice asks
+whether the schematic should **Replace** it or **Keep** it.
+
+Place parts with **F2** (the part picker: search, preview, click to place repeatedly,
+Esc to stop). Put SPICE directives such as `.ac dec 100 1 1meg` or `.lib mylib.lib` on
+the sheet with the text tool. Double-click a part to edit its attributes (`Value`,
+`Value2`, `SpiceModel`, `SpiceLine`, …).
+
+| Key | Action |
+|-----|--------|
+| R, C, L, D | Place a resistor, capacitor, inductor, diode |
+| G | Ground tool |
+| F1 | Shortcut list (also the **?** button) |
+| F2 | Part picker |
+| F3 | Wire tool (orthogonal segments, snapped to the grid and to pins) |
+| F4 | Net label tool |
+| F5 | Delete tool: click things to delete them |
+| F7 | Move tool: drag with wires detached |
+| F8 | Drag tool: drag with wires following |
+| F9 / Ctrl+Z | Undo |
+| Shift+F9 / Ctrl+Y | Redo |
+| Ctrl+R / Ctrl+E | Rotate / mirror the selection or the part being placed |
+| Delete | Delete the selection |
+| Ctrl+C / Ctrl+V | Copy / paste (click to drop the copy) |
+| Esc / right-click | End a wire, then leave the tool |
+| Double-click | Edit a part's attributes, a label, a port or a text |
+| Wheel / middle-drag | Zoom around the pointer / pan |
+
+A click selects, Ctrl+click adds to the selection, and a drag on empty space is a
+rubber band. Every edit can be undone.
+
+### Probing
+
+After a schematic run, the sheet is in probe mode. A badge at the pointer shows what a
+click will plot:
+
+| Do this | Plots |
+|---------|-------|
+| Click a wire | `V(net)` |
+| Click the body of a two-terminal part | the current through it |
+| Click a pin | the current into that pin |
+| Drag from one net to another | `V(a,b)` = `V(a) − V(b)` |
+| Alt+click a part | its power, V × I |
+
+Editing the sheet ends probe mode until the next run.
+
+### Circuit symbols (one level)
+
+Put **port flags** on a schematic (port tool; direction in, out or bidir) and choose
+**Tools → Make Symbol from Schematic…**. QtSpice writes `<name>.sub` and `<name>.asy`
+into the project folder, with inputs on the left, outputs on the right and bidir pins on
+top. **Tools → Make Symbol from Netlist…** does the same for a `.subckt` netlist. The
+new symbol shows up in the project's part picker, and the project remembers it. A
+circuit symbol may not itself contain circuit symbols.
+
+## Libraries and symbols
+
+**Netlist cards** (new in 0.2): `.lib file` includes a whole library, `.lib file
+section` includes only the part between `.lib section` and `.endl`, and `.param` may be
+used inside `.subckt`. Relative paths are resolved from the netlist's (or project's)
+folder.
+
+**Search paths.** **Tools → Library Browser… → Search paths…** sets:
+
+- **symbol folders**, searched for `.asy` files in the order given;
+- **library folders**, searched for model files (`.lib .sub .mod .inc .cir .sp .spi`);
+- an optional **LTspice folder**: your own LTspice install (its `sym` subfolder is used
+  for symbols). QtSpice does not ship Analog Devices' symbols or models.
+
+Symbols are looked up in this order: QtSpice's built-in symbols, the project's own
+circuit symbols, your symbol folders, then the LTspice folder. The first match wins.
+Every folder is read-only: QtSpice never writes to it. The paths belong to you, not to
+the project, and are kept in the app settings.
+
+The **Library Browser** lists every `.model` and `.subckt` in the library folders, with
+each subcircuit's pins. **Use with symbol…** pairs a subcircuit with a symbol (it fills
+in `SpiceModel` and `ModelFile`), and the part picker then places it. Encrypted model
+files are listed as encrypted and never decrypted.
+
+**Symbol files** are LTspice `.asy` files, read as Windows-1252 (so `µ` works). The
+netlist pin order comes from each pin's `SpiceOrder`, not from the drawing order. A
+symbol with `Prefix X` is a subcircuit, and its `ModelFile` becomes an `.include`.
+Unknown keywords give a warning.
+
+**LTspice compatibility.** Before each run QtSpice sends `set ngbehavior=ltpsa` to
+ngspice, so LTspice and PSpice functions such as `uplim()` and `if()` work in
+B-sources. ngspice is not LTspice: devices and models it doesn't have (for example
+A-devices, the PSpice `VSWITCH` model, `E … TABLE`) are reported as "not supported by
+ngspice". The mode is stored in the project as `simulation.compat_mode`.
+
+## Waveform window
+
+- **Panes.** Panes are stacked and share one X axis; each pane autoscales its own Y.
+  Right-click a pane for Add pane above/below, Delete pane, Zoom back, axes and
+  settings (titles, ranges, log axes, pane order). One layout is kept per analysis type
+  (`.tran`, `.ac`, `.dc`) and saved in the project.
+- **Zoom.** Drag a box to zoom (Esc cancels; X zooms every pane, Y only that pane). The
+  wheel zooms X around the pointer, middle-drag pans, and double-click auto-ranges.
+  **Zoom back** walks the zoom history, and zooms can be undone. The status bar shows
+  the pointer position and, while you drag, the box size with 1/Δx.
+- **Traces.** Drag a trace name to another pane to move it, Ctrl+drop to copy it, or
+  drop it outside the panes to remove it. Double-click a trace name to show only that
+  trace.
+- **Log axes and Bode.** Log X and log Y have decade ticks and a minor grid. Values
+  ≤ 0 are hidden with a note (or plotted as |y|). An `.ac` pane draws magnitude in dB,
+  with the phase on the right axis.
+- **Cursors.** Click a trace name to attach cursor 1; right-click it for cursor 2 or
+  both. Drag a cursor line, or move the last-used cursor one data point with the arrow
+  keys. The readout shows both cursors, their difference and 1/Δx.
+- **Average and RMS.** Ctrl+click a trace name for its average and RMS over the zoomed
+  X range (RMS only for voltage and current traces).
+
+### Add Trace and expressions
+
+**Add Trace…** lists the result's vectors with a wildcard filter (`*`, `?`). Click a
+name to insert it, type an expression, and **Plot** it into the selected pane.
+Right-click a trace name to edit its expression. Expressions are checked as you type,
+use LTspice syntax and are evaluated on the data; they are never run as Python.
+
+| | |
+|---|---|
+| Vectors | `V(n)`, `V(a,b)` (= `V(a) − V(b)`), `I(R1)`, `Ic(Q1)` |
+| Operators | `+ - * /`, `**` (power), `!` (not), `> < >= <=`, `&` `\|` `^` (Boolean AND, OR, XOR; `^` is **not** power) |
+| Functions | `sin cos tan asin acos atan atan2 sinh cosh tanh ln log log10 exp sqrt pow abs ceil floor round int if limit min max hypot d Re Im Ph Mag conj` |
+| Constants | `E`, `pi`, `K` (Boltzmann), `Q` (electron charge) |
+| Axis names | `time` (`.tran`), `frequency`, `omega` / `w` = 2π·frequency (`.ac`) |
+
+As in LTspice, `log()` is the natural log (same as `ln`). `Ph` is the phase in
+degrees, `d(x)` is the derivative along the X axis, and a Boolean is true when its value
+is above 0.5. Numbers take SPICE suffixes (`1k`, `2meg`).
+
+**Plot definitions.** **Plot definitions…** in the Add Trace dialog edits `.func` and
+`.param` lines (SPICE syntax) that expressions can use. The default is
+`.func dB(x) 20*log10(Mag(x))`. The definitions are saved in the project.
 
 ## Supported netlist syntax
 
@@ -107,12 +269,13 @@ can also be `{expressions}` or `'expressions'` and `.param` names.
 - `.model name type (k=v ...)`
 - `.subckt name ports... [params: k=v]` … `.ends [name]` (not nested)
 - `.include file`: relative to the netlist's folder, so open the netlist from a file
-- `.param k=v ...` (top level only)
+- `.lib file` and `.lib file section` (with `.lib section` … `.endl` in the library)
+- `.param k=v ...`, at the top level or inside a `.subckt`
 - `.op`, `.dc src start stop step [src2 start2 stop2 step2]`,
   `.ac dec|oct|lin points fstart fstop`, `.tran tstep tstop [tstart [tmax]] [uic]`
 - `.end`: anything after it is ignored
 
-Other element letters (A, B, J, K, T, …) and other cards (`.lib`, `.options`, `.ic`,
+Other element letters (A, B, J, K, T, …) and other cards (`.options`, `.ic`,
 `.control` … `.endc`, …) are reported as **warnings** and skipped.
 
 **Checks before a run**
@@ -193,36 +356,47 @@ The editor only *reads* your code; it never executes it. The code runs in a sepa
 process when you press **Run**, with a timeout and **Stop**. If you open a project made
 somewhere else that contains block code, QtSpice asks before loading the code.
 
-## Known limitations (v0.1)
+## Known limitations (v0.2)
 
-- **No schematic capture.** Circuits are netlists only.
-- **Analyses:** `.op`, `.dc`, `.ac` and `.tran` only, one per run. No noise, `.tf`,
-  `.sens`, `.four` or `.meas`, and no `.control` scripts.
+- **Schematic:** one sheet per project, and one schematic, one netlist and one diagram
+  per project. No buses, no multiple sheets, no auto-routing, and no `.asc` (LTspice
+  schematic) import.
+- **Hierarchy:** one level only. A circuit symbol can't contain circuit symbols,
+  `.subckt` can't be nested, and parameters can't be passed into a symbol.
+- **Symbols:** there is no graphical symbol editor; generated symbols are boxes with
+  pins.
+- **Libraries:** no `.dll` files of any kind. Encrypted models are reported, never
+  decrypted.
+- **Analyses:** only `.op`, `.dc`, `.ac` and `.tran`, one per run, and one simulation
+  at a time. No noise, `.tf`, `.sens`, `.four` or `.meas`, and no `.control` scripts.
+- **Waveforms:** all plots are in one window (no separate plot windows). No XY or
+  Nyquist plots, no FFT, no LTspice `.plt` files, no automatic units, and no Python
+  functions in expressions.
 - **Netlist syntax:**
-  - No `.lib`.
-  - No `.param` inside `.subckt`.
-  - No nested `.subckt`.
   - Element types other than those in the table above are skipped.
   - The first line is always the title. A netlist that starts with an element loses
-    that element, and the error then points at another line.
-- **Checks happen partly at run time.** Some errors are only found by ngspice when it
+    that element; QtSpice warns about it and offers to insert a title line.
+- **LTspice compatibility** depends on ngspice and is not 100 %: devices that ngspice
+  doesn't have are reported, not simulated.
+- **Some checks happen at run time.** Some errors are only found by ngspice when it
   runs, for example voltage sources in parallel, duplicate `.model` or `.subckt` names,
   or a node with no DC path to ground. These errors appear in the Console and the
-  status line, not on the netlist line.
+  status line, not on the netlist line or the part.
 - **Block diagrams:**
   - Fixed-step forward Euler only (no variable-step solver).
   - No physical/acausal blocks.
-  - Scope records scalar values only.
+  - A Scope records scalar values only.
   - Each run has a fixed **10 s** timeout that can't be changed from the UI.
   - There is no limit on End time / Step, and a run with a very large number of steps
     may run out of memory or hit the timeout.
 - **Projects:**
-  - A project keeps one netlist and one diagram in the editors.
   - Saving `name.qsp` manages the folder `name_results/` next to it, and removes `.npz`
     files in it that are not results of this project. Don't keep other files there.
+  - Projects saved by 0.2 (format version 2) don't open in 0.1. Projects from 0.1 open
+    in 0.2 and are saved as version 2.
   - The samples live in the app folder. Use **Save As…** to keep your own copy.
 - **Simulator:** QtSpice has no SPICE engine of its own. Accuracy, convergence and
-  device models are ngspice's, and only one simulation runs at a time.
+  device models are ngspice's.
 - **Tests on Windows:** when pytest runs block-runner tests, it may print "Windows
   fatal exception: access violation" tracebacks while a child process starts. The tests
   pass and the app is not affected (it does not enable `faulthandler`).
