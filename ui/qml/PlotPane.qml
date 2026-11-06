@@ -131,6 +131,13 @@ FocusScope {
             }
         }
         Label {
+            objectName: "acKey"
+            visible: pane.isAc && (pane.info.traces || []).length > 0
+            text: qsTr("thick: magnitude (dB, left)   thin: phase (°, right)")
+            color: "#808080"
+            font.pointSize: 8
+        }
+        Label {
             visible: (pane.info.traces || []).length === 0
             text: pane.info.title ? "" : qsTr("(empty pane)")
             color: palette.placeholderText
@@ -158,9 +165,26 @@ FocusScope {
         marginRight: pane.isAc ? 52 : 12
         marginTop: 6
         marginBottom: 2
+        // Waveforms first: a white plot area, thin light-grey grid lines that recede
+        // behind the traces, and no tick stubs on the axes.
         theme: GraphsTheme {
             colorScheme: GraphsTheme.ColorScheme.Light
             gridVisible: pane.info.grid !== false
+            backgroundColor: pane.palette.window
+            plotAreaBackgroundColor: "#ffffff"
+            labelTextColor: "#404040"
+            grid.mainColor: "#d9d9d9"
+            grid.mainWidth: 1
+            grid.subColor: "#efefef"
+            grid.subWidth: 1
+            axisX.mainColor: "#a0a0a0"
+            axisX.mainWidth: 1
+            axisX.subColor: "transparent"
+            axisX.labelTextColor: "#404040"
+            axisY.mainColor: "#a0a0a0"
+            axisY.mainWidth: 1
+            axisY.subColor: "transparent"
+            axisY.labelTextColor: "#404040"
         }
         axisX: ValueAxis {
             min: pane.x0
@@ -168,7 +192,7 @@ FocusScope {
             tickAnchor: 0
             // One label per decade on a log axis (at least two decades shown).
             tickInterval: WaveformController.xLog && pane.x1 - pane.x0 >= 1 ? 1 : 0
-            subTickCount: WaveformController.xLog ? 0 : 4  // log: minor lines drawn below
+            subTickCount: WaveformController.xLog ? 0 : 1  // log: minor lines drawn below
             labelFormat: "%.9g"
             labelDelegate: Item {
                 property string text
@@ -191,7 +215,7 @@ FocusScope {
             max: 1
             tickAnchor: 0
             tickInterval: pane.info.yLog && max - min >= 1 ? 1 : 0
-            subTickCount: pane.info.yLog ? 0 : 4
+            subTickCount: pane.info.yLog ? 0 : 1
             labelFormat: "%.9g"
             labelDelegate: Item {
                 property string text
@@ -226,7 +250,7 @@ FocusScope {
                 x: pane.toPixelX(modelData) - pane.plotLeft
                 width: 1
                 height: parent.height
-                color: Qt.rgba(0, 0, 0, 0.07)  // drawn over the traces: keep them visible
+                color: Qt.rgba(0, 0, 0, 0.05)  // drawn over the traces: keep them visible
             }
         }
         Repeater {
@@ -236,7 +260,7 @@ FocusScope {
                 y: pane.toPixelY(modelData) - pane.plotTop
                 width: parent.width
                 height: 1
-                color: Qt.rgba(0, 0, 0, 0.07)  // drawn over the traces: keep them visible
+                color: Qt.rgba(0, 0, 0, 0.05)  // drawn over the traces: keep them visible
             }
         }
     }

@@ -22,7 +22,13 @@ from core.symbols.asy import AsyParser
 from core.symbols.library import SymbolLibrary
 
 EXAMPLES = Path(__file__).resolve().parents[3] / "examples"
-SAMPLES = ["rc_filter.qsp", "diode_rectifier.qsp", "first_order_feedback.qsp", "diode_log.qsp"]
+SAMPLES = [
+    "rc_filter.qsp",
+    "diode_rectifier.qsp",
+    "first_order_feedback.qsp",
+    "diode_log.qsp",
+    "rlc_bandpass.qsp",
+]
 
 
 def load(name: str) -> Project:
@@ -56,7 +62,9 @@ def test_sample_loads_without_block_code(name: str) -> None:
     assert project.results == {}
 
 
-@pytest.mark.parametrize("name", ["rc_filter.qsp", "diode_rectifier.qsp", "diode_log.qsp"])
+@pytest.mark.parametrize(
+    "name", ["rc_filter.qsp", "diode_rectifier.qsp", "diode_log.qsp", "rlc_bandpass.qsp"]
+)
 def test_sample_netlist_checks_clean(name: str) -> None:
     result = parse(netlist(name))
     assert result.diagnostics == []

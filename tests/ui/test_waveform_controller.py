@@ -399,3 +399,22 @@ def test_ac_cursor_reads_minus_3db_and_minus_45_degrees_at_159_hz(parts) -> None
     ctl.setCursorX(2, 10 / (2 * math.pi * 1e-3))
     diff = ctl.property("cursorDiff")
     assert diff["dyText"].startswith("-17") and diff["dPhaseText"].startswith("-39")
+
+
+# ---- trace colours: strong colours in plotting order, kept while plotted
+
+
+def test_trace_colours_follow_plotting_order(parts) -> None:
+    from bridge.waveform_controller import COLORS, UNSHOWN_COLOR
+
+    model, ctl = parts
+    model.set_result(tran_result())
+    assert ctl.colorOf("V(out)") == COLORS[0] and ctl.colorOf("V(in)") == COLORS[1]
+    ctl.removeTrace(0, "V(in)")
+    assert ctl.colorOf("V(in)") == UNSHOWN_COLOR  # in no pane: grey in the trace list
+    assert ctl.plotExpression("V(out)*2", 0) == ""
+    assert ctl.colorOf("V(out)*2") == COLORS[1]  # the freed strong colour, not brown
+    assert ctl.colorOf("V(out)") == COLORS[0]  # unchanged
+    ctl.addTrace("V(in)")
+    assert ctl.colorOf("V(in)") == COLORS[2]
+    assert ctl.colorOf("V(nope)") == "#a0a0a0"

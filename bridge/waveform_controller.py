@@ -40,18 +40,23 @@ from core.waveform.traces import MAG, PHASE, TraceStore, log_minor_ticks, nice_t
 QML_IMPORT_NAME = "QtSpice"
 QML_IMPORT_MAJOR_VERSION = 1
 
+# Trace colours in the order traces are plotted: strong, distinct colours first; the
+# low-contrast ones (brown, olive, grey) only when many traces are shown.
 COLORS = (
     "#1f77b4",
     "#d62728",
     "#2ca02c",
-    "#ff7f0e",
     "#9467bd",
-    "#8c564b",
-    "#e377c2",
+    "#ff7f0e",
     "#17becf",
-    "#7f7f7f",
+    "#e377c2",
+    "#8c564b",
     "#bcbd22",
+    "#7f7f7f",
 )
+UNSHOWN_COLOR = "#b8b8b8"  # trace list: a vector that is in no pane
+TRACE_WIDTH = 2.0
+PHASE_WIDTH = 1.25
 MISSING_COLOR = "#a0a0a0"
 _MERGE_VIEW = 1  # consecutive wheel / pan steps merge into one undo step
 
@@ -146,6 +151,7 @@ class WaveformController(QObject):
         self._ranges: dict[int, tuple[float, float, float, float]] = {}
         self._cursors: list[dict[str, Any] | None] = [None, None]
         self._delete_mode = False
+        self._colors: dict[str, str] = {}  # trace -> colour, kept while it stays plotted
         # W7/W9: traces that are expressions rather than result vectors
         self._raw: set[str] = set()  # names that come from the result itself
         self._expr_errors: dict[str, str] = {}
@@ -246,6 +252,8 @@ class WaveformController(QObject):
     def _set_layout(self, analysis: str, layout: PlotLayout) -> None:
         self._layouts[analysis] = layout.copy()
         if analysis == self._analysis:
+            shown = set(layout.all_traces())
+            self._colors = {n: c for n, c in self._colors.items() if n in shown}
             self._evaluate_expressions()
             count = len(layout.panes)
             self._ranges = {k: v for k, v in self._ranges.items() if k < count}
@@ -410,10 +418,24 @@ class WaveformController(QObject):
 
     @Slot(str, result=str)
     def colorOf(self, name: str) -> str:  # noqa: N802 - QML API
-        names = self._store.names()
-        if name not in names:
+        """A plotted trace keeps its colour; a newly plotted one gets the first colour
+        no other plotted trace uses, so the first traces always get strong colours."""
+        if not self._store.has(name):
             return MISSING_COLOR
-        return COLORS[names.index(name) % len(COLORS)]
+        layout = self._layout()
+        shown = layout.all_traces() if layout else []
+        if name not in shown:
+            self._colors.pop(name, None)  # in no pane: its colour is free again
+            return UNSHOWN_COLOR
+        used = {self._colors[n] for n in shown if n in self._colors and n != name}
+        color = self._colors.get(name)
+        if color is not None and color not in used:
+            return color
+        color = next((c for c in COLORS if c not in used), None)
+        if color is None:
+            color = COLORS[len(used) % len(COLORS)]
+        self._colors[name] = color
+        return color
 
     # ---- undo
 
@@ -910,13 +932,13 @@ class WaveformController(QObject):
         used = 0
         for i, name in enumerate(names):
             color = QColor(self.colorOf(name))
-            used = _fill(series, used, mags[i].x, mags[i].y, name, color, 1.5)
+            used = _fill(series, used, mags[i].x, mags[i].y, name, color, TRACE_WIDTH)
             state.append({"name": name, "count": len(mags[i].x), "kind": MAG})
             if ac:
                 py = ylo + (phases[i].y - plo) * ((yhi - ylo) / (phi - plo) if phi > plo else 1.0)
                 faded = QColor(color)
-                faded.setAlpha(150)
-                used = _fill(series, used, phases[i].x, py, name, faded, 1.0)
+                faded.setAlpha(170)
+                used = _fill(series, used, phases[i].x, py, name, faded, PHASE_WIDTH)
                 state.append({"name": name, "count": len(phases[i].x), "kind": PHASE})
         for s in series[used:]:
             if isinstance(s, QXYSeries):

@@ -1,59 +1,129 @@
 # QtSpice (Python) - project memory
 
-## What we are building
-A desktop EDA application in Python. v0.1 has exactly these features:
-- F1 Netlist input: type, paste, open or drag in .cir / .net / .sp files
-- F2 Netlist checking: syntax and connectivity errors shown on the exact line
-- F3 Simulation: .op .dc .ac .tran through the ngspice shared library, in the background
-- F4 Waveforms: trace list, zoom/pan, two cursors with delta, log axis for AC, CSV export
-- F5 Function blocks: a Python function with @block becomes a block whose ports
-  match its signature
-- F6 Block diagrams: place, wire and run blocks with a fixed time step; Scope blocks
-  plot into the waveform viewer
-- F7 Projects: save/load one .qsp JSON file plus .npz result files
+## Status
+- v0.1.0 is released: netlist editor, ngspice simulation (.op .dc .ac .tran),
+  waveform viewer, Python function blocks, block diagrams, .qsp projects.
+- We are now building v0.2 on the `phase-2` branch. Do not break v0.1 behaviour:
+  every v0.1 test must keep passing.
 
-OUT OF SCOPE for v0.1 - do not build: schematic capture, noise/TF analyses,
-variable-step block solver, physical (Simscape-like) blocks, code generation,
-plug-ins, our own SPICE engine.
+## What v0.2 adds (only these - nothing else)
+- Libraries (L1-L8): `.lib file`, `.lib file section` / `.endl`, `.param` inside
+  `.subckt`, a library index and browser, ngspice LTspice compatibility mode.
+- Symbols (L4-L7): read LTspice `.asy` symbol files; `.asy` is also our own symbol format.
+- Schematic (S1-S11): one sheet, LTspice-style editing and probing, netlisted to the
+  same `Circuit` object the netlist editor produces.
+- Circuit symbol (H1-H3): turn a schematic or netlist into a `.sub` + `.asy` pair and
+  place it in another schematic. One level only.
+- Waveform window (W1-W10): panes, zoom, drag-and-drop traces, log axes, Bode view,
+  cursors, Add Trace dialog with LTspice expressions, `.func` plot definitions,
+  average/RMS.
+- Fixes (O1-O5): title-line warning, run errors mapped to a line or part, block-run
+  timeout setting and step guard, safe results folder, one schematic per project.
+
+OUT OF SCOPE for v0.2 - do not build, even if it looks easy:
+buses, multiple sheets, `.asc` import, graphical symbol editor, auto-routing,
+nested `.subckt`, multi-level hierarchy, parameters passed into symbols,
+loading `.dll` files of any kind, decrypting encrypted models, separate plot windows,
+XY/Nyquist plots, reading LTspice `.plt` files, FFT, `.meas`, automatic units,
+Python functions in the calculator, noise/.tf/.sens/.four/.control, more than one
+analysis per run, variable-step block solver, physical blocks, vector Scope values,
+two simulations at once, more than one netlist/diagram/schematic per project.
+If a task seems to need one of these, stop and ask.
 
 ## Stack
-Python 3.12, PySide6 6.8 (Qt Quick / QML, QtGraphs), NumPy,
-ngspice shared library via ctypes, graphlib, multiprocessing,
-pytest, pytest-qt, ruff, PyInstaller.
+Python 3.12, PySide6 6.8 (Qt Quick / QML, QtGraphs), NumPy, ngspice shared library
+via ctypes, graphlib, multiprocessing, pytest, pytest-qt, ruff, PyInstaller.
 
 ## Architecture rules (always follow)
 1. Four layers: ui/qml -> bridge -> core -> external. A layer only calls the one below.
 2. core/ never imports PySide6 or any Qt module.
-3. QML never calls core. It binds only to four bridge objects: Simulator,
-   WaveformModel, DiagramController, ProjectManager. Register them with
-   @QmlElement / @QmlSingleton, not setContextProperty.
+3. QML binds only to bridge objects registered with @QmlElement / @QmlSingleton:
+   Simulator, WaveformModel, DiagramController, ProjectManager (v0.1) and
+   SchematicController, WaveformController (new in v0.2). Never setContextProperty.
 4. Only core/sim/ngspice_adapter.py knows the ngspice API. Load libngspice lazily with
-   ctypes. If it is missing, available() returns False and the app still starts.
+   ctypes; if missing, available() returns False and the app still starts.
 5. ngspice runs on a QThread (SimulationWorker). User block code runs in a separate
-   process (BlockRunner) with a timeout and cancel.
-6. NetlistParser never raises on bad input. It returns ParseResult(circuit, diagnostics).
+   process (BlockRunner).
+6. Parsers never raise on bad input. They return a result object plus a list of
+   Diagnostic(line, col, severity, message). This applies to the netlist parser,
+   AsyParser, the library index and the plot definitions file.
 7. ngspice results and block results use the same SimulationResult class.
+8. A schematic is only another way to make a `Circuit`. Schematic netlisting goes
+   through the existing NetlistBuilder and Simulator. Do not add a second simulation path.
+9. Waveform expressions are parsed with Python `ast` against a whitelist and evaluated
+   on NumPy arrays. Never call eval() or exec() on user text.
+10. Every user edit in an editor (netlist, schematic, diagram, plot layout) goes
+    through that editor's own QUndoStack.
 
-## Folder layout
-app/__main__.py                  entry point: QGuiApplication + Main.qml
-core/netlist/   parser.py model.py validate.py builder.py
-core/sim/       backend.py ngspice_adapter.py result.py
-core/blocks/    decorator.py spec.py registry.py diagram.py engine.py runner.py library/
-core/project/   io.py schema.json
-bridge/         simulator.py sim_worker.py waveform_model.py
-                diagram_controller.py project_manager.py highlighter.py
-ui/qml/         Main.qml NetlistEditor.qml AnalysisPanel.qml WaveformView.qml
-                DeckView.qml ConsoleView.qml BlockCanvas.qml Block.qml Port.qml
-                Wire.qml BlockLibrary.qml FunctionEditor.qml PropertiesPanel.qml
-tests/core/ tests/ui/ tests/netlists/
-third_party/ngspice/             sharedspice.h + shared library per OS
+## LTspice compatibility rules (follow exactly)
+Reference: https://analogdevicesinc.github.io/ltspice-reference/ai_ref/WAVEFORM-VIEWER-GUIDE.html
+and https://dev-docs.kicad.org/en/import-formats/ltspice/index.html
 
-## ngspice in this checkout
-- Header: third_party/ngspice/include/sharedspice.h
-- Windows library: third_party/ngspice/lib/ngspice.dll (64-bit, loads with ctypes)
-- third_party/ngspice/README.md describes an older C++/QLibrary version of this app;
-  ignore its C++ paths. The Python adapter searches lib/ and bin/ under
-  third_party/ngspice/, then the system path.
+Symbols (.asy):
+- Plain text, read as Windows-1252 (the micro sign is byte 0xB5), CR+LF or LF.
+- Keywords: Version, SymbolType (CELL/BLOCK), LINE, RECTANGLE, CIRCLE, ARC, TEXT,
+  WINDOW, SYMATTR, PIN, PINATTR. Unknown keywords give a warning, not an error.
+- Pin order in the netlist comes from PINATTR SpiceOrder, never from drawing order.
+- SYMATTR Prefix X means a subcircuit; ModelFile is added as `.include`.
+- We never ship Analog Devices' own .asy/.lib files. Users may add their LTspice
+  install folder as a read-only search path.
+
+Probing (schematic, after a run):
+- click wire -> V(net); click two-terminal part body -> its current;
+  click a pin -> current into that pin; drag net to net -> V(a,b);
+  Alt+click part -> power V*I. Pointer icon shows which.
+
+Waveform window:
+- Panes share one X axis; each pane autoscales its own Y.
+- Drag a trace name to another pane = move; Ctrl+drop = copy; double-click trace = show only it.
+- Drag a box to zoom; Esc cancels; zoom back / auto-range; zoom history is undoable.
+- Click a trace name to attach cursor 1; right-click for cursor 2 or both;
+  arrow keys move one data point.
+- Ctrl+click a trace name -> average and RMS over the zoomed X range
+  (RMS only for voltage/current traces).
+- Expression syntax uses LTspice names:
+  operators  & | ^  (Boolean AND, OR, XOR - ^ is NOT power)   > < >= <=   + - * / **   !
+  functions  sin cos tan asin acos atan atan2 sinh cosh tanh ln log log10 exp sqrt pow
+             abs ceil floor round int if limit min max hypot d Re Im Ph Mag conj
+  constants  E pi K Q        axis names  time, omega / w
+  V(a,b) means V(a) - V(b). In LTspice, log() is the natural log (same as ln).
+- Plot definitions file: `.func` and `.param` lines, same syntax as SPICE.
+  Ship a default with `.func dB(x) 20*log10(Mag(x))`.
+- One plot layout per analysis type (.tran, .ac, .dc), stored in the .qsp project.
+
+ngspice:
+- Send `set ngbehavior=ltpsa` before loading a circuit (setting, on by default).
+  Compatibility is not 100%: LTspice-only devices (e.g. A-devices) must produce a
+  clear "not supported by ngspice" diagnostic, not a crash.
+- Detect encrypted model files (e.g. `* Begin:` ... `* End` hex blocks) and report them;
+  never try to decrypt.
+
+## Folder layout (v0.2 additions marked +)
+app/__main__.py
+core/netlist/     parser.py model.py validate.py builder.py  + libindex.py
+core/sim/         backend.py ngspice_adapter.py result.py
+core/blocks/      decorator.py spec.py registry.py diagram.py engine.py runner.py library/
+core/project/     io.py schema.json
++ core/symbols/   asy.py library.py builtin/*.asy
++ core/schematic/ model.py connectivity.py netlister.py
++ core/hierarchy/ symbolgen.py
++ core/waveform/  layout.py expr.py plotdefs.py
+bridge/           simulator.py sim_worker.py waveform_model.py diagram_controller.py
+                  project_manager.py highlighter.py
+                  + schematic_controller.py + waveform_controller.py
+ui/qml/           (v0.1 files) + SchematicCanvas.qml SymbolItem.qml PartPicker.qml
+                  WireTool.qml AttributeDialog.qml LibraryBrowser.qml PlotPane.qml
+                  PlotConfigDialog.qml TraceLabel.qml CursorReadout.qml
+                  AddTraceDialog.qml
+tests/core/ tests/ui/ tests/netlists/  + tests/fixtures/ (asy, lib, schematics)
+third_party/ngspice/
+
+## Project file
+- One `.qsp` JSON file with a `version` field (bump to 2; v1 files must still open).
+- v0.2 adds: one schematic, generated symbol paths, plot layouts per analysis type,
+  the plot-definitions text, compatibility-mode setting, block-run timeout.
+- Results live in `name_results/` next to `name.qsp`. The project keeps a list of its
+  own result files and deletes only those.
 
 ## Commands
 pip install -e ".[dev]"
@@ -65,12 +135,19 @@ ruff check . && ruff format --check .
 - Type hints everywhere; dataclasses for data; no global mutable state.
 - Every core module has tests under tests/core/ mirroring its path.
 - Tests that need ngspice are marked @pytest.mark.ngspice and skip if it is missing.
-- When adding or removing a source file, update [tool.pyside6-project] files in
-  pyproject.toml (Qt Creator uses it to open the project).
-- One component per commit; message format "<area>: <what>".
+- One task ID (e.g. S7, W4) per commit; message format "<ID> <area>: <what>".
 - Before saying a task is done: ruff and pytest must both pass.
-- For ngspice API details, read third_party/ngspice/include/sharedspice.h; do not guess.
+- For ngspice API details read third_party/ngspice/sharedspice.h; do not guess.
+- For LTspice behaviour follow the rules above; if they don't cover a case, ask.
 - If a requirement is unclear, ask instead of inventing behaviour.
+
+## Known v0.1 behaviour to keep (unless a v0.2 task changes it)
+- The first netlist line is the title (O1 only adds a warning).
+- Block diagrams use fixed-step forward Euler.
+- One simulation runs at a time.
+- On Windows, pytest may print "Windows fatal exception: access violation" while a
+  block-runner child process starts. Tests pass; the app does not enable faulthandler.
+  Do not try to "fix" this.
 
 ## Spike results (phase-2 setup; ngspice-46, PySide6 6.8.3, Windows 11)
 Spike code lives under scratch/ and is never imported by app code. Fixtures are in
