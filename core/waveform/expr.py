@@ -532,6 +532,11 @@ class ExpressionEngine:
         """Syntax and function problems that do not depend on the data."""
         return self.compile(text)[1]
 
+    def check_body(self, body: str, line: int) -> list[Diagnostic]:
+        """Check a ``.func``/``.param`` body (W9) at its line in the definitions text.
+        Names (parameters, vectors) are resolved when it is evaluated."""
+        return self.compile(body, line)[1]
+
     # ---- evaluate
 
     def evaluate(self, text: str, data: Data) -> ExprResult:
@@ -688,6 +693,8 @@ class _Context:
         user = self.engine.definitions.funcs.get(symbol.key)
         if user is not None:
             return self._user_call(user, args, symbol.col)
+        if symbol.key not in _FUNCTIONS:  # a .func that was dropped as broken
+            raise _EvalError(symbol.col, f"unknown function {symbol.text!r}")
         lo, hi, fn, rule = _FUNCTIONS[symbol.key]
         values = [a[0] for a in args]
         units = [a[1] for a in args]

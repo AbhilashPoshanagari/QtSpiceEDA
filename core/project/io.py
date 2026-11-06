@@ -40,7 +40,7 @@ DEFAULT_DT = 0.001
 _NAME = re.compile(r"^[A-Za-z0-9_-]+$")
 _KEYS_V1 = ("format", "version", "netlists", "diagrams", "block_sources", "analysis", "results")
 _KEYS = (*_KEYS_V1, "simulation")  # version 2
-_OPTIONAL_KEYS = ("schematic", "symbols", "plots")  # version 2, may be left out
+_OPTIONAL_KEYS = ("schematic", "symbols", "plots", "plot_defs")  # version 2, may be left out
 
 
 class ProjectError(Exception):
@@ -102,6 +102,9 @@ class Project:
     # W1: one waveform plot layout per analysis type ("tran", "ac", "dc"). Left out of
     # the file when empty.
     plots: dict[str, PlotLayout] = field(default_factory=dict)
+    # W9: the plot definitions text (.func/.param lines). None = the shipped default,
+    # left out of the file.
+    plot_defs: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """The JSON content of the .qsp file (results only by file name). ``schematic``
@@ -126,6 +129,8 @@ class Project:
             data["symbols"] = list(self.symbols)
         if self.plots:
             data["plots"] = layouts_to_dict(self.plots)
+        if self.plot_defs is not None:
+            data["plot_defs"] = self.plot_defs
         return data
 
     def to_json(self) -> str:
@@ -242,6 +247,7 @@ def load_project(path: str | Path) -> LoadResult:
         warnings += [d.message for d in found]
         project.schematic = schematic
     project.symbols = list(data.get("symbols", []))
+    project.plot_defs = data.get("plot_defs")
     if "plots" in data:  # a bad layout never stops the project from opening
         project.plots, found_plots = layouts_from_dict(data["plots"])
         warnings += [d.message for d in found_plots]
@@ -331,6 +337,8 @@ def _check_body(data: dict[str, Any]) -> list[str]:
         isinstance(s, str) and s.strip().casefold().endswith(".asy") for s in symbols
     ):
         errors.append("'symbols' must be a list of .asy file paths")
+    if "plot_defs" in data and not isinstance(data["plot_defs"], str):
+        errors.append("'plot_defs' must be a string")
 
     simulation = data.get("simulation", {"compat_mode": DEFAULT_COMPAT_MODE})
     if not isinstance(simulation, dict) or set(simulation) != {"compat_mode"}:

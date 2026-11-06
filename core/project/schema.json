@@ -7,7 +7,7 @@
   "required": ["format", "version", "netlists", "diagrams", "block_sources", "analysis", "results"],
   "additionalProperties": false,
   "if": { "properties": { "version": { "const": 1 } } },
-  "then": { "not": { "anyOf": [{ "required": ["simulation"] }, { "required": ["schematic"] }, { "required": ["symbols"] }, { "required": ["plots"] }] } },
+  "then": { "not": { "anyOf": [{ "required": ["simulation"] }, { "required": ["schematic"] }, { "required": ["symbols"] }, { "required": ["plots"] }, { "required": ["plot_defs"] }] } },
   "else": { "required": ["simulation"] },
   "properties": {
     "format": { "const": "qtspice-project" },
@@ -88,6 +88,10 @@
         "ac": { "$ref": "#/$defs/plotLayout" },
         "dc": { "$ref": "#/$defs/plotLayout" }
       }
+    },
+    "plot_defs": {
+      "description": "Format version 2, optional: the waveform plot definitions text, .func and .param lines in SPICE syntax (core/waveform/plotdefs.py). Left out when it is the shipped default.",
+      "type": "string"
     },
     "schematic": {
       "description": "Format version 2, optional: the project's one schematic (Schematic.to_dict() from core/schematic/model.py). Left out when there is none.",
