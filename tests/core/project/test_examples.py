@@ -42,6 +42,21 @@ SCHEMATIC_SAMPLES = [
 ]
 
 
+def test_examples_folder_holds_only_the_listed_samples() -> None:
+    """No stray .qsp ships in examples/: every project there is a listed sample."""
+    found = sorted(p.relative_to(EXAMPLES).as_posix() for p in EXAMPLES.rglob("*.qsp"))
+    assert found == sorted(SAMPLES)
+
+
+def test_readme_describes_every_sample() -> None:
+    readme = (EXAMPLES.parent / "README.md").read_text(encoding="utf-8")
+    for name in SAMPLES:
+        if name == "hierarchy/rclp_cell.qsp":  # mentioned inside the rc2 entry
+            assert name in readme
+        else:
+            assert f"**`{name}`**" in readme, name
+
+
 def load(name: str) -> Project:
     loaded = load_project(EXAMPLES / name)
     assert loaded.ok, loaded.errors
