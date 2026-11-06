@@ -112,6 +112,7 @@ class ProjectManager(QObject):
         self._symbols: list[Path] = []  # circuit symbols (H3), absolute .asy paths
         # Plot layouts (W1): kept as loaded while no WaveformController is attached.
         self._plots: dict[str, PlotLayout] = {}
+        self._plot_defs: str | None = None  # W9: None = the shipped default
         self._plots_ctl: QObject | None = None
         self._saved_json = ""
         self._saved_results: tuple[object, object] = (None, None)
@@ -181,6 +182,7 @@ class ProjectManager(QObject):
         """Make the waveform window's plot layouts (WaveformController) part of the
         project."""
         self._plots_ctl = controller
+        controller.load_plot_defs(self._plot_defs)  # type: ignore[attr-defined]
         controller.load_layouts(self._plots)  # type: ignore[attr-defined]
         controller.layoutEdited.connect(self._update_modified)  # type: ignore[attr-defined]
         if self._simulator is not None and self._diagram is not None:
@@ -216,6 +218,11 @@ class ProjectManager(QObject):
                 self._plots_ctl.layouts()  # type: ignore[attr-defined]
                 if self._plots_ctl is not None
                 else {a: layout.copy() for a, layout in self._plots.items()}
+            ),
+            plot_defs=(
+                self._plots_ctl.plot_defs_text()  # type: ignore[attr-defined]
+                if self._plots_ctl is not None
+                else self._plot_defs
             ),
         )
 
@@ -344,7 +351,9 @@ class ProjectManager(QObject):
         self._extra_diagrams = list(project.diagrams[1:])
         self._schematic = project.schematic
         self._plots = {a: layout.copy() for a, layout in project.plots.items()}
+        self._plot_defs = project.plot_defs
         if self._plots_ctl is not None:
+            self._plots_ctl.load_plot_defs(self._plot_defs)  # type: ignore[attr-defined]
             self._plots_ctl.load_layouts(self._plots)  # type: ignore[attr-defined]
         folder = Path(path).parent if path else Path.cwd()
         self._symbols = [(folder / s).resolve() for s in project.symbols]
