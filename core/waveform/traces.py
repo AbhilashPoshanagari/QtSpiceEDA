@@ -223,3 +223,16 @@ def padded(lo: float, hi: float, fraction: float = 0.05) -> tuple[float, float]:
     else:
         pad = (hi - lo) * fraction
     return lo - pad, hi + pad
+
+
+def log_minor_ticks(lo: float, hi: float, max_decades: float = 8) -> list[float]:
+    """log10(k * 10^n) for k = 2..9 inside display range [lo, hi] of a log axis."""
+    if not (math.isfinite(lo) and math.isfinite(hi)) or hi <= lo or hi - lo > max_decades:
+        return []
+    out = []
+    for decade in range(math.floor(lo), math.ceil(hi) + 1):
+        for k in range(2, 10):
+            v = decade + math.log10(k)
+            if lo <= v <= hi:
+                out.append(v)
+    return out

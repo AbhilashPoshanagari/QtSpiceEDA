@@ -339,3 +339,29 @@ def test_delete_mode_and_double_click(qapp: object, tmp_path: Path, qtbot) -> No
         assert ctl.property("deleteMode") is False
         ctl.undo()
         assert _names(ctl) == [["V(out)", "V(in)"]]
+
+
+# ---- W5: log axes
+
+
+def test_log_y_note_and_grid(qapp: object, tmp_path: Path, qtbot) -> None:
+    from tests.ui.test_waveform_controller import diode_result
+
+    with qml_window(tmp_path, "WaveformView") as (engine, _, view):
+        model, ctl = _parts(engine)
+        model.set_result(diode_result())
+        ctl.showOnly(0, "I(D1)")
+        ctl.setYLog(0, True)
+        _settle(qtbot)
+        pane = _child(view, "pane0")
+        assert pane.property("hiddenPoints") == 1
+        note = _child(view, "hiddenNote")
+        assert note.property("visible") and "1 points ≤ 0 hidden" in note.property("text")
+        grid = _child(view, "logGrid")
+        assert len([c for c in grid.childItems() if c.property("width") > 100]) == 0  # 17 dec
+        ctl.zoomBox(0, 0.3, 0.8, -9, -2)  # 1 nA .. 10 mA
+        _settle(qtbot)
+        assert len([c for c in grid.childItems() if c.property("width") > 100]) > 20
+        ctl.setShowAbs(0, True)
+        _settle(qtbot)
+        assert pane.property("hiddenPoints") == 1  # |0| is still 0

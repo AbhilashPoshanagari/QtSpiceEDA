@@ -281,3 +281,59 @@ def test_delta_x_shows_frequency(parts) -> None:
     assert ctl.formatDeltaX(1e-3, 2e-3) == "1 ms  (1/Δ = 1 kHz)"
     model.set_result(diode_result())
     assert ctl.formatDeltaX(0.1, 0.3) == "200 mV"
+
+
+# ---- W5: log axes and Bode
+
+
+def test_log_y_hides_non_positive_values_or_plots_abs(parts) -> None:
+    model, ctl = parts
+    model.set_result(diode_result())
+    ctl.showOnly(0, "I(D1)")
+    assert ctl.setYLog(0, True)
+    assert ctl.property("panes")[0]["yLog"] is True
+    info, _ = fill(ctl, 0)
+    assert info["hidden"] == 1  # I(D1) = 0 at 0 V
+    assert -17 < info["yMin"] < -12 and info["yMax"] > 0  # decades, not amps
+    assert ctl.formatY(0, -9) == "1 nA" and ctl.formatY(0, -2) == "10 mA"
+    assert ctl.formatDeltaY(0, -9, -6) == "×1000"
+
+    t = np.linspace(0, 1, 1001)
+    model.set_result(
+        SimulationResult("time", {"time": t, "V(s)": np.sin(2 * np.pi * 3 * t)}, {}, "tran")
+    )
+    ctl.setYLog(0, True)
+    hidden = fill(ctl, 0)[0]["hidden"]
+    assert hidden > 400
+    assert ctl.setShowAbs(0, True)
+    assert fill(ctl, 0)[0]["hidden"] < 10  # only the zeros
+    ctl.undo()
+    ctl.undo()
+    assert ctl.property("panes")[0]["yLog"] is False
+
+
+def test_log_x_on_tran_and_linear_x_on_ac(parts) -> None:
+    model, ctl = parts
+    model.set_result(tran_result(1001))
+    assert ctl.setXLog(True)
+    assert ctl.property("xMin") == pytest.approx(math.log10(5e-6))  # t = 0 left out
+    assert ctl.formatX(-3) == "1 ms"
+    assert ctl.logGrid(-3, -2)[0] == pytest.approx(math.log10(2e-3))
+    model.set_result(ac_result())
+    assert ctl.property("xLog") and ctl.property("xMax") == pytest.approx(5)
+    assert ctl.setXLog(False)
+    assert ctl.property("xMax") == pytest.approx(1e5)
+    ctl.undo()
+    assert ctl.property("xLog")
+
+
+def test_ac_opens_as_bode_with_minus_3db_and_minus_45_degrees(parts) -> None:
+    model, ctl = parts
+    model.set_result(ac_result())
+    info, series = fill(ctl, 0)
+    assert ctl.formatY(0, -3.01) == "-3.01 dB"
+    assert info["yMax"] > 0 and info["yMin"] < -40
+    fc = 1 / (2 * math.pi * 1e-3)
+    mags = [(series[0].at(i).x(), series[0].at(i).y()) for i in range(series[0].count())]
+    nearest = min(mags, key=lambda p: abs(p[0] - math.log10(fc)))
+    assert nearest[1] == pytest.approx(-3.01, abs=0.1)

@@ -146,8 +146,8 @@ FocusScope {
             max: pane.x1
             tickAnchor: 0
             // One label per decade on a log axis (at least two decades shown).
-            tickInterval: WaveformController.xLog && pane.x1 - pane.x0 >= 2 ? 1 : 0
-            subTickCount: WaveformController.xLog ? 8 : 4
+            tickInterval: WaveformController.xLog && pane.x1 - pane.x0 >= 1 ? 1 : 0
+            subTickCount: WaveformController.xLog ? 0 : 4  // log: minor lines drawn below
             labelFormat: "%.9g"
             labelDelegate: Item {
                 property string text
@@ -169,8 +169,8 @@ FocusScope {
             min: -1
             max: 1
             tickAnchor: 0
-            tickInterval: pane.info.yLog && max - min >= 2 ? 1 : 0
-            subTickCount: pane.info.yLog ? 8 : 4
+            tickInterval: pane.info.yLog && max - min >= 1 ? 1 : 0
+            subTickCount: pane.info.yLog ? 0 : 4
             labelFormat: "%.9g"
             labelDelegate: Item {
                 property string text
@@ -184,6 +184,38 @@ FocusScope {
                     text: pane.info.yLog !== undefined && parent.text.length > 0
                           ? WaveformController.formatY(pane.paneIndex, Number(parent.text)) : ""
                 }
+            }
+        }
+    }
+
+    // Minor grid of log axes (W5): 2..9 times each decade. QtGraphs sub-ticks are
+    // evenly spaced, which is wrong on a log scale, so these are drawn here.
+    Item {
+        objectName: "logGrid"
+        x: pane.plotLeft
+        y: pane.plotTop
+        width: pane.plotWidth
+        height: pane.plotHeight
+        visible: pane.info.grid !== false
+        clip: true
+        Repeater {
+            model: WaveformController.xLog ? WaveformController.logGrid(pane.x0, pane.x1) : []
+            delegate: Rectangle {
+                required property real modelData
+                x: pane.toPixelX(modelData) - pane.plotLeft
+                width: 1
+                height: parent.height
+                color: "#e6e6e6"
+            }
+        }
+        Repeater {
+            model: pane.info.yLog ? WaveformController.logGrid(pane.yMin, pane.yMax) : []
+            delegate: Rectangle {
+                required property real modelData
+                y: pane.toPixelY(modelData) - pane.plotTop
+                width: parent.width
+                height: 1
+                color: "#e6e6e6"
             }
         }
     }
@@ -209,7 +241,8 @@ FocusScope {
         visible: pane.hiddenPoints > 0
         x: pane.plotLeft + 4
         y: pane.plotTop + 2
-        text: qsTr("%n point(s) <= 0 hidden", "", pane.hiddenPoints)
+        text: qsTr("%1 points ≤ 0 hidden (log Y): right-click > Plot |y| to show them")
+              .arg(pane.hiddenPoints)
         font.pointSize: 8
         color: "#b06000"
     }
@@ -366,6 +399,33 @@ FocusScope {
         MenuItem {
             text: qsTr("Auto-range")
             onTriggered: WaveformController.autoRange()
+        }
+        MenuSeparator {}
+        MenuItem {
+            objectName: "logXItem"
+            text: qsTr("Logarithmic X axis")
+            checkable: true
+            checked: WaveformController.xLog
+            onTriggered: WaveformController.setXLog(checked)
+        }
+        MenuItem {
+            objectName: "logYItem"
+            text: qsTr("Logarithmic Y axis")
+            visible: !pane.isAc
+            height: visible ? implicitHeight : 0
+            checkable: true
+            checked: pane.info.yLog === true
+            onTriggered: WaveformController.setYLog(pane.paneIndex, checked)
+        }
+        MenuItem {
+            objectName: "absItem"
+            text: qsTr("Plot |y| (values ≤ 0)")
+            visible: !pane.isAc
+            height: visible ? implicitHeight : 0
+            enabled: pane.info.yLog === true
+            checkable: true
+            checked: pane.info.showAbs === true
+            onTriggered: WaveformController.setShowAbs(pane.paneIndex, checked)
         }
         MenuSeparator {}
         MenuItem {

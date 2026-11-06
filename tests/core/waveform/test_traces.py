@@ -88,3 +88,12 @@ def test_ticks_and_padding() -> None:
     assert padded(0, 10) == (-0.5, 10.5)
     lo, hi = padded(2, 2)
     assert lo < 2 < hi
+
+
+def test_log_minor_ticks() -> None:
+    from core.waveform.traces import log_minor_ticks
+
+    ticks = log_minor_ticks(0, 1)
+    assert ticks == pytest.approx([math.log10(k) for k in range(2, 10)])
+    assert log_minor_ticks(0, 20) == []  # too many decades
+    assert log_minor_ticks(1, 1) == []

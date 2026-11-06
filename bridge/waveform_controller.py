@@ -32,7 +32,7 @@ from PySide6.QtQml import QmlElement, QmlSingleton
 from bridge.waveform_model import si
 from core.netlist.parser import parse_number
 from core.waveform.layout import ANALYSES, PlotLayout, layouts_to_dict
-from core.waveform.traces import MAG, PHASE, TraceStore, nice_ticks, padded
+from core.waveform.traces import MAG, PHASE, TraceStore, log_minor_ticks, nice_ticks, padded
 
 QML_IMPORT_NAME = "QtSpice"
 QML_IMPORT_MAJOR_VERSION = 1
@@ -750,6 +750,12 @@ class WaveformController(QObject):
             ratio = 10.0 ** abs(b - a)
             return f"×{ratio:.4g}"
         return self.formatY(pane, abs(b - a))
+
+    @Slot(float, float, result="QVariantList")
+    def logGrid(self, lo: float, hi: float) -> list[float]:  # noqa: N802 - QML API
+        """Minor grid lines of a log axis between display ``lo`` and ``hi``: log10 of
+        2..9 times each decade (none when more than 8 decades are shown)."""
+        return log_minor_ticks(lo, hi)
 
     @Slot(str, result=float)
     def parseNumber(self, text: str) -> float:  # noqa: N802 - QML API
