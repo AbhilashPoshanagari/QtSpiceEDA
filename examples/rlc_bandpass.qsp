@@ -23,7 +23,7 @@
     }
   ],
   "analysis": {
-    "card": ".ac dec 2000 -10 300k",
+    "card": "",
     "diagram_t_end": 1.0,
     "diagram_dt": 0.001
   },

@@ -1,5 +1,6 @@
-"""The v0.1 sample projects in examples/: they load, check clean and give the expected
-answers (RC low-pass, diode rectifier, first-order feedback loop)."""
+"""The sample projects in examples/: they load, check clean and give the expected
+answers (v0.1: RC low-pass, diode rectifier, first-order feedback loop; v0.2: RC
+low-pass schematic, op-amp amplifier with its own .lib, circuit symbol used twice)."""
 
 from __future__ import annotations
 
@@ -28,6 +29,16 @@ SAMPLES = [
     "first_order_feedback.qsp",
     "diode_log.qsp",
     "rlc_bandpass.qsp",
+    "rc_filter_schematic.qsp",
+    "hierarchy/rc2.qsp",
+    "hierarchy/rclp_cell.qsp",
+    "opamp_amp/opamp_amp.qsp",
+]
+SCHEMATIC_SAMPLES = [
+    "rlc_bandpass.qsp",
+    "rc_filter_schematic.qsp",
+    "hierarchy/rc2.qsp",
+    "opamp_amp/opamp_amp.qsp",
 ]
 
 
@@ -161,3 +172,61 @@ def test_diode_log_sweeps_one_nanoamp_to_ten_milliamps() -> None:
     assert current.max() == pytest.approx(1e-2, rel=0.3)
     panes = project.plots["dc"].panes
     assert [p.traces for p in panes] == [["V(in)"], ["I(vm)"]] and panes[1].y.log
+
+
+# ---------------------------------------------------------------- v0.2 samples
+
+
+def netlist_sample(name: str):
+    """Netlist a schematic sample the way the app does: project symbols by absolute path,
+    includes resolved from the project folder."""
+    path = (EXAMPLES / name).resolve()
+    project = load(name)
+    lib = SymbolLibrary(project_files=[path.parent / s for s in project.symbols])
+    result = netlist_schematic(project.schematic, lambda n: lib.lookup(n)[0], path.parent)
+    assert result.ok, result.diagnostics
+    return project, result
+
+
+@pytest.mark.parametrize("name", SCHEMATIC_SAMPLES)
+def test_schematic_sample_netlists_clean(name: str) -> None:
+    project, result = netlist_sample(name)
+    # The analysis comes from the schematic's directive; a panel card would replace it.
+    assert project.analysis.card == ""
+    assert sum(t.directive for t in project.schematic.texts) == 1
+
+
+def test_opamp_sample_uses_its_own_symbol_and_library() -> None:
+    project, result = netlist_sample("opamp_amp/opamp_amp.qsp")
+    assert project.symbols == ["opamp5.asy"]
+    # SpiceOrder in+ in- vcc vee out, not the drawing order (OUT is drawn first).
+    assert "XU1 in inn vcc vee out opamp5" in result.deck.splitlines()
+    assert ".subckt opamp5" in result.deck
+
+
+@pytest.mark.ngspice
+def test_rc_filter_schematic_corner_frequency() -> None:
+    _, result = netlist_sample("rc_filter_schematic.qsp")
+    adapter = NgspiceAdapter()
+    adapter.load(result.deck)
+    adapter.run()
+    data = adapter.results()
+    f = np.real(data.vectors["frequency"])
+    db = to_db(data.vectors["V(out)"])
+    f_3db = np.interp(-3.0103, db[::-1], f[::-1])
+    assert f_3db == pytest.approx(1 / (2 * np.pi * 10e3 * 0.1e-6), rel=0.01)
+
+
+@pytest.mark.ngspice
+def test_opamp_sample_has_gain_ten() -> None:
+    _, result = netlist_sample("opamp_amp/opamp_amp.qsp")
+    adapter = NgspiceAdapter()
+    adapter.load(result.deck)
+    adapter.run()
+    data = adapter.results()
+    t = data.vectors["time"]
+    vin, vout = np.real(data.vectors["V(in)"]), np.real(data.vectors["V(out)"])
+    assert t[-1] == pytest.approx(5e-3)
+    gain = 1 / (1 + 10 / 1e5)  # 10 with an open-loop gain of 100k
+    np.testing.assert_allclose(vout, 10 * gain * vin, atol=2e-3)
+    assert vout.max() == pytest.approx(5.0, rel=1e-3)

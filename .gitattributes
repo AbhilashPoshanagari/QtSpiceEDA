@@ -3,3 +3,5 @@ tests/fixtures/** -text
 # Generated circuit symbols in the examples are CR+LF / Windows-1252 as written: keep them.
 examples/hierarchy/*.asy -text
 examples/hierarchy/*.sub -text
+examples/opamp_amp/*.asy -text
+examples/opamp_amp/*.lib -text

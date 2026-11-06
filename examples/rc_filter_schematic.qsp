@@ -1,0 +1,136 @@
+{
+  "format": "qtspice-project",
+  "version": 2,
+  "netlists": [],
+  "diagrams": [],
+  "block_sources": [],
+  "analysis": {
+    "card": "",
+    "diagram_t_end": 1.0,
+    "diagram_dt": 0.001
+  },
+  "results": [],
+  "simulation": {
+    "compat_mode": "ltpsa"
+  },
+  "schematic": {
+    "title": "RC low-pass (schematic)",
+    "instances": [
+      {
+        "symbol": "voltage",
+        "name": "V1",
+        "x": 64,
+        "y": 144,
+        "rotation": 0,
+        "mirror": false,
+        "attrs": {
+          "Value": "PULSE(0 5 10m 1u 1u 10m 20m)",
+          "Value2": "AC 1"
+        }
+      },
+      {
+        "symbol": "cap",
+        "name": "C1",
+        "x": 288,
+        "y": 144,
+        "rotation": 0,
+        "mirror": false,
+        "attrs": {
+          "Value": ".1µ"
+        }
+      },
+      {
+        "symbol": "res",
+        "name": "R2",
+        "x": 144,
+        "y": 96,
+        "rotation": 90,
+        "mirror": true,
+        "attrs": {
+          "Value": "10k"
+        }
+      }
+    ],
+    "wires": [
+      [
+        144,
+        112,
+        64,
+        112
+      ],
+      [
+        304,
+        112,
+        240,
+        112
+      ],
+      [
+        304,
+        144,
+        304,
+        112
+      ],
+      [
+        64,
+        160,
+        64,
+        112
+      ],
+      [
+        304,
+        272,
+        304,
+        208
+      ],
+      [
+        64,
+        288,
+        64,
+        240
+      ],
+      [
+        304,
+        288,
+        304,
+        272
+      ]
+    ],
+    "labels": [
+      {
+        "x": 64,
+        "y": 112,
+        "name": "IN"
+      },
+      {
+        "x": 304,
+        "y": 112,
+        "name": "OUT"
+      }
+    ],
+    "grounds": [
+      {
+        "x": 64,
+        "y": 288
+      },
+      {
+        "x": 304,
+        "y": 272
+      }
+    ],
+    "ports": [],
+    "texts": [
+      {
+        "x": -96,
+        "y": 176,
+        "text": ".ac dec 100 1 1MEG",
+        "directive": true
+      },
+      {
+        "x": -96,
+        "y": 208,
+        "text": "R2 10k, C1 100n: -3 dB at 159 Hz. Run, then click the OUT wire to plot V(out).",
+        "directive": false
+      }
+    ]
+  }
+}

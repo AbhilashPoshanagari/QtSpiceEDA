@@ -1,0 +1,200 @@
+{
+  "format": "qtspice-project",
+  "version": 2,
+  "netlists": [],
+  "diagrams": [],
+  "block_sources": [],
+  "analysis": {
+    "card": "",
+    "diagram_t_end": 1.0,
+    "diagram_dt": 0.001
+  },
+  "results": [],
+  "simulation": {
+    "compat_mode": "ltpsa"
+  },
+  "schematic": {
+    "title": "Non-inverting amplifier, gain 10",
+    "instances": [
+      {
+        "symbol": "voltage",
+        "name": "Vin",
+        "x": -320,
+        "y": 0,
+        "rotation": 0,
+        "mirror": false,
+        "attrs": {
+          "Value": "SIN(0 0.5 1k)",
+          "Value2": "AC 1"
+        }
+      },
+      {
+        "symbol": "voltage",
+        "name": "Vcc",
+        "x": -224,
+        "y": 0,
+        "rotation": 0,
+        "mirror": false,
+        "attrs": {
+          "Value": "15"
+        }
+      },
+      {
+        "symbol": "voltage",
+        "name": "Vee",
+        "x": -128,
+        "y": 0,
+        "rotation": 0,
+        "mirror": false,
+        "attrs": {
+          "Value": "15"
+        }
+      },
+      {
+        "symbol": "opamp5",
+        "name": "U1",
+        "x": 0,
+        "y": 0,
+        "rotation": 0,
+        "mirror": false,
+        "attrs": {}
+      },
+      {
+        "symbol": "res",
+        "name": "Rf",
+        "x": 160,
+        "y": 0,
+        "rotation": 0,
+        "mirror": false,
+        "attrs": {
+          "Value": "90k"
+        }
+      },
+      {
+        "symbol": "res",
+        "name": "Rg",
+        "x": 256,
+        "y": 0,
+        "rotation": 0,
+        "mirror": false,
+        "attrs": {
+          "Value": "10k"
+        }
+      },
+      {
+        "symbol": "res",
+        "name": "Rload",
+        "x": 352,
+        "y": 0,
+        "rotation": 0,
+        "mirror": false,
+        "attrs": {
+          "Value": "10k"
+        }
+      }
+    ],
+    "wires": [],
+    "labels": [
+      {
+        "x": -320,
+        "y": 16,
+        "name": "in"
+      },
+      {
+        "x": -224,
+        "y": 16,
+        "name": "vcc"
+      },
+      {
+        "x": -128,
+        "y": 96,
+        "name": "vee"
+      },
+      {
+        "x": -64,
+        "y": 80,
+        "name": "in"
+      },
+      {
+        "x": -64,
+        "y": 48,
+        "name": "inn"
+      },
+      {
+        "x": 0,
+        "y": 32,
+        "name": "vcc"
+      },
+      {
+        "x": 0,
+        "y": 96,
+        "name": "vee"
+      },
+      {
+        "x": 64,
+        "y": 64,
+        "name": "out"
+      },
+      {
+        "x": 176,
+        "y": 0,
+        "name": "out"
+      },
+      {
+        "x": 176,
+        "y": 96,
+        "name": "inn"
+      },
+      {
+        "x": 272,
+        "y": 0,
+        "name": "inn"
+      },
+      {
+        "x": 368,
+        "y": 0,
+        "name": "out"
+      }
+    ],
+    "grounds": [
+      {
+        "x": -320,
+        "y": 96
+      },
+      {
+        "x": -224,
+        "y": 96
+      },
+      {
+        "x": -128,
+        "y": 16
+      },
+      {
+        "x": 272,
+        "y": 96
+      },
+      {
+        "x": 368,
+        "y": 96
+      }
+    ],
+    "ports": [],
+    "texts": [
+      {
+        "x": -320,
+        "y": 160,
+        "text": ".tran 1u 5m",
+        "directive": true
+      },
+      {
+        "x": -320,
+        "y": 200,
+        "text": "U1 is opamp5 from opamp.lib (a hand-written placeholder model, Aol 100k). Gain = 1 + Rf/Rg = 10.",
+        "directive": false
+      }
+    ]
+  },
+  "symbols": [
+    "opamp5.asy"
+  ]
+}

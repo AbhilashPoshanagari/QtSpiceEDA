@@ -1,0 +1,10 @@
+* Hand-written placeholder op-amp (QtSpice sample; not a vendor model)
+* Pins: in+ in- vcc vee out  (matches opamp5.asy SpiceOrder 1-5)
+* Ideal-ish: 10Meg input, open-loop gain 100k, 75 ohm output, no poles, no clipping.
+.subckt opamp5 inp inn vcc vee out
+Rin inp inn 10Meg
+E1 int 0 inp inn 100k
+Rout int out 75
+* Quiescent supply current (also gives the supply pins a connection)
+Rq vcc vee 30k
+.ends opamp5
