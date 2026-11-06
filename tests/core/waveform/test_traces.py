@@ -97,3 +97,35 @@ def test_log_minor_ticks() -> None:
     assert ticks == pytest.approx([math.log10(k) for k in range(2, 10)])
     assert log_minor_ticks(0, 20) == []  # too many decades
     assert log_minor_ticks(1, 1) == []
+
+
+# ---- W10: average and RMS
+
+
+def test_rms_of_a_1v_sine_over_whole_periods() -> None:
+    t = np.linspace(0, 3e-3, 3001)  # three periods of 1 kHz
+    store = TraceStore.build("tran", t, "s", {"V(s)": ("V", np.sin(2e3 * np.pi * t))})
+    average, rms = store.average_rms("V(s)", 0, 3e-3)
+    assert rms == pytest.approx(1 / math.sqrt(2), rel=1e-3)
+    assert abs(average) < 1e-6
+
+
+def test_average_rms_weights_uneven_steps_and_clips_the_interval() -> None:
+    t = np.array([0.0, 1.0, 1.001, 10.0])  # a step from 0 to 1 at t = 1
+    y = np.array([0.0, 0.0, 1.0, 1.0])
+    store = TraceStore.build("tran", t, "s", {"V(a)": ("V", y)})
+    average, rms = store.average_rms("V(a)", -5, 20)  # clipped to 0..10
+    assert average == pytest.approx(0.9, abs=1e-3)
+    assert rms == pytest.approx(math.sqrt(0.9), abs=1e-3)
+    average, _ = store.average_rms("V(a)", 2, 4)  # interpolated ends
+    assert average == pytest.approx(1.0)
+    dc = TraceStore.build("tran", t, "s", {"V(a)": ("V", np.full(4, -2.0))})
+    assert dc.average_rms("V(a)", 0, 10) == pytest.approx((-2.0, 2.0))
+
+
+def test_average_rms_not_available() -> None:
+    assert _ac().average_rms("V(out)", 1, 10) is None
+    store = _tran()
+    assert store.average_rms("nope", 0, 1) is None
+    assert store.average_rms("V(out)", 1, 1) is None
+    assert store.average_rms("V(out)", 6e-3, 7e-3) is None  # outside the data

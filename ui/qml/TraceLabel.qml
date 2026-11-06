@@ -8,7 +8,8 @@ import QtSpice
 // - double-click shows only this trace in its pane;
 // - in Delete mode (WaveformController.deleteMode) a click removes it;
 // - otherwise a click attaches cursor 1 and right-click opens a menu for cursor 2,
-//   both cursors or removing the trace (W6), or editing its expression (W8).
+//   both cursors or removing the trace (W6), or editing its expression (W8);
+// - Ctrl+click shows the average and RMS over the zoomed X range (W10).
 // Spike D: Drag.Internal + Drag.keys + one DropArea per pane; while dragging the chip
 // is re-parented to `dragParent` so it can leave its pane. Ctrl is read on release
 // (a DragEvent has no modifiers) and passed as Drag.proposedAction.
@@ -23,6 +24,7 @@ Item {
 
     signal cursorRequested(int which)  // 1, 2 or 3 (both)
     signal editRequested()  // "Edit expression…" (W8)
+    signal statsRequested()  // Ctrl+click: average and RMS (W10)
 
     objectName: "label_" + paneIndex + "_" + name
     width: chip.implicitWidth
@@ -102,6 +104,8 @@ Item {
             if (WaveformController.deleteMode) {
                 const pane = label.paneIndex, name = label.name
                 Qt.callLater(() => WaveformController.removeTrace(pane, name))
+            } else if (event.modifiers & Qt.ControlModifier) {
+                label.statsRequested()
             } else {
                 label.cursorRequested(1)
             }

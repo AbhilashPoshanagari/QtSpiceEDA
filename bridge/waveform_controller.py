@@ -677,6 +677,44 @@ class WaveformController(QObject):
             return "the trace is not in that pane"
         return ""
 
+    # ---- average and RMS (W10)
+
+    @Slot(int, str, result="QVariantMap")
+    def traceStats(self, pane: int, name: str) -> dict[str, Any]:  # noqa: N802 - QML API
+        """Ctrl+click on a trace name: average and RMS of ``name`` over the zoomed X
+        range. RMS only for voltage and current traces (unit V or A)."""
+        layout = self._layout()
+        if (
+            layout is None
+            or not 0 <= pane < len(layout.panes)
+            or name not in layout.panes[pane].traces
+            or not self._store.has(name)
+        ):
+            return {"ok": False, "message": "the trace has no data"}
+        if layout.is_ac:
+            return {"ok": False, "message": "average and RMS are for .tran and .dc runs"}
+        lo, hi = self._x_view()
+        found = self._store.average_rms(name, lo, hi)
+        if found is None:
+            return {"ok": False, "message": "no data in the zoomed range"}
+        average, rms = found
+        unit = self._store.unit(name)
+        has_rms = unit in ("V", "A")
+        x_unit = self._store.axis_unit
+        return {
+            "ok": True,
+            "name": name,
+            "from": lo,
+            "to": hi,
+            "fromText": si(lo, x_unit),
+            "toText": si(hi, x_unit),
+            "average": average,
+            "averageText": si(average, unit),
+            "hasRms": has_rms,
+            "rms": rms if has_rms else math.nan,
+            "rmsText": si(rms, unit) if has_rms else "",
+        }
+
     # ---- plot definitions (W9)
 
     def plot_defs_text(self) -> str | None:

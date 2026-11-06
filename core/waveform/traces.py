@@ -114,6 +114,29 @@ class TraceStore:
             return math.nan
         return float(np.interp(x, self.x, y))
 
+    def average_rms(self, name: str, x0: float, x1: float) -> tuple[float, float] | None:
+        """Average and RMS of ``name`` over real axis values ``x0``..``x1`` (W10), as
+        integrals over X of the piecewise-linear trace divided by the interval, so
+        uneven time steps are weighted correctly. None for AC, unknown traces, an
+        unordered axis or an empty interval."""
+        trace = self._traces.get(name)
+        x = self.x
+        if trace is None or self.is_ac or not self.ordered or len(x) < 2:
+            return None
+        lo, hi = max(min(x0, x1), float(x[0])), min(max(x0, x1), float(x[-1]))
+        if not hi > lo:
+            return None
+        y = np.real(trace.values).astype(float)
+        inside = (x > lo) & (x < hi)
+        xs = np.concatenate([[lo], x[inside], [hi]])
+        ys = np.concatenate([[np.interp(lo, x, y)], y[inside], [np.interp(hi, x, y)]])
+        h = np.diff(xs)
+        a, b = ys[:-1], ys[1:]
+        span = hi - lo
+        average = float(np.sum(h * (a + b) / 2) / span)
+        mean_square = float(np.sum(h * (a * a + a * b + b * b) / 3) / span)  # exact for lines
+        return average, math.sqrt(max(mean_square, 0.0))
+
     def nearest_index(self, x: float) -> int:
         if not len(self.x):
             return -1

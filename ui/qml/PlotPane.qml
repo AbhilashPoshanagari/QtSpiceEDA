@@ -40,6 +40,17 @@ FocusScope {
     property int activeCursor: 1  // the cursor the arrow keys move
     property Item dragParent: null  // where a dragged trace name lives (the view)
 
+    // W10: Ctrl+click on a trace name. Average and RMS over the zoomed X range, as
+    // LTspice shows them; RMS only for voltage and current traces.
+    function showStats(name, near) {
+        const s = WaveformController.traceStats(paneIndex, name)
+        statsPopup.stats = s
+        const p = near.mapToItem(pane, 0, near.height + 2)
+        statsPopup.x = Math.max(0, Math.min(p.x, pane.width - statsPopup.implicitWidth))
+        statsPopup.y = p.y
+        statsPopup.open()
+    }
+
     function toPixelX(x) { return plotLeft + (x - x0) / (x1 - x0) * plotWidth }
     function toX(px) { return x0 + (px - plotLeft) / plotWidth * (x1 - x0) }
     function toPixelY(y) { return plotTop + (yAxis.max - y) / (yAxis.max - yAxis.min) * plotHeight }
@@ -112,6 +123,7 @@ FocusScope {
                 error: modelData.error || ""
                 dragParent: pane.dragParent
                 onEditRequested: pane.editTraceRequested(pane.paneIndex, modelData.name)
+                onStatsRequested: pane.showStats(modelData.name, this)
                 onCursorRequested: which => {
                     if (WaveformController.attachCursor(which, pane.paneIndex, modelData.name))
                         pane.cursorMoved(which === 2 ? 2 : 1)
@@ -460,6 +472,31 @@ FocusScope {
                     const p = mapToItem(pane, event.x, 0)
                     WaveformController.setCursorDisplayX(cursorItem.which, pane.toX(p.x))
                 }
+            }
+        }
+    }
+
+    Popup {
+        id: statsPopup
+        objectName: "statsPopup"
+        property var stats: ({})
+        padding: 8
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        contentItem: Label {
+            objectName: "statsText"
+            font.pointSize: 9
+            textFormat: Text.PlainText
+            text: {
+                const s = statsPopup.stats
+                if (!s.ok)
+                    return s.message || ""
+                let lines = [s.name,
+                             qsTr("Interval start: %1").arg(s.fromText),
+                             qsTr("Interval end: %1").arg(s.toText),
+                             qsTr("Average: %1").arg(s.averageText)]
+                if (s.hasRms)
+                    lines.push(qsTr("RMS: %1").arg(s.rmsText))
+                return lines.join("\n")
             }
         }
     }
