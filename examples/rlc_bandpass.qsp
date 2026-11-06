@@ -4,7 +4,7 @@
   "netlists": [
     {
       "name": "main",
-      "text": ""
+      "text": "RLC band-pass filter, R = 10, L = 10m, C = 1u, f0 = 1.592 kHz, Q = 10\n* A 1 V AC source drives a series L-C-R loop; the output is taken across R.\n* H(f) = V(out)/V(in) = R / (R + jwL + 1/(jwC)): 0 dB and 0 deg at f0 = 1/(2 pi sqrt(LC)),\n* -3 dB and +/-45 deg at fL = 1513.96 Hz and fH = 1673.12 Hz, so BW = f0/Q = 159.15 Hz.\n* Far from f0 the skirts rise and fall 20 dB/decade.\n* Read the bandwidth with two cursors on V(out)/V(in) in the Bode pane.\nV1 in 0 AC 1\nL1 in a 10m\nC1 a out 1u\nR1 out 0 10\n.ac dec 2000 10 100k\n.end\n"
     }
   ],
   "diagrams": [
@@ -27,175 +27,34 @@
     "diagram_t_end": 1.0,
     "diagram_dt": 0.001
   },
-  "results": [
-    {
-      "name": "netlist",
-      "file": "netlist.npz"
-    }
-  ],
+  "results": [],
   "simulation": {
     "compat_mode": "ltpsa"
-  },
-  "schematic": {
-    "title": "",
-    "instances": [
-      {
-        "symbol": "voltage",
-        "name": "V1",
-        "x": 208,
-        "y": 128,
-        "rotation": 0,
-        "mirror": false,
-        "attrs": {
-          "Value": "1 AC"
-        }
-      },
-      {
-        "symbol": "ind",
-        "name": "L1",
-        "x": 272,
-        "y": 112,
-        "rotation": 270,
-        "mirror": false,
-        "attrs": {
-          "Value": "10mH"
-        }
-      },
-      {
-        "symbol": "cap",
-        "name": "C1",
-        "x": 432,
-        "y": 112,
-        "rotation": 270,
-        "mirror": false,
-        "attrs": {
-          "Value": "1uF"
-        }
-      },
-      {
-        "symbol": "res",
-        "name": "R1",
-        "x": 544,
-        "y": 128,
-        "rotation": 0,
-        "mirror": false,
-        "attrs": {
-          "Value": "10ohm"
-        }
-      }
-    ],
-    "wires": [
-      [
-        208,
-        224,
-        208,
-        272
-      ],
-      [
-        208,
-        272,
-        560,
-        272
-      ],
-      [
-        560,
-        272,
-        560,
-        224
-      ],
-      [
-        560,
-        128,
-        560,
-        96
-      ],
-      [
-        560,
-        96,
-        496,
-        96
-      ],
-      [
-        432,
-        96,
-        368,
-        96
-      ],
-      [
-        272,
-        96,
-        208,
-        96
-      ],
-      [
-        208,
-        96,
-        208,
-        144
-      ],
-      [
-        384,
-        304,
-        384,
-        272
-      ],
-      [
-        560,
-        96,
-        592,
-        96
-      ]
-    ],
-    "labels": [],
-    "grounds": [
-      {
-        "x": 384,
-        "y": 304
-      }
-    ],
-    "ports": [
-      {
-        "x": 592,
-        "y": 96,
-        "name": "Vout",
-        "direction": "out"
-      }
-    ],
-    "texts": [
-      {
-        "x": 480,
-        "y": 288,
-        "text": ".ac dec 2000 10 100k",
-        "directive": true
-      }
-    ]
   },
   "plots": {
     "ac": {
       "x": {
         "auto": true,
         "lo": 10.0,
-        "hi": 100000.00000004694,
+        "hi": 100000.0,
         "log": true
       },
       "panes": [
         {
           "title": "H(f) = V(out)/V(in)",
           "traces": [
-            "V(out)/V(in)",
-            "V(vout)",
-            "V(n002)"
+            "V(out)/V(in)"
           ],
           "y": {
             "auto": true,
-            "lo": -68.2405312066167,
-            "hi": 24.25780375681991,
+            "lo": 0.0,
+            "hi": 1.0,
             "log": false,
             "abs": false
           },
           "phase": {
             "auto": true,
-            "lo": -180.0,
+            "lo": -90.0,
             "hi": 90.0,
             "log": false,
             "abs": false
