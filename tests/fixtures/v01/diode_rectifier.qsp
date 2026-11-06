@@ -1,0 +1,31 @@
+{
+  "format": "qtspice-project",
+  "version": 1,
+  "netlists": [
+    {
+      "name": "main",
+      "text": "Half-wave diode rectifier with RC smoothing, 5 V 50 Hz\n* D1 conducts near the top of each positive half-cycle and charges C1 to about\n* 5 V - 0.7 V. Between peaks R1 discharges C1: ripple ~ Vout / (f R C) = 0.4 V.\n* Plot V(in) and V(out) together to see the conduction angle and the ripple.\nV1 in 0 SIN(0 5 50)\nD1 in out d1n4148\nC1 out 0 100u\nR1 out 0 2.2k\n.model d1n4148 D (is=2.52n n=1.752 rs=0.568 bv=100 ibv=100u cjo=4p)\n.tran 50u 100m\n.end\n"
+    }
+  ],
+  "diagrams": [
+    {
+      "name": "main",
+      "diagram": {
+        "blocks": [],
+        "wires": []
+      }
+    }
+  ],
+  "block_sources": [
+    {
+      "document": "function1",
+      "code": ""
+    }
+  ],
+  "analysis": {
+    "card": "",
+    "diagram_t_end": 1.0,
+    "diagram_dt": 0.001
+  },
+  "results": []
+}

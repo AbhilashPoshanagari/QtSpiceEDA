@@ -27,3 +27,8 @@ Analog Devices' own `.asy`/`.lib` files here.
 |------|---------|
 | `AC_RC_filter.asc` | *real* LTspice schematic, reference only (`.asc` import is out of scope for v0.2). RC low-pass with built-in `voltage`/`cap`/`res`, `M90` rotation, `Value2 AC 1`, `.1` + 0xB5 value, `.ac` directive. |
 | `rc/rc.json`, `rc/rc.cir` | The same RC filter hand-transcribed into a QtSpice schematic (`Schematic.to_dict()` form, built-in symbols) and its hand-written netlist; S3 checks they give the same Circuit and the same ngspice result. Two deliberate differences from the .asc: our built-in `res` has its pins at (16,0)/(16,96) instead of (16,16)/(16,96), so R2 sits at (144,96) and one wire ends at x=240; and the `.ac` card is `dec 100` (the .asc says `dec 100m`). |
+
+## v01/
+| File | Purpose |
+|------|---------|
+| `rc_filter.qsp`, `diode_rectifier.qsp`, `first_order_feedback.qsp` | The v0.1.0 sample projects exactly as released (`git show v0.1.0:examples/<name>.qsp`), format version 1. The release check opens, saves (as version 2) and reopens them. |

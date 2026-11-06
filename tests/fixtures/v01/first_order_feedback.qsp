@@ -1,0 +1,113 @@
+{
+  "format": "qtspice-project",
+  "version": 1,
+  "netlists": [
+    {
+      "name": "main",
+      "text": ""
+    }
+  ],
+  "diagrams": [
+    {
+      "name": "main",
+      "diagram": {
+        "blocks": [
+          {
+            "id": "Step1",
+            "spec": "Step",
+            "x": 40.0,
+            "y": 120.0,
+            "settings": {
+              "step_time": 0.5,
+              "initial": 0.0,
+              "final": 1.0
+            }
+          },
+          {
+            "id": "Sum1",
+            "spec": "Sum",
+            "x": 200.0,
+            "y": 120.0,
+            "settings": {
+              "signs": "+-"
+            }
+          },
+          {
+            "id": "Gain1",
+            "spec": "Gain",
+            "x": 330.0,
+            "y": 120.0,
+            "settings": {
+              "k": 2.0
+            }
+          },
+          {
+            "id": "Integrator1",
+            "spec": "Integrator",
+            "x": 470.0,
+            "y": 120.0,
+            "settings": {
+              "initial": 0.0
+            }
+          },
+          {
+            "id": "ScopeY",
+            "spec": "Scope",
+            "x": 640.0,
+            "y": 120.0,
+            "settings": {
+              "label": "y"
+            }
+          },
+          {
+            "id": "ScopeR",
+            "spec": "Scope",
+            "x": 200.0,
+            "y": 260.0,
+            "settings": {
+              "label": "r"
+            }
+          }
+        ],
+        "wires": [
+          {
+            "src": "Step1.y",
+            "dst": "Sum1.a"
+          },
+          {
+            "src": "Sum1.y",
+            "dst": "Gain1.u"
+          },
+          {
+            "src": "Gain1.y",
+            "dst": "Integrator1.u"
+          },
+          {
+            "src": "Integrator1.y",
+            "dst": "ScopeY.u"
+          },
+          {
+            "src": "Integrator1.y",
+            "dst": "Sum1.b"
+          },
+          {
+            "src": "Step1.y",
+            "dst": "ScopeR.u"
+          }
+        ]
+      }
+    }
+  ],
+  "block_sources": [
+    {
+      "document": "function1",
+      "code": ""
+    }
+  ],
+  "analysis": {
+    "card": "",
+    "diagram_t_end": 4.0,
+    "diagram_dt": 0.001
+  },
+  "results": []
+}
