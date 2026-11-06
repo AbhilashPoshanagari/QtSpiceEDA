@@ -47,7 +47,10 @@ FocusScope {
     }
 
     Keys.onPressed: event => {
-        if (event.matches(StandardKey.Undo)) {
+        if (event.key === Qt.Key_Escape && WaveformController.deleteMode) {
+            WaveformController.deleteMode = false
+            event.accepted = true
+        } else if (event.matches(StandardKey.Undo)) {
             WaveformController.undo()
             event.accepted = true
         } else if (event.matches(StandardKey.Redo)) {
@@ -174,6 +177,16 @@ FocusScope {
                 }
                 ToolSeparator {}
                 ToolButton {
+                    objectName: "deleteModeButton"
+                    text: qsTr("Delete")
+                    checkable: true
+                    checked: WaveformController.deleteMode
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Click trace names to remove them (Esc to stop)")
+                    onToggled: WaveformController.deleteMode = checked
+                }
+                ToolSeparator {}
+                ToolButton {
                     objectName: "configButton"
                     text: qsTr("Plot settings…")
                     onClicked: configDialog.openFor(WaveformController.activePane)
@@ -212,6 +225,7 @@ FocusScope {
                                                   * (paneSlots.count - 1)) / Math.max(1, paneSlots.count))
                             onStatus: text => root.statusText = text
                             onConfigure: index => configDialog.openFor(index)
+                            dragParent: root
                         }
                     }
                 }

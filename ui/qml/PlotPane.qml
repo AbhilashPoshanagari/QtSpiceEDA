@@ -33,6 +33,8 @@ FocusScope {
 
     signal status(string text)  // the mouse position, for the status bar
     signal configure(int index)  // "Plot settings…" (WaveformView opens the dialog)
+    signal cursorRequested(int which, string name)  // a trace name was clicked (W6)
+    property Item dragParent: null  // where a dragged trace name lives (the view)
 
     function toPixelX(x) { return plotLeft + (x - x0) / (x1 - x0) * plotWidth }
     function toX(px) { return x0 + (px - plotLeft) / plotWidth * (x1 - x0) }
@@ -97,13 +99,14 @@ FocusScope {
         spacing: 12
         Repeater {
             model: pane.info.traces || []
-            delegate: Label {
+            delegate: TraceLabel {
                 required property var modelData
-                objectName: "trace_" + pane.paneIndex + "_" + modelData.name
-                text: modelData.name
-                color: modelData.color
-                font.pointSize: 9
-                font.strikeout: !modelData.present
+                paneIndex: pane.paneIndex
+                name: modelData.name
+                traceColor: modelData.color
+                present: modelData.present
+                dragParent: pane.dragParent
+                onCursorRequested: which => pane.cursorRequested(which, modelData.name)
             }
         }
         Label {
@@ -234,6 +237,28 @@ FocusScope {
         } else {
             event.accepted = false
         }
+    }
+
+    // A trace name dropped here (W4): move it from its pane, or copy it with Ctrl.
+    DropArea {
+        id: drop
+        objectName: "paneDrop"
+        anchors.fill: parent
+        keys: ["qtspice/trace"]
+        onDropped: ev => {
+            const src = ev.source.paneIndex, name = ev.source.traceName
+            const copy = ev.proposedAction === Qt.CopyAction
+            ev.accept(copy ? Qt.CopyAction : Qt.MoveAction)
+            const dst = pane.paneIndex
+            Qt.callLater(() => WaveformController.dropTrace(src, name, dst, copy))
+        }
+    }
+    Rectangle {
+        anchors.fill: parent
+        visible: drop.containsDrag
+        color: "#183a7bd5"
+        border.color: "#3a7bd5"
+        z: 4
     }
 
     // ---- mouse

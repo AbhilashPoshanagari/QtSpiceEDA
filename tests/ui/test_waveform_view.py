@@ -16,7 +16,7 @@ from PySide6.QtTest import QTest
 
 from core.sim.result import SimulationResult
 from tests.ui.fakes import tran_result
-from tests.ui.mouse import drag
+from tests.ui.mouse import drag, item_center
 from tests.ui.qml_harness import qml_window
 from tests.ui.test_waveform_model import ac_result
 
@@ -255,3 +255,87 @@ def test_drag_box_zooms_and_esc_cancels(qapp: object, tmp_path: Path, qtbot) -> 
         assert ctl.property("xMax") == pytest.approx(5e-3)
         ctl.undo()
         assert ctl.property("xMax") == pytest.approx(3e-3, rel=0.02)
+
+
+# ---- W4: trace labels
+
+
+def _names(ctl: QObject) -> list[list[str]]:
+    return [[t["name"] for t in p["traces"]] for p in ctl.property("panes")]
+
+
+def _label(view: QObject, pane: int, name: str) -> QQuickItem:
+    return _child(view, f"label_{pane}_{name}")
+
+
+def test_drag_trace_names_between_panes(qapp: object, tmp_path: Path, qtbot) -> None:
+    ctrl = Qt.KeyboardModifier.ControlModifier
+    with qml_window(tmp_path, "WaveformView") as (engine, window, view):
+        model, ctl = _parts(engine)
+        model.set_result(tran_result(1001))
+        ctl.addPane(0, False)
+        _settle(qtbot)
+        top, bottom = _panes(view, ctl)
+
+        drag(window, item_center(_label(view, 0, "V(in)")), _plot_point(bottom, 0.5, 0.5))
+        _settle(qtbot)
+        assert _names(ctl) == [["V(out)"], ["V(in)"]]  # move
+
+        drag(
+            window,
+            item_center(_label(view, 0, "V(out)")),
+            _plot_point(bottom, 0.5, 0.5),
+            modifiers=ctrl,
+        )
+        _settle(qtbot)
+        assert _names(ctl) == [["V(out)"], ["V(in)", "V(out)"]]  # Ctrl = copy
+
+        drag(window, item_center(_label(view, 1, "V(in)")), _plot_point(bottom, 0.3, 0.3))
+        _settle(qtbot)
+        assert _names(ctl) == [["V(out)"], ["V(in)", "V(out)"]]  # own pane: nothing
+
+        trace_list = _child(view, "traceList")
+        drag(window, item_center(_label(view, 1, "V(in)")), item_center(trace_list))
+        _settle(qtbot)
+        assert _names(ctl) == [["V(out)"], ["V(out)"]]  # dragged out: removed
+
+        for expected in (
+            [["V(out)"], ["V(in)", "V(out)"]],
+            [["V(out)"], ["V(in)"]],
+            [["V(out)", "V(in)"], []],
+        ):
+            ctl.undo()
+            assert _names(ctl) == expected
+
+
+def test_delete_mode_and_double_click(qapp: object, tmp_path: Path, qtbot) -> None:
+    with qml_window(tmp_path, "WaveformView") as (engine, window, view):
+        model, ctl = _parts(engine)
+        model.set_result(tran_result(1001))
+        _settle(qtbot)
+        QTest.mouseDClick(
+            window,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+            item_center(_label(view, 0, "V(in)")),
+        )
+        _settle(qtbot)
+        assert _names(ctl) == [["V(in)"]]
+        assert ctl.property("undoText") == "Show only V(in)"
+        ctl.undo()
+        _settle(qtbot)
+
+        _child(view, "deleteModeButton").click()
+        assert ctl.property("deleteMode") is True
+        QTest.mouseClick(
+            window,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+            item_center(_label(view, 0, "V(out)")),
+        )
+        _settle(qtbot)
+        assert _names(ctl) == [["V(in)"]]
+        QTest.keyClick(window, Qt.Key.Key_Escape)
+        assert ctl.property("deleteMode") is False
+        ctl.undo()
+        assert _names(ctl) == [["V(out)", "V(in)"]]
