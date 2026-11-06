@@ -30,7 +30,7 @@ def open_sample(app: App, name: str) -> None:
     assert app.projects.property("modified") is False
 
 
-@pytest.mark.parametrize("name", ["rc_filter.qsp", "diode_rectifier.qsp"])
+@pytest.mark.parametrize("name", ["rc_filter.qsp", "diode_rectifier.qsp", "diode_log.qsp"])
 def test_netlist_samples_open_and_check_clean(app: App, name: str) -> None:
     open_sample(app, name)
     text = app.sim.property("netlistText")

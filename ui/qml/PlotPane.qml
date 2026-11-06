@@ -25,6 +25,7 @@ FocusScope {
                                                    - graph.marginTop)
     readonly property real yMin: yAxis.min
     readonly property real yMax: yAxis.max
+    readonly property real yTickInterval: yAxis.tickInterval  // 1 = decade labels (log)
     // After the last refresh: [{name, kind, count}], points hidden on a log Y axis,
     // and the phase axis labels [{y, text}] (for tests and the right axis).
     property var seriesState: []
@@ -209,7 +210,7 @@ FocusScope {
                 x: pane.toPixelX(modelData) - pane.plotLeft
                 width: 1
                 height: parent.height
-                color: "#e6e6e6"
+                color: Qt.rgba(0, 0, 0, 0.07)  // drawn over the traces: keep them visible
             }
         }
         Repeater {
@@ -219,7 +220,7 @@ FocusScope {
                 y: pane.toPixelY(modelData) - pane.plotTop
                 width: parent.width
                 height: 1
-                color: "#e6e6e6"
+                color: Qt.rgba(0, 0, 0, 0.07)  // drawn over the traces: keep them visible
             }
         }
     }

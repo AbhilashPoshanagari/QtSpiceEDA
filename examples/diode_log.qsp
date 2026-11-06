@@ -1,0 +1,75 @@
+{
+  "format": "qtspice-project",
+  "version": 2,
+  "netlists": [
+    {
+      "name": "main",
+      "text": "Diode forward sweep, about 1 nA to 10 mA (W5 log Y demo)\n* A 1N4148-like diode swept from 15 mV to 0.695 V. Vm (0 V) measures the diode current\n* I(vm), which spans seven decades: on a linear Y axis everything below 1 mA sits on\n* zero. The saved plot layout shows it on a log Y axis (right-click a pane >\n* Logarithmic Y axis).\nV1 in 0 DC 0\nVm in a DC 0\nD1 a 0 D1N4148\n.model D1N4148 D(IS=2.52n N=1.752 RS=0.568 CJO=4p)\n.dc V1 15m 0.695 1m\n.end\n"
+    }
+  ],
+  "diagrams": [],
+  "block_sources": [],
+  "analysis": {
+    "card": "",
+    "diagram_t_end": 1.0,
+    "diagram_dt": 0.001
+  },
+  "results": [],
+  "simulation": {
+    "compat_mode": "ltpsa"
+  },
+  "plots": {
+    "dc": {
+      "x": {
+        "auto": true,
+        "lo": 0.0,
+        "hi": 1.0,
+        "log": false
+      },
+      "panes": [
+        {
+          "title": "sweep",
+          "traces": [
+            "V(in)"
+          ],
+          "y": {
+            "auto": true,
+            "lo": -1.0,
+            "hi": 1.0,
+            "log": false,
+            "abs": false
+          },
+          "phase": {
+            "auto": true,
+            "lo": -1.0,
+            "hi": 1.0,
+            "log": false,
+            "abs": false
+          },
+          "grid": true
+        },
+        {
+          "title": "diode current",
+          "traces": [
+            "I(vm)"
+          ],
+          "y": {
+            "auto": true,
+            "lo": -1.0,
+            "hi": 1.0,
+            "log": true,
+            "abs": false
+          },
+          "phase": {
+            "auto": true,
+            "lo": -1.0,
+            "hi": 1.0,
+            "log": false,
+            "abs": false
+          },
+          "grid": true
+        }
+      ]
+    }
+  }
+}

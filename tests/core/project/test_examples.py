@@ -22,7 +22,7 @@ from core.symbols.asy import AsyParser
 from core.symbols.library import SymbolLibrary
 
 EXAMPLES = Path(__file__).resolve().parents[3] / "examples"
-SAMPLES = ["rc_filter.qsp", "diode_rectifier.qsp", "first_order_feedback.qsp"]
+SAMPLES = ["rc_filter.qsp", "diode_rectifier.qsp", "first_order_feedback.qsp", "diode_log.qsp"]
 
 
 def load(name: str) -> Project:
@@ -56,7 +56,7 @@ def test_sample_loads_without_block_code(name: str) -> None:
     assert project.results == {}
 
 
-@pytest.mark.parametrize("name", ["rc_filter.qsp", "diode_rectifier.qsp"])
+@pytest.mark.parametrize("name", ["rc_filter.qsp", "diode_rectifier.qsp", "diode_log.qsp"])
 def test_sample_netlist_checks_clean(name: str) -> None:
     result = parse(netlist(name))
     assert result.diagnostics == []
@@ -141,3 +141,15 @@ def test_hierarchy_demo_is_second_order() -> None:
     assert np.interp(5.0, np.log10(f), db) - np.interp(4.0, np.log10(f), db) == pytest.approx(
         -40, abs=0.5
     )
+
+
+@pytest.mark.ngspice
+def test_diode_log_sweeps_one_nanoamp_to_ten_milliamps() -> None:
+    """examples/diode_log.qsp (W5): I(vm) spans about 1 nA .. 10 mA, shown on log Y."""
+    project = load("diode_log.qsp")
+    sim = simulate(project.netlists[0].text)
+    current = sim.vectors["I(vm)"]
+    assert current.min() == pytest.approx(1e-9, rel=0.2)
+    assert current.max() == pytest.approx(1e-2, rel=0.3)
+    panes = project.plots["dc"].panes
+    assert [p.traces for p in panes] == [["V(in)"], ["I(vm)"]] and panes[1].y.log
