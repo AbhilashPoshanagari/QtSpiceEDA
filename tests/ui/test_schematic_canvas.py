@@ -596,3 +596,20 @@ def test_problems_show_under_the_sheet(scene: Scene) -> None:
     assert strip.property("visible") is True
     texts = [i.property("text") for i in find_items(scene.canvas, "problemItem")]
     assert any("C1: pin B is not connected" in t for t in texts)
+
+
+@pytest.mark.parametrize("width", [300, 500])
+def test_picker_keeps_search_results_visible_in_a_short_pane(
+    qapp: object, tmp_path: Path, qtbot, width: int
+) -> None:
+    """A short part picker (the Ports panel below it) still shows the matching parts."""
+    body = f"PartPicker {{ width: {width}; height: 200 }}"
+    with qml_scene(tmp_path, body, 600, 300) as (_engine, window):
+        find_item(window, "partSearch").setProperty("text", "vol")
+        qtbot.wait(30)
+        part_list = find_item(window, "partList")
+        assert part_list.property("height") >= 90
+        rows = [i for i in find_items(window, "part_voltage") if i.property("visible")]
+        assert rows and rows[0].property("y") + rows[0].property("height") <= part_list.property(
+            "height"
+        )

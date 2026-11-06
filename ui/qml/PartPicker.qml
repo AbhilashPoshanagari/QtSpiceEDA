@@ -47,64 +47,94 @@ Pane {
             Keys.onUpPressed: list.decrementCurrentIndex()
         }
 
-        ListView {
-            id: list
-            objectName: "partList"
+        // Wide pane: the list on the left, the description and preview on the right, so
+        // both use the full height. Narrow pane: the list above a preview that shrinks
+        // first, so the search results always keep at least a few rows.
+        GridLayout {
+            id: body
+            objectName: "partPickerBody"
             Layout.fillWidth: true
             Layout.fillHeight: true
-            clip: true
-            model: root.filtered
-            currentIndex: 0
-            ScrollBar.vertical: ScrollBar {}
-            delegate: ItemDelegate {
-                required property string modelData
-                required property int index
-                objectName: "part_" + modelData
-                width: ListView.view.width
-                text: modelData
-                highlighted: ListView.isCurrentItem
-                onHoveredChanged: if (hovered) list.currentIndex = index
-                onClicked: {
-                    list.currentIndex = index
-                    root.place(modelData)
+            readonly property bool wide: width >= 360
+            readonly property real minListHeight: 96
+            columns: wide ? 2 : 1
+            rowSpacing: 6
+            columnSpacing: 8
+
+            ListView {
+                id: list
+                objectName: "partList"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.minimumHeight: body.minListHeight
+                Layout.preferredWidth: body.wide ? body.width * 0.45 : -1
+                clip: true
+                model: root.filtered
+                currentIndex: 0
+                ScrollBar.vertical: ScrollBar {}
+                delegate: ItemDelegate {
+                    required property string modelData
+                    required property int index
+                    objectName: "part_" + modelData
+                    width: ListView.view.width
+                    text: modelData
+                    highlighted: ListView.isCurrentItem
+                    onHoveredChanged: if (hovered) list.currentIndex = index
+                    onClicked: {
+                        list.currentIndex = index
+                        root.place(modelData)
+                    }
                 }
             }
-        }
 
-        Label {
-            objectName: "partDescription"
-            Layout.fillWidth: true
-            text: root.current !== "" ? SchematicController.symbolDescription(root.current) : ""
-            wrapMode: Text.WordWrap
-            font.pixelSize: 11
-        }
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.fillHeight: body.wide
+                Layout.preferredWidth: body.wide ? body.width * 0.55 : -1
+                spacing: 6
 
-        // Preview: the symbol scaled to fit the box.
-        Rectangle {
-            id: previewBox
-            objectName: "partPreview"
-            Layout.fillWidth: true
-            Layout.preferredHeight: 150
-            color: "#fbfbf7"
-            border.color: "#d0d0c8"
-            clip: true
-            readonly property var geo: root.current !== ""
-                                       ? SchematicController.symbolGeometry(root.current) : null
-            readonly property real boxW: geo ? Math.max(geo.box[2] - geo.box[0], 16) : 16
-            readonly property real boxH: geo ? Math.max(geo.box[3] - geo.box[1], 16) : 16
-            readonly property real fit: Math.min((width - 24) / boxW, (height - 24) / boxH, 3)
+                Label {
+                    id: description
+                    objectName: "partDescription"
+                    Layout.fillWidth: true
+                    text: root.current !== "" ? SchematicController.symbolDescription(root.current) : ""
+                    wrapMode: Text.WordWrap
+                    font.pixelSize: 11
+                }
 
-            Item {
-                visible: previewBox.geo !== null
-                x: (previewBox.width - previewBox.boxW * previewBox.fit) / 2
-                   - (previewBox.geo ? previewBox.geo.box[0] : 0) * previewBox.fit
-                y: (previewBox.height - previewBox.boxH * previewBox.fit) / 2
-                   - (previewBox.geo ? previewBox.geo.box[1] : 0) * previewBox.fit
-                scale: previewBox.fit
-                transformOrigin: Item.TopLeft
-                SymbolItem {
-                    symbolName: root.current
-                    penWidth: 1.5 / previewBox.fit
+                // Preview: the symbol scaled to fit the box.
+                Rectangle {
+                    id: previewBox
+                    objectName: "partPreview"
+                    Layout.fillWidth: true
+                    Layout.fillHeight: body.wide
+                    // Narrow pane: up to 150 px, but never taking the list's minimum rows.
+                    Layout.preferredHeight: body.wide ? -1
+                        : Math.max(0, Math.min(150, body.height - body.minListHeight
+                                                    - description.height - 2 * body.rowSpacing))
+                    visible: body.wide || Layout.preferredHeight >= 40
+                    color: "#fbfbf7"
+                    border.color: "#d0d0c8"
+                    clip: true
+                    readonly property var geo: root.current !== ""
+                                               ? SchematicController.symbolGeometry(root.current) : null
+                    readonly property real boxW: geo ? Math.max(geo.box[2] - geo.box[0], 16) : 16
+                    readonly property real boxH: geo ? Math.max(geo.box[3] - geo.box[1], 16) : 16
+                    readonly property real fit: Math.min((width - 24) / boxW, (height - 24) / boxH, 3)
+
+                    Item {
+                        visible: previewBox.geo !== null
+                        x: (previewBox.width - previewBox.boxW * previewBox.fit) / 2
+                           - (previewBox.geo ? previewBox.geo.box[0] : 0) * previewBox.fit
+                        y: (previewBox.height - previewBox.boxH * previewBox.fit) / 2
+                           - (previewBox.geo ? previewBox.geo.box[1] : 0) * previewBox.fit
+                        scale: previewBox.fit
+                        transformOrigin: Item.TopLeft
+                        SymbolItem {
+                            symbolName: root.current
+                            penWidth: 1.5 / previewBox.fit
+                        }
+                    }
                 }
             }
         }
