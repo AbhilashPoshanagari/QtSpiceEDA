@@ -39,7 +39,7 @@ DEFAULT_DT = 0.001
 _NAME = re.compile(r"^[A-Za-z0-9_-]+$")
 _KEYS_V1 = ("format", "version", "netlists", "diagrams", "block_sources", "analysis", "results")
 _KEYS = (*_KEYS_V1, "simulation")  # version 2
-_OPTIONAL_KEYS = ("schematic",)  # version 2, may be left out
+_OPTIONAL_KEYS = ("schematic", "symbols")  # version 2, may be left out
 
 
 class ProjectError(Exception):
@@ -95,6 +95,9 @@ class Project:
     simulation: SimulationSettings = field(default_factory=SimulationSettings)
     results: dict[str, SimulationResult] = field(default_factory=dict)
     schematic: Schematic | None = None  # one per project (v2); None = no schematic
+    # H3: circuit symbols made for this project: .asy paths, relative to the .qsp folder
+    # when inside it (``/`` separators), else absolute. Left out of the file when empty.
+    symbols: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """The JSON content of the .qsp file (results only by file name). ``schematic``
@@ -115,6 +118,8 @@ class Project:
         }
         if self.schematic is not None:
             data["schematic"] = self.schematic.to_dict()
+        if self.symbols:
+            data["symbols"] = list(self.symbols)
         return data
 
     def to_json(self) -> str:
@@ -230,6 +235,7 @@ def load_project(path: str | Path) -> LoadResult:
             return LoadResult(None, errors)
         warnings += [d.message for d in found]
         project.schematic = schematic
+    project.symbols = list(data.get("symbols", []))
     folder = results_dir(path)
     for entry in data["results"]:
         file = folder / entry["file"]
@@ -310,6 +316,12 @@ def _check_body(data: dict[str, Any]) -> list[str]:
         errors.append("block_sources need distinct, non-empty document names")
     for i, entry in enumerate(data["diagrams"]):
         errors += _check_diagram(entry["diagram"], f"diagrams[{i}].diagram")
+
+    symbols = data.get("symbols", [])
+    if not isinstance(symbols, list) or not all(
+        isinstance(s, str) and s.strip().casefold().endswith(".asy") for s in symbols
+    ):
+        errors.append("'symbols' must be a list of .asy file paths")
 
     simulation = data.get("simulation", {"compat_mode": DEFAULT_COMPAT_MODE})
     if not isinstance(simulation, dict) or set(simulation) != {"compat_mode"}:

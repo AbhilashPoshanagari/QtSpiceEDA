@@ -1,0 +1,117 @@
+{
+  "format": "qtspice-project",
+  "version": 2,
+  "netlists": [],
+  "diagrams": [],
+  "block_sources": [],
+  "analysis": {
+    "card": "",
+    "diagram_t_end": 1.0,
+    "diagram_dt": 0.001
+  },
+  "results": [],
+  "simulation": {
+    "compat_mode": "ltpsa"
+  },
+  "schematic": {
+    "title": "Two RC sections",
+    "instances": [
+      {
+        "symbol": "voltage",
+        "name": "V1",
+        "x": -200,
+        "y": 0,
+        "rotation": 0,
+        "mirror": false,
+        "attrs": {
+          "Value": "AC 1"
+        }
+      },
+      {
+        "symbol": "rclp",
+        "name": "U1",
+        "x": 0,
+        "y": 0,
+        "rotation": 0,
+        "mirror": false,
+        "attrs": {}
+      },
+      {
+        "symbol": "rclp",
+        "name": "U2",
+        "x": 160,
+        "y": 0,
+        "rotation": 0,
+        "mirror": false,
+        "attrs": {}
+      },
+      {
+        "symbol": "res",
+        "name": "Rload",
+        "x": 240,
+        "y": 32,
+        "rotation": 0,
+        "mirror": false,
+        "attrs": {
+          "Value": "1G"
+        }
+      }
+    ],
+    "wires": [],
+    "labels": [
+      {
+        "x": -200,
+        "y": 16,
+        "name": "in"
+      },
+      {
+        "x": -16,
+        "y": 32,
+        "name": "in"
+      },
+      {
+        "x": 96,
+        "y": 32,
+        "name": "mid"
+      },
+      {
+        "x": 144,
+        "y": 32,
+        "name": "mid"
+      },
+      {
+        "x": 256,
+        "y": 32,
+        "name": "out"
+      }
+    ],
+    "grounds": [
+      {
+        "x": -200,
+        "y": 96
+      },
+      {
+        "x": 256,
+        "y": 128
+      }
+    ],
+    "ports": [],
+    "texts": [
+      {
+        "x": 0,
+        "y": 200,
+        "text": ".ac dec 20 1 100k",
+        "directive": true
+      },
+      {
+        "x": -200,
+        "y": 232,
+        "text": "Two rclp circuit symbols in a row: second-order low-pass.",
+        "directive": false
+      }
+    ]
+  },
+  "symbols": [
+    "rclp.asy"
+  ]
+}

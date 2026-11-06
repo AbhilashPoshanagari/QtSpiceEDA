@@ -319,3 +319,30 @@ def test_schematic_warnings_are_load_warnings(tmp_path: Path) -> None:
     result = load_project(write(tmp_path, valid_dict() | {"schematic": schematic}))
     assert result.ok
     assert result.warnings == ["schematic: unknown field 'colour' ignored"]
+
+
+# ---------------------------------------------------------------- H3: circuit symbols
+
+
+def test_circuit_symbols_round_trip_and_are_left_out_when_empty(tmp_path: Path) -> None:
+    path = tmp_path / "p.qsp"
+    save_project(path, Project(symbols=["rclp.asy", "C:/elsewhere/amp.asy"]))
+    data = json.loads(path.read_text("utf-8"))
+    assert data["symbols"] == ["rclp.asy", "C:/elsewhere/amp.asy"]
+    jsonschema.validate(data, SCHEMA)
+    loaded = load_project(path)
+    assert loaded.ok and loaded.project.symbols == ["rclp.asy", "C:/elsewhere/amp.asy"]
+
+    save_project(path, Project())
+    assert "symbols" not in json.loads(path.read_text("utf-8"))
+
+
+def test_bad_symbol_lists_are_load_errors(tmp_path: Path) -> None:
+    for bad in ("rclp.asy", ["rclp.sub"], [3]):
+        result = load_project(write(tmp_path, valid_dict() | {"symbols": bad}))
+        assert result.errors == ["'symbols' must be a list of .asy file paths"], bad
+    data = valid_dict() | {"version": 1, "symbols": ["a.asy"]}
+    del data["simulation"]
+    assert load_project(write(tmp_path, data)).errors == ["unknown field 'symbols'"]
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(data, SCHEMA)

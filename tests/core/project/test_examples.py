@@ -9,13 +9,17 @@ import numpy as np
 import pytest
 
 from core.blocks.runner import run_diagram
+from core.hierarchy.symbolgen import SymbolGenerator
 from core.netlist.builder import build
 from core.netlist.parser import parse
 from core.netlist.validate import validate
 from core.project.io import Project, load_project
+from core.schematic.netlister import netlist_schematic
 from core.sim.decimate import to_db
 from core.sim.ngspice_adapter import NgspiceAdapter
 from core.sim.result import SimulationResult
+from core.symbols.asy import AsyParser
+from core.symbols.library import SymbolLibrary
 
 EXAMPLES = Path(__file__).resolve().parents[3] / "examples"
 SAMPLES = ["rc_filter.qsp", "diode_rectifier.qsp", "first_order_feedback.qsp"]
@@ -98,3 +102,42 @@ def test_diode_rectifier_peak_and_ripple() -> None:
     assert 4.0 < last.max() < 4.6  # 5 V minus one diode drop
     ripple = last.max() - last.min()
     assert 0.2 < ripple < 0.6  # ~ Vout / (f R C) = 0.4 V
+
+
+# ---------------------------------------------------------------- H3 demo
+
+
+HIERARCHY = EXAMPLES / "hierarchy"
+
+
+def test_hierarchy_demo_symbol_matches_its_cell() -> None:
+    """examples/hierarchy/rclp.{asy,sub} are what Make Symbol writes for rclp_cell.qsp."""
+    cell = load("hierarchy/rclp_cell.qsp").schematic
+    lib = SymbolLibrary()
+    made = SymbolGenerator.from_schematic("rclp", cell, lambda n: lib.lookup(n)[0], HIERARCHY)
+    assert made.ok, made.diagnostics
+    sub = (HIERARCHY / "rclp.sub").read_bytes().decode("utf-8")
+    asy = (HIERARCHY / "rclp.asy").read_bytes().decode("cp1252")
+    assert sub == made.sub_text.replace("\n", "\r\n")
+    assert asy == made.asy_text.replace("\n", "\r\n")
+    assert AsyParser.parse(HIERARCHY / "rclp.asy")[1] == []
+
+
+@pytest.mark.ngspice
+def test_hierarchy_demo_is_second_order() -> None:
+    project = load("hierarchy/rc2.qsp")
+    assert project.symbols == ["rclp.asy"]
+    lib = SymbolLibrary(project_files=[HIERARCHY / s for s in project.symbols])
+    result = netlist_schematic(project.schematic, lambda n: lib.lookup(n)[0], HIERARCHY)
+    assert result.ok, result.diagnostics
+    adapter = NgspiceAdapter()
+    adapter.load(result.deck)
+    adapter.run()
+    data = adapter.results()
+    f = np.real(data.vectors["frequency"])
+    db = to_db(data.vectors["V(out)"])
+    f0 = 1 / (2 * np.pi * 1e3 * 1e-6)
+    assert np.interp(np.log10(f0), np.log10(f), db) == pytest.approx(-9.54, abs=0.05)
+    assert np.interp(5.0, np.log10(f), db) - np.interp(4.0, np.log10(f), db) == pytest.approx(
+        -40, abs=0.5
+    )

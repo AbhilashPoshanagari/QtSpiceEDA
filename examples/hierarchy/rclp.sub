@@ -1,0 +1,6 @@
+* QtSpice circuit symbol rclp: made from the schematic RC low-pass
+* Pins: IN (in) OUT (out)
+.subckt rclp IN OUT
+R1 IN OUT 1k
+C1 OUT 0 1u
+.ends rclp

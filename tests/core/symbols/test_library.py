@@ -90,3 +90,25 @@ def test_changing_paths_clears_cache(tmp_path: Path) -> None:
     assert lib.ltspice_dir == tmp_path / "a"
     assert lib.set_paths(["", " "], "") is True
     assert lib.user_dirs == () and lib.ltspice_dir is None and lib.names() == []
+
+
+def test_project_symbols_come_after_builtin_and_before_user_folders(tmp_path: Path) -> None:
+    from core.symbols.library import PROJECT
+
+    proj, user = tmp_path / "proj", tmp_path / "user"
+    rclp = _sym(proj, "rclp", "project")
+    res = _sym(proj, "res", "shadow")
+    _sym(user, "rclp", "user")
+    gone = proj / "gone.asy"
+    lib = SymbolLibrary([user], project_files=[rclp, res, gone])
+    entry = lib.find("rclp")
+    assert entry is not None and entry.source == PROJECT and entry.path == rclp
+    assert lib.lookup("rclp")[0].attr("Value") == "project"
+    assert lib.find("res").source == BUILTIN  # a built-in symbol always wins
+    assert any("project symbol not found" in d.message for d in lib.diagnostics)
+
+    (proj / "two.asy").write_bytes(rclp.read_bytes())
+    assert lib.set_project_files([rclp, proj / "two.asy"]) is True
+    assert "two" in lib.names()
+    assert lib.set_project_files([rclp, proj / "two.asy"]) is False
+    assert lib.set_project_files([]) is True and lib.find("rclp").source == USER

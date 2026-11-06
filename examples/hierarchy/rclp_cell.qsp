@@ -1,0 +1,85 @@
+{
+  "format": "qtspice-project",
+  "version": 2,
+  "netlists": [],
+  "diagrams": [],
+  "block_sources": [],
+  "analysis": {
+    "card": "",
+    "diagram_t_end": 1.0,
+    "diagram_dt": 0.001
+  },
+  "results": [],
+  "simulation": {
+    "compat_mode": "ltpsa"
+  },
+  "schematic": {
+    "title": "RC low-pass",
+    "instances": [
+      {
+        "symbol": "res",
+        "name": "R1",
+        "x": 0,
+        "y": 0,
+        "rotation": 0,
+        "mirror": false,
+        "attrs": {
+          "Value": "1k"
+        }
+      },
+      {
+        "symbol": "cap",
+        "name": "C1",
+        "x": 100,
+        "y": 96,
+        "rotation": 0,
+        "mirror": false,
+        "attrs": {
+          "Value": "1u"
+        }
+      }
+    ],
+    "wires": [],
+    "labels": [
+      {
+        "x": 116,
+        "y": 96,
+        "name": "OUT"
+      }
+    ],
+    "grounds": [
+      {
+        "x": 116,
+        "y": 160
+      }
+    ],
+    "ports": [
+      {
+        "x": 16,
+        "y": 0,
+        "name": "IN",
+        "direction": "in"
+      },
+      {
+        "x": 16,
+        "y": 96,
+        "name": "OUT",
+        "direction": "out"
+      }
+    ],
+    "texts": [
+      {
+        "x": 0,
+        "y": 208,
+        "text": "RC low-pass cell: R 1k, C 1u. Ports IN (in) and OUT (out).",
+        "directive": false
+      },
+      {
+        "x": 0,
+        "y": 232,
+        "text": "Make Symbol... with the name rclp writes rclp.asy + rclp.sub here.",
+        "directive": false
+      }
+    ]
+  }
+}

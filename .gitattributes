@@ -1,2 +1,5 @@
 # Fixtures are byte-exact test data (CR+LF, Windows-1252): never convert.
 tests/fixtures/** -text
+# Generated circuit symbols in the examples are CR+LF / Windows-1252 as written: keep them.
+examples/hierarchy/*.asy -text
+examples/hierarchy/*.sub -text

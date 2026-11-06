@@ -310,3 +310,55 @@ def test_schematic_edits_mark_the_project_modified(app: App, tmp_path: Path) -> 
     assert app.projects.property("modified") is True
     app.schematic.undo()
     assert app.projects.property("modified") is False
+
+
+# ---------------------------------------------------------------- H3: circuit symbols
+
+
+def test_circuit_symbols_are_saved_with_the_project_and_placeable_after_reopening(
+    app: App, settings_file: Path, tmp_path: Path
+) -> None:
+    from core.schematic.model import Instance, NetLabel, PortFlag
+    from core.schematic.netlister import netlist_schematic
+    from tests.ui.test_schematic_canvas import rc
+
+    path = tmp_path / "proj" / "proj.qsp"
+    path.parent.mkdir()
+    assert app.projects.saveAs(str(path))
+    sheet = rc()
+    sheet.ports = [PortFlag(64, 112, "IN", "in"), PortFlag(304, 112, "OUT", "out")]
+    app.schematic.load_schematic(sheet)
+    assert app.schematic.makeSymbol("rclp", False)["ok"] is True
+    assert "rclp" in app.schematic.placeableSymbols()
+    assert app.schematic.nextName("rclp") == "U1"
+    assert app.projects.property("modified") is True
+    assert app.projects.save()
+    assert json.loads(path.read_text("utf-8"))["symbols"] == ["rclp.asy"]
+    app.close()
+
+    again = start_app(settings_file)
+    try:
+        assert again.schematic.project_symbols() == []
+        assert again.projects.open(str(path))
+        assert again.schematic.project_symbols() == [(path.parent / "rclp.asy").resolve()]
+        assert "rclp" in again.schematic.placeableSymbols()
+        assert again.projects.property("modified") is False
+        sheet = Schematic(
+            instances=[Instance("rclp", "U1", 0, 0)],
+            labels=[NetLabel(-16, 32, "a"), NetLabel(96, 32, "b")],  # the rclp pins
+        )
+        again.schematic.load_schematic(sheet)
+        lines = netlist_schematic(sheet, again.schematic.lookup, path.parent).text.splitlines()
+        assert "XU1 a b rclp" in lines
+        assert f".include {path.parent.resolve() / 'rclp.sub'}" in lines
+
+        (path.parent / "rclp.asy").unlink()
+        assert again.projects.open(str(path))
+        assert "circuit symbol" in again.projects.property("statusText")
+        assert "missing" in again.projects.property("statusText")
+
+        again.projects.newProject()
+        assert again.schematic.project_symbols() == []
+        assert "rclp" not in again.schematic.placeableSymbols()
+    finally:
+        again.close()

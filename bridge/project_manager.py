@@ -108,6 +108,7 @@ class ProjectManager(QObject):
         # Kept as loaded while no SchematicController is attached.
         self._schematic: Schematic | None = None
         self._schematic_ctl: QObject | None = None
+        self._symbols: list[Path] = []  # circuit symbols (H3), absolute .asy paths
         self._saved_json = ""
         self._saved_results: tuple[object, object] = (None, None)
         self._pending: tuple[Path, Project, list[str]] | None = None
@@ -164,15 +165,18 @@ class ProjectManager(QObject):
         """Make the schematic editor's sheet part of the project."""
         self._schematic_ctl = controller
         controller.set_project_file(self._file_path)  # type: ignore[attr-defined]
+        controller.set_project_symbols(self._symbols)  # type: ignore[attr-defined]
         controller.load_schematic(self._schematic)  # type: ignore[attr-defined]
         controller.schematicEdited.connect(self._update_modified)  # type: ignore[attr-defined]
+        controller.projectSymbolsChanged.connect(self._update_modified)  # type: ignore[attr-defined]
         if self._simulator is not None and self._diagram is not None:
             self._mark_saved()
 
     # ---- state
 
-    def current_project(self) -> Project:
-        """The project as the attached bridge objects hold it now."""
+    def current_project(self, path: Path | None = None) -> Project:
+        """The project as the attached bridge objects hold it now. Symbol paths are
+        written relative to the folder of ``path`` (default: the current file)."""
         sim, diagram = self._parts()
         state = diagram.export_state()
         results = {}
@@ -193,7 +197,26 @@ class ProjectManager(QObject):
                 if self._schematic_ctl is not None
                 else self._schematic
             ),
+            symbols=self._symbol_entries(path),
         )
+
+    def _project_symbols(self) -> list[Path]:
+        ctl = self._schematic_ctl
+        return ctl.project_symbols() if ctl is not None else list(self._symbols)  # type: ignore[attr-defined]
+
+    def _symbol_entries(self, path: Path | None) -> list[str]:
+        """The circuit symbols as stored in the .qsp: relative to its folder when inside
+        it (with /), else absolute."""
+        target = path if path is not None else (Path(self._file_path) if self._file_path else None)
+        folder = target.parent.resolve() if target is not None else None
+        out: list[str] = []
+        for symbol in self._project_symbols():
+            symbol = symbol.resolve()
+            if folder is not None and symbol.is_relative_to(folder):
+                out.append(symbol.relative_to(folder).as_posix())
+            else:
+                out.append(str(symbol))
+        return out
 
     # ---- slots
 
@@ -301,7 +324,11 @@ class ProjectManager(QObject):
         self._extra_netlists = list(project.netlists[1:])
         self._extra_diagrams = list(project.diagrams[1:])
         self._schematic = project.schematic
+        folder = Path(path).parent if path else Path.cwd()
+        self._symbols = [(folder / s).resolve() for s in project.symbols]
+        skipped = [f"circuit symbol {s} is missing" for s in self._symbols if not s.is_file()]
         if self._schematic_ctl is not None:
+            self._schematic_ctl.set_project_symbols(self._symbols)  # type: ignore[attr-defined]
             self._schematic_ctl.load_schematic(project.schematic)  # type: ignore[attr-defined]
         sources = [(s.document, s.code) for s in project.block_sources] if trusted else []
         first = project.diagrams[0].diagram if project.diagrams else {"blocks": [], "wires": []}
@@ -322,7 +349,7 @@ class ProjectManager(QObject):
             self._waveforms.set_result(diagram_result)  # type: ignore[attr-defined]
         self._set_file_path(path)
         self._mark_saved()
-        return warnings
+        return warnings + skipped
 
     def _can_replace(self) -> bool:
         sim, diagram = self._parts()
@@ -335,7 +362,7 @@ class ProjectManager(QObject):
     # ---- saving
 
     def _save_to(self, path: Path) -> bool:
-        project = self.current_project()
+        project = self.current_project(path)
         try:
             save_project(path, project)
         except (ProjectError, OSError) as exc:

@@ -91,7 +91,7 @@ from core.schematic.netlister import (
 from core.schematic.probe import Probe
 from core.sim.result import SimulationResult
 from core.symbols.asy import Symbol
-from core.symbols.library import SymbolLibrary
+from core.symbols.library import PROJECT, SymbolLibrary
 
 QML_IMPORT_NAME = "QtSpice"
 QML_IMPORT_MAJOR_VERSION = 1
@@ -383,6 +383,7 @@ class SchematicController(QObject):
         self._ports: list[dict[str, object]] = []
         self._port_rows: list[PortRow] = []
         self._project_file = ""
+        self._project_symbols: list[Path] = []
         self._wire_path = ""
         self._selected_wire_path = ""
         for signal in (
@@ -1002,6 +1003,34 @@ class SchematicController(QObject):
     # existing pair is only replaced when ``overwrite`` is true (QML asks first).
 
     symbolMade = Signal(str, str)  # name, path of the .asy
+    projectSymbolsChanged = Signal()
+
+    # H3: the project's circuit symbols are SymbolLibrary PROJECT entries, so the part
+    # picker lists them and the netlister turns a placed one into an X line plus the
+    # .include of its ModelFile (the .sub beside the .asy). ProjectManager stores them.
+
+    def project_symbols(self) -> list[Path]:
+        """The project's circuit symbols (.asy paths), in the order they were made."""
+        return list(self._project_symbols)
+
+    def set_project_symbols(self, paths: list[str | Path]) -> None:
+        """Use these circuit symbols (opening a project). Set by ProjectManager."""
+        symbols: list[Path] = []
+        for p in paths:
+            path = Path(p)
+            if path not in symbols:
+                symbols.append(path)
+        self._project_symbols = symbols
+        self._symbols.set_project_files(symbols)
+        self.symbolsChanged.emit()
+
+    def _add_project_symbol(self, asy: Path) -> None:
+        if asy not in self._project_symbols:
+            self._project_symbols.append(asy)
+            self._symbols.set_project_files(self._project_symbols)
+            self.projectSymbolsChanged.emit()
+        self._symbols.refresh()  # re-read a replaced .asy
+        self.symbolsChanged.emit()
 
     def set_project_file(self, path: str) -> None:
         """The project's .qsp path ("" = not saved yet). Set by ProjectManager."""
@@ -1019,7 +1048,9 @@ class SchematicController(QObject):
             return problem
         entry = self._symbols.find(name)
         folder = self.project_folder()
-        own = folder is not None and entry is not None and entry.path.parent == folder
+        own = entry is not None and (
+            entry.source == PROJECT or (folder is not None and entry.path.parent == folder)
+        )
         if entry is not None and not own:
             return f"there is already a symbol called {entry.key} ({entry.source})"
         return ""
@@ -1078,6 +1109,7 @@ class SchematicController(QObject):
         written = made.write(folder)
         if written:
             return fail("; ".join(d.message for d in written))
+        self._add_project_symbol(asy)
         self.symbolMade.emit(name, str(asy))
         return {
             "ok": True,

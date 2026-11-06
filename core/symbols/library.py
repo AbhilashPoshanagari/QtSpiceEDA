@@ -1,8 +1,10 @@
 """Symbol library: where ``.asy`` files are found. Qt-free.
 
-Search order: QtSpice's built-in symbols, then the user's folders in the order given,
-then the optional LTspice folder (its ``sym`` subfolder when it has one). The first
-folder that has a symbol wins. Every folder is read-only: the library never writes.
+Search order: QtSpice's built-in symbols, then the project's own circuit symbols (H3:
+single ``.asy`` files made by the symbol generator, key = file name without ``.asy``),
+then the user's folders in the order given, then the optional LTspice folder (its
+``sym`` subfolder when it has one). The first that has a symbol wins. The library
+never writes; every folder is read-only.
 
 A symbol's key is its path below the search folder, without ``.asy`` and with ``/``
 separators, e.g. ``res`` or ``Opamps/opamp2``. ``lookup`` accepts that key with ``/``
@@ -27,6 +29,7 @@ BUILTIN_DIR = Path(__file__).resolve().parent / "builtin"
 BUILTIN = "builtin"
 USER = "user"
 LTSPICE = "ltspice"
+PROJECT = "project"
 
 
 @dataclass(frozen=True)
@@ -54,8 +57,10 @@ class SymbolLibrary:
         user_dirs: list[str | Path] | tuple[str | Path, ...] = (),
         ltspice_dir: str | Path | None = None,
         builtin_dir: str | Path | None = BUILTIN_DIR,
+        project_files: list[str | Path] | tuple[str | Path, ...] = (),
     ) -> None:
         self._builtin = Path(builtin_dir) if builtin_dir is not None else None
+        self._project: tuple[Path, ...] = tuple(Path(p) for p in project_files)
         self._user: tuple[Path, ...] = ()
         self._ltspice: Path | None = None
         self._entries: list[SymbolEntry] | None = None
@@ -99,6 +104,19 @@ class SymbolLibrary:
         if user == self._user and ltspice == self._ltspice and self._entries is not None:
             return False
         self._user, self._ltspice = user, ltspice
+        self.refresh()
+        return True
+
+    @property
+    def project_files(self) -> tuple[Path, ...]:
+        return self._project
+
+    def set_project_files(self, files: list[str | Path] | tuple[str | Path, ...]) -> bool:
+        """The project's circuit symbols (.asy files). True (and cache cleared) if changed."""
+        project = tuple(Path(p) for p in files if str(p).strip())
+        if project == self._project and self._entries is not None:
+            return False
+        self._project = project
         self.refresh()
         return True
 
@@ -149,19 +167,36 @@ class SymbolLibrary:
         if self._entries is not None:
             return
         entries: list[SymbolEntry] = []
-        for folder, source in self.search_paths():
-            if not folder.is_dir():
+        paths = self.search_paths()
+        builtin = paths[:1] if self._builtin is not None else []
+        for folder, source in builtin:
+            self._scan_folder(folder, source, entries)
+        for path in self._project:
+            if not path.is_file():
                 self._diagnostics.append(
-                    Diagnostic(0, 0, WARNING, f"symbol folder not found: {folder}")
+                    Diagnostic(0, 0, WARNING, f"project symbol not found: {path}")
                 )
                 continue
-            for path in self._walk(folder):
-                rel = path.relative_to(folder).with_suffix("").as_posix()
-                entry = SymbolEntry(rel, path, source)
-                entries.append(entry)
-                self._by_key.setdefault(rel.casefold(), entry)
-                self._by_name.setdefault(entry.name.casefold(), entry)
+            entry = SymbolEntry(path.stem, path, PROJECT)
+            entries.append(entry)
+            self._by_key.setdefault(entry.key.casefold(), entry)
+            self._by_name.setdefault(entry.name.casefold(), entry)
+        for folder, source in paths[len(builtin) :]:
+            self._scan_folder(folder, source, entries)
         self._entries = entries
+
+    def _scan_folder(self, folder: Path, source: str, entries: list[SymbolEntry]) -> None:
+        if not folder.is_dir():
+            self._diagnostics.append(
+                Diagnostic(0, 0, WARNING, f"symbol folder not found: {folder}")
+            )
+            return
+        for path in self._walk(folder):
+            rel = path.relative_to(folder).with_suffix("").as_posix()
+            entry = SymbolEntry(rel, path, source)
+            entries.append(entry)
+            self._by_key.setdefault(rel.casefold(), entry)
+            self._by_name.setdefault(entry.name.casefold(), entry)
 
     def _walk(self, root: Path) -> list[Path]:
         found: list[Path] = []

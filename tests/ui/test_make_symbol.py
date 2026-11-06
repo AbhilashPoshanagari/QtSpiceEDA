@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pytest
 from PySide6.QtCore import QObject, QSettings
 
@@ -119,6 +120,9 @@ def test_make_symbol_from_the_ports_panel_in_the_main_window(
         assert result.property("message").startswith("Made rclp.asy and rclp.sub")
         assert (tmp_path / "rclp.asy").is_file()
         result.close()
+        qtbot.wait(20)
+        names = window.findChild(QObject, "partPicker").property("names")
+        assert "rclp" in list(names)  # H3: the new symbol is in the part picker
 
         make()  # the same name again: asks before replacing
         replace = window.findChild(QObject, "replaceSymbolDialog")
@@ -127,6 +131,35 @@ def test_make_symbol_from_the_ports_panel_in_the_main_window(
         qtbot.wait(20)
         assert result.property("visible") is True
         assert result.property("title") == "Symbol made"
+    finally:
+        ctl.load_schematic(None)
+        for name in ("Simulator", "DiagramController"):
+            engine.singletonInstance("QtSpice", name).shutdown()
+        window.close()
+        engine.deleteLater()
+
+
+@pytest.mark.ngspice
+def test_hierarchy_demo_runs_from_the_main_window(qapp: object, qtbot) -> None:
+
+    demo = Path(__file__).resolve().parents[2] / "examples" / "hierarchy" / "rc2.qsp"
+    engine = create_engine()
+    window = engine.rootObjects()[0]
+    pm = engine.singletonInstance("QtSpice", "ProjectManager")
+    ctl = engine.singletonInstance("QtSpice", "SchematicController")
+    sim = engine.singletonInstance("QtSpice", "Simulator")
+    try:
+        assert pm.open(str(demo)) is True
+        assert "rclp" in ctl.placeableSymbols()
+        assert ctl.check() is True, ctl.property("problems")
+        with qtbot.waitSignal(sim.resultReady, timeout=10_000):
+            assert ctl.run() is True
+        result = sim.result
+        f = np.real(result.vectors["frequency"])
+        db = 20 * np.log10(np.abs(result.vectors["V(out)"]))
+        assert np.interp(5.0, np.log10(f), db) - np.interp(4.0, np.log10(f), db) == pytest.approx(
+            -40, abs=0.5
+        )
     finally:
         ctl.load_schematic(None)
         for name in ("Simulator", "DiagramController"):
