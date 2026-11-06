@@ -42,11 +42,14 @@ class NetMap:
 
     ``pins[i]`` holds the nets of ``schematic.instances[i]`` in SpiceOrder (empty when
     its symbol was not found). ``wires[i]`` is the net of ``schematic.wires[i]``.
+    ``ports[i]`` is the net of ``schematic.ports[i]`` ("" when the flag touches
+    nothing and no other flag has its name).
     """
 
     nets: list[str] = field(default_factory=list)
     pins: list[list[str]] = field(default_factory=list)
     wires: list[str] = field(default_factory=list)
+    ports: list[str] = field(default_factory=list)
     junctions: list[Point] = field(default_factory=list)
     diagnostics: list[Diagnostic] = field(default_factory=list)
 
@@ -162,6 +165,10 @@ def connect(schematic: Schematic, lookup: Callable[[str], Symbol | None]) -> Net
     for items in pin_items:
         out.pins.append([net_of(item, True) for item in items])
     out.wires = [net_of(("w", i), False) for i in range(len(schematic.wires))]
+    out.ports = [
+        "" if size[uf.find(("o", i))] == 1 else net_of(("o", i), False)
+        for i in range(len(schematic.ports))
+    ]
 
     seen: dict[str, None] = {}
     for net in [n for nets in out.pins for n in nets] + out.wires:

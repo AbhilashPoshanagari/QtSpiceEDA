@@ -357,9 +357,20 @@ ApplicationWindow {
                             SplitView.minimumHeight: 120
                         }
                     }
-                    PartPicker {
-                        id: partPicker
-                        onPlace: name => schematicCanvas.startPlace(name)
+                    SplitView {
+                        orientation: Qt.Vertical
+                        PartPicker {
+                            id: partPicker
+                            SplitView.fillHeight: true
+                            SplitView.minimumHeight: 160
+                            onPlace: name => schematicCanvas.startPlace(name)
+                        }
+                        PortsPanel {
+                            id: portsPanel
+                            SplitView.preferredHeight: 220
+                            SplitView.minimumHeight: 100
+                            onEditPort: index => schematicCanvas.editPort(index)
+                        }
                     }
                 }
             }

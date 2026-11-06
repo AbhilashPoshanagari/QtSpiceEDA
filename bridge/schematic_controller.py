@@ -34,8 +34,16 @@ from PySide6.QtQml import QmlElement, QmlSingleton
 
 from bridge.diagram_controller import RowModel
 from bridge.waveform_model import si
+from core.hierarchy.ports import (
+    GROUND_NAMES,
+    PortRow,
+    name_problem,
+    netlist_ports,
+    schematic_ports,
+)
 from core.netlist.libindex import LIBRARY_SUFFIXES, LibraryIndex
 from core.netlist.model import ERROR
+from core.netlist.parser import parse
 from core.schematic import edit as edit_ops
 from core.schematic import probe as probe_ops
 from core.schematic.connectivity import NetMap, connect
@@ -62,10 +70,12 @@ from core.schematic.geometry import (
     turn,
 )
 from core.schematic.model import (
+    PORT_DIRECTIONS,
     GroundFlag,
     Instance,
     NetLabel,
     PartInstance,
+    PortFlag,
     Schematic,
     TextItem,
     Wire,
@@ -369,6 +379,8 @@ class SchematicController(QObject):
         self._flags = SyncModel(FLAG_ROLES, self)
         self._junctions: list[dict[str, int]] = []
         self._texts: list[dict[str, object]] = []
+        self._ports: list[dict[str, object]] = []
+        self._port_rows: list[PortRow] = []
         self._wire_path = ""
         self._selected_wire_path = ""
         for signal in (
@@ -438,6 +450,9 @@ class SchematicController(QObject):
     def _get_wire_path(self) -> str:
         return self._wire_path
 
+    def _get_ports(self) -> list[dict[str, object]]:
+        return list(self._ports)
+
     def _get_selected_wire_path(self) -> str:
         return self._selected_wire_path
 
@@ -446,6 +461,8 @@ class SchematicController(QObject):
     flags = Property(QObject, _get_flags, constant=True)
     junctions = Property("QVariantList", _get_junctions, notify=sheetChanged)
     texts = Property("QVariantList", _get_texts, notify=sheetChanged)
+    # H1: one row per port flag: index, name, direction, net, severity, message.
+    ports = Property("QVariantList", _get_ports, notify=sheetChanged)
     wirePath = Property(str, _get_wire_path, notify=sheetChanged)  # noqa: N815
     selectedWirePath = Property(str, _get_selected_wire_path, notify=sheetChanged)  # noqa: N815
 
@@ -508,6 +525,20 @@ class SchematicController(QObject):
         if not live:
             nets = connect(s, self.lookup)
             self._junctions = [{"x": x, "y": y} for x, y in nets.junctions]
+            self._port_rows = schematic_ports(s, nets).rows
+        self._ports = [
+            {
+                "index": r.index,
+                "name": r.name,
+                "direction": r.direction,
+                "net": r.net,
+                "severity": r.severity,
+                "message": r.message,
+                "selected": (PORT, r.index) in sel,
+            }
+            for r in self._port_rows
+            if r.index < len(s.ports)
+        ]
         self.sheetChanged.emit()
 
     def _instance_row(self, i: int, inst: Instance, selected: bool) -> dict[str, object]:
@@ -903,6 +934,65 @@ class SchematicController(QObject):
         point = (int(round(x)), int(round(y)))
         self._edit("ground", lambda s: s.grounds.append(GroundFlag(*point)))
         return True
+
+    # ---- port flags (H1)
+
+    @Slot(str, result=str)
+    def portNameProblem(self, name: str) -> str:  # noqa: N802
+        """Why ``name`` cannot be a port ("" when it can)."""
+        return name_problem(name.strip())
+
+    @Slot(float, float, str, str, result=bool)
+    def addPort(self, x: float, y: float, name: str, direction: str) -> bool:  # noqa: N802
+        """Place a port flag (one undo step). ``direction`` is in, out or bidir."""
+        name = name.strip()
+        if name_problem(name) or direction not in PORT_DIRECTIONS:
+            return False
+        point = (int(round(x)), int(round(y)))
+        self._edit(f"port {name}", lambda s: s.ports.append(PortFlag(*point, name, direction)))
+        return True
+
+    @Slot(int, str, str, result=bool)
+    def setPort(self, index: int, name: str, direction: str) -> bool:  # noqa: N802
+        """Rename port flag ``index`` and/or change its direction (one undo step)."""
+        name = name.strip()
+        ports = self._schematic.ports
+        if not 0 <= index < len(ports) or name_problem(name) or direction not in PORT_DIRECTIONS:
+            return False
+        if (ports[index].name, ports[index].direction) == (name, direction):
+            return True
+
+        def change(s: Schematic) -> None:
+            s.ports[index].name = name
+            s.ports[index].direction = direction
+
+        self._edit(f"edit port {name}", change)
+        return True
+
+    @Slot(int, result="QVariantMap")
+    def portAt(self, index: int) -> dict[str, object]:  # noqa: N802
+        ports = self._schematic.ports
+        if not 0 <= index < len(ports):
+            return {}
+        p = ports[index]
+        return {"index": index, "name": p.name, "direction": p.direction, "x": p.x, "y": p.y}
+
+    # ---- netlist ports (H1): the user ticks which netlist nodes become pins
+
+    @Slot(str, result="QStringList")
+    def netlistNodes(self, text: str) -> list[str]:  # noqa: N802
+        """The netlist's top-level nodes that can be ports (ground left out)."""
+        nodes = parse(text, self._base_dir()).circuit.nodes()
+        return [n for n in nodes if n.casefold() not in GROUND_NAMES]
+
+    @Slot(str, "QVariantList", result="QVariantList")
+    def checkNetlistPorts(self, text: str, chosen: list) -> list[dict[str, object]]:  # noqa: N802
+        """Problems with the ticked ``chosen`` ({node, direction}) ports, as rows of
+        {severity, message}; an empty list means they are fine."""
+        found = netlist_ports(self.netlistNodes(text), _chosen(chosen))
+        if not found.ports and found.ok:
+            return [{"severity": ERROR, "message": "tick at least one node as a port"}]
+        return [{"severity": d.severity, "message": d.message} for d in found.diagnostics]
 
     # ---- editing the selection (S8)
     #
@@ -1546,6 +1636,15 @@ def _replace(target: Schematic, source: Schematic) -> None:
     """Make ``target`` (the copy an _edit change works on) equal to ``source``."""
     for name in ("title", "instances", "wires", "labels", "grounds", "ports", "texts"):
         setattr(target, name, getattr(source, name))
+
+
+def _chosen(rows: list) -> list[tuple[str, str]]:
+    """(node, direction) pairs from QML rows of {node, direction}."""
+    out: list[tuple[str, str]] = []
+    for row in rows:
+        if isinstance(row, dict):
+            out.append((str(row.get("node", "")), str(row.get("direction", "bidir"))))
+    return out
 
 
 def _next_name(base: str, instances: list[Instance]) -> str:

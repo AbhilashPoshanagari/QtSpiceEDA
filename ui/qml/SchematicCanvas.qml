@@ -25,6 +25,9 @@ import QtSpice
 // two-terminal part its current, a pin the current into it, a drag from net to net
 // V(a,b), Alt+click a part its power. A badge at the pointer shows which. Editing the
 // sheet ends probing until the next run.
+// H1: the "port" tool asks for a port name and direction (in / out / bidir), then
+// each click places a port flag; double-click a port to edit it. Ports become the pins
+// of a circuit symbol (see PortsPanel.qml).
 // The model, hit-testing and undo live in SchematicController.
 Item {
     id: root
@@ -42,12 +45,15 @@ Item {
     readonly property real pickTolerance: 6 / zoom   // sheet units for ~6 px
 
     // "select", or a tool: "place" (S6), "wire", "label", "ground" (S7), "move",
-    // "paste" (S8), "text" (S9), "delete", "drag" (S10), "probe" (S11).
+    // "paste" (S8), "text" (S9), "delete", "drag" (S10), "probe" (S11), "port" (H1).
     property string mode: "select"
     property string placeSymbol: ""
     property string labelName: ""
     property int renameLabelIndex: -1     // label popup: -1 = new label, else rename
     property int editTextIndex: -1        // text popup: -1 = new text, else edit
+    property string portName: ""
+    property string portDirection: "in"
+    property int editPortIndex: -1        // port popup: -1 = new port, else edit
     property string pendingText: ""
     property string probeBadge: ""          // "V", "I", "P", "V(a,b)" or ""
     property string probeStartNet: ""       // net under the press, for V(a,b) drags
@@ -66,6 +72,8 @@ Item {
             return qsTr("Label %1: click a wire or pin to name its net; Esc to stop").arg(labelName)
         if (mode === "ground")
             return qsTr("Ground: click to place; Esc to stop")
+        if (mode === "port")
+            return qsTr("Port %1 (%2): click a wire or pin; Esc to stop").arg(portName).arg(portDirection)
         if (mode === "move")
             return qsTr("Move: drag the selection; wires stay where they are; Esc to stop")
         if (mode === "paste")
@@ -136,7 +144,7 @@ Item {
         ["Delete", qsTr("Delete the selection")],
         ["Ctrl+C / Ctrl+V", qsTr("Copy / paste (click to drop the copy)")],
         ["Esc / right-click", qsTr("End a wire, then leave the tool")],
-        ["Double-click", qsTr("Edit a part's attributes, a label or a text")],
+        ["Double-click", qsTr("Edit a part's attributes, a label, a port or a text")],
         ["Wheel / middle-drag", qsTr("Zoom around the pointer / pan")],
         ["F1", qsTr("This list")]
     ]
@@ -256,6 +264,44 @@ Item {
         startTool("label")
     }
 
+    // Port tool (H1): ask for the name and direction, then place on each click.
+    function startPort() {
+        editPortIndex = -1
+        portField.text = portName
+        directionBox.currentIndex = Math.max(0, directionBox.model.indexOf(portDirection))
+        portPopup.open()
+        portField.forceActiveFocus()
+        portField.selectAll()
+    }
+
+    function editPort(index) {
+        const p = SchematicController.portAt(index)
+        if (p.index === undefined)
+            return
+        editPortIndex = index
+        portField.text = p.name
+        directionBox.currentIndex = Math.max(0, directionBox.model.indexOf(p.direction))
+        portPopup.open()
+        portField.forceActiveFocus()
+        portField.selectAll()
+    }
+
+    function portDone() {
+        const name = portField.text.trim()
+        const direction = directionBox.currentText
+        if (SchematicController.portNameProblem(name) !== "")
+            return
+        portPopup.close()
+        if (editPortIndex >= 0) {
+            SchematicController.setPort(editPortIndex, name, direction)
+            editPortIndex = -1
+            return
+        }
+        portName = name
+        portDirection = direction
+        startTool("port")
+    }
+
     function renameLabel(index) {
         renameLabelIndex = index
         labelField.text = SchematicController.labelName(index)
@@ -307,6 +353,8 @@ Item {
             attributeDialog.openFor(hit.index)
         else if (hit.kind === "label")
             renameLabel(hit.index)
+        else if (hit.kind === "port")
+            editPort(hit.index)
         else if (hit.kind === "text")
             editText(hit.index)
     }
@@ -429,6 +477,15 @@ Item {
                     checkable: true
                     checked: root.mode === "label"
                     onClicked: root.mode === "label" ? root.stopTool() : root.startLabel()
+                }
+                ToolButton {
+                    objectName: "portButton"
+                    text: qsTr("Port")
+                    checkable: true
+                    checked: root.mode === "port"
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Place a port flag (in, out or bidir): a pin of a circuit symbol")
+                    onClicked: root.mode === "port" ? root.stopTool() : root.startPort()
                 }
                 ToolButton {
                     objectName: "textButton"
@@ -781,6 +838,11 @@ Item {
                         SchematicController.addLabel(q.x, q.y, root.labelName)
                         return
                     }
+                    if (root.mode === "port") {
+                        const q = root.snapped(p)
+                        SchematicController.addPort(q.x, q.y, root.portName, root.portDirection)
+                        return
+                    }
                     if (root.mode === "ground") {
                         const q = root.snapped(p)
                         SchematicController.addGround(q.x, q.y)
@@ -969,6 +1031,57 @@ Item {
                             root.startLabel(labelField.text)
                         root.renameLabelIndex = -1
                     }
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: portPopup
+        objectName: "portPopup"
+        anchors.centerIn: parent
+        modal: true
+        padding: 12
+        contentItem: ColumnLayout {
+            spacing: 8
+            Label { text: root.editPortIndex >= 0 ? qsTr("Edit port") : qsTr("Port name (one word):") }
+            TextField {
+                id: portField
+                objectName: "portField"
+                Layout.preferredWidth: 220
+                selectByMouse: true
+                onAccepted: root.portDone()
+            }
+            RowLayout {
+                Label { text: qsTr("Direction:") }
+                ComboBox {
+                    id: directionBox
+                    objectName: "portDirection"
+                    model: ["in", "out", "bidir"]
+                }
+            }
+            Label {
+                objectName: "portProblem"
+                readonly property string problem: portField.text.trim() === ""
+                                                  ? "" : SchematicController.portNameProblem(portField.text)
+                visible: problem !== ""
+                text: problem
+                color: "#c0392b"
+                Layout.preferredWidth: 220
+                wrapMode: Text.WordWrap
+            }
+            RowLayout {
+                Layout.alignment: Qt.AlignRight
+                Button {
+                    text: qsTr("Cancel")
+                    onClicked: { portPopup.close(); root.editPortIndex = -1 }
+                }
+                Button {
+                    objectName: "portOk"
+                    text: qsTr("OK")
+                    enabled: portField.text.trim() !== ""
+                             && SchematicController.portNameProblem(portField.text) === ""
+                    onClicked: root.portDone()
                 }
             }
         }
