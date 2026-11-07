@@ -41,6 +41,13 @@ and the domain's colour from the Domain registry (``domainColors``). Physical wi
 two or more physical wires gets a junction dot (``junctions``). ``canConnectPhysical``
 gives the reason a physical wire is refused (``Diagram.check_physical_wire``), and
 connecting, disconnecting and removing physical wires are undo steps like the rest.
+
+Library groups and units (U2). Every library entry has a ``group``: "User", "Signal",
+or "Physical/<domain>" from the module its component comes from ("Physical/Sensors
+and sources" for the converters: controlled sources, sensors and the Solver
+Configuration). ``libraryGroups`` lists the groups in the order the library shows
+them. A physical block's settings carry their SI ``unit`` and a ``caption`` such as
+"J [kg*m^2]"; their numbers are read as SPICE numbers (``10m``, ``2.2u``, ``1meg``).
 """
 
 from __future__ import annotations
@@ -73,6 +80,7 @@ from core.blocks.library import builtin_specs
 from core.blocks.registry import BlockRegistry, SourceResult
 from core.blocks.runner import DEFAULT_TIMEOUT, BlockRunner, RunOutcome
 from core.blocks.spec import BlockSpec, is_plain_constant
+from core.netlist.parser import parse_number
 from core.physical.domains import ANY_DOMAIN, DOMAINS
 from core.physical.library import physical_registry
 
@@ -86,6 +94,48 @@ PORT_RADIUS = 10  # hit radius of a port, in canvas units
 SCOPE = "Scope"
 ANY_COLOR = "#4a5568"  # the Solver Configuration port joins any domain
 WIRE_STUB = 10.0  # a physical wire leaves its port straight for this long
+
+USER_GROUP = "User"
+SIGNAL_GROUP = "Signal"
+OTHER_PHYSICAL_GROUP = "Physical/Other"
+PHYSICAL_GROUPS = {
+    "core.physical.library.electrical": "Physical/Electrical",
+    "core.physical.library.rotational": "Physical/Rotational",
+    "core.physical.library.translational": "Physical/Translational",
+    "core.physical.library.thermal": "Physical/Thermal",
+    "core.physical.library.converters": "Physical/Sensors and sources",
+}
+"""Library group of a physical component, by the package its class lives in."""
+GROUP_ORDER = (USER_GROUP, SIGNAL_GROUP, *PHYSICAL_GROUPS.values(), OTHER_PHYSICAL_GROUP)
+
+
+def physical_group(module: str) -> str:
+    """The library group of a physical component defined in ``module``."""
+    for package, group in PHYSICAL_GROUPS.items():
+        if module == package or module.startswith(package + "."):
+            return group
+    return OTHER_PHYSICAL_GROUP
+
+
+def setting_caption(name: str, unit: str) -> str:
+    """How the properties panel names a setting: ``J [kg*m^2]``, or ``k`` without a unit."""
+    return f"{name} [{unit}]" if unit else name
+
+
+def parse_physical_setting(text: str, default: object) -> object:
+    """Read a physical block's setting; numbers may use SPICE suffixes. Raises ValueError."""
+    if isinstance(default, bool) or not isinstance(default, int | float):
+        return parse_setting(text, default)
+    value = parse_number(text)
+    if value is None or not math.isfinite(value):
+        raise ValueError(f"{text.strip()!r} is not a number such as 0.01, 10m or 2.2u")
+    if isinstance(default, int):
+        if value != int(value):
+            raise ValueError(f"{text.strip()!r} is not a whole number")
+        return int(value)
+    return value
+
+
 DEFAULT_T_END = 1.0
 DEFAULT_DT = 0.001
 _DOCUMENT_ID = re.compile(r"^function(\d+)$")
@@ -107,8 +157,10 @@ def domain_color(domain: str | None) -> str:
     return found.color if found is not None else ANY_COLOR
 
 
-def spec_to_dict(spec: BlockSpec, builtin: bool) -> dict[str, object]:
+def spec_to_dict(spec: BlockSpec, builtin: bool, group: str = "") -> dict[str, object]:
     """A library entry as QML sees it."""
+    if not group:
+        group = SIGNAL_GROUP if builtin else USER_GROUP
     return {
         "name": spec.name,
         "shape": spec.shape,
@@ -120,6 +172,7 @@ def spec_to_dict(spec: BlockSpec, builtin: bool) -> dict[str, object]:
             for p in spec.conserving
         ],
         "physical": spec.is_physical,
+        "group": group,
         "settings": [{"name": k, "value": v} for k, v in spec.settings.items()],
         "stateful": spec.stateful,
         "doc": spec.doc,
@@ -590,6 +643,7 @@ class DiagramController(QObject):
     sourcesChanged = Signal()
     runSettingsChanged = Signal()
     junctionsChanged = Signal()
+    libraryGroupsChanged = Signal()
     diagramEdited = Signal()  # an undo-stack step was done, undone or redone
     documentReplaced = Signal(str)  # code of the current document after load_state
     _runDone = Signal(object)  # RunOutcome, emitted from the run thread
@@ -685,6 +739,10 @@ class DiagramController(QObject):
     def _get_junctions(self) -> list[dict[str, object]]:
         return self._junctions
 
+    def _get_library_groups(self) -> list[str]:
+        present = {str(entry["group"]) for entry in self._library}
+        return [g for g in GROUP_ORDER if g in present or g == USER_GROUP]
+
     def _get_domain_colors(self) -> dict[str, str]:
         return {**{d: domain_color(d) for d in DOMAINS}, ANY_DOMAIN: ANY_COLOR}
 
@@ -732,7 +790,8 @@ class DiagramController(QObject):
             self.runSettingsChanged.emit()
 
     def _get_selected_block(self) -> dict[str, object]:
-        """The one selected block as {id, spec, settings: [{name, value, text}]}, or {}."""
+        """The one selected block as {id, spec, doc, physical, settings: [{name, value,
+        text}]}, or {}. A physical block's settings also have unit, label and caption."""
         if len(self._selected_blocks) != 1 or self._selected_wires or self._selected_physical:
             return {}
         (bid,) = self._selected_blocks
@@ -741,13 +800,20 @@ class DiagramController(QObject):
             values = self._diagram.effective_settings(bid)
         except DiagramError:
             return {}
+        params = self._parameters(spec.name)
+        settings: list[dict[str, object]] = []
+        for k, v in values.items():
+            item: dict[str, object] = {"name": k, "value": v, "text": format_setting(v)}
+            if spec.is_physical:  # v0.1 blocks keep exactly their v0.1 rows
+                unit, label = params.get(k, ("", ""))
+                item.update(unit=unit, label=label, caption=setting_caption(k, unit))
+            settings.append(item)
         return {
             "id": bid,
             "spec": spec.name,
             "doc": spec.doc,
-            "settings": [
-                {"name": k, "value": v, "text": format_setting(v)} for k, v in values.items()
-            ],
+            "physical": spec.is_physical,
+            "settings": settings,
         }
 
     blocks = Property(QObject, _get_blocks, constant=True)
@@ -755,6 +821,9 @@ class DiagramController(QObject):
     physicalWires = Property(QObject, _get_physical_wires, constant=True)  # noqa: N815
     junctions = Property("QVariantList", _get_junctions, notify=junctionsChanged)
     domainColors = Property("QVariantMap", _get_domain_colors, constant=True)  # noqa: N815
+    libraryGroups = Property(  # noqa: N815
+        "QVariantList", _get_library_groups, notify=libraryChanged
+    )
     hint = Property(str, _get_hint, notify=hintChanged)
     canUndo = Property(bool, _get_can_undo, notify=undoStateChanged)  # noqa: N815
     canRedo = Property(bool, _get_can_redo, notify=undoStateChanged)  # noqa: N815
@@ -777,6 +846,15 @@ class DiagramController(QObject):
     @property
     def diagram(self) -> Diagram:
         return self._diagram
+
+    def _parameters(self, name: str) -> dict[str, tuple[str, str]]:
+        """(unit, label) of each parameter of physical component ``name``; {} otherwise."""
+        if self._registry.get(name) is not None:
+            return {}
+        physical = self._physical.spec(name)
+        if physical is None:
+            return {}
+        return {p.name: (p.unit, p.label) for p in physical.parameters}
 
     def _spec(self, name: str) -> BlockSpec | None:
         """The spec of block type ``name``: a signal block first, else a physical one."""
@@ -1023,8 +1101,9 @@ class DiagramController(QObject):
         if name not in spec.settings:
             self._set_hint(f"{spec.name} has no setting {name!r}")
             return False
+        parse = parse_physical_setting if spec.is_physical else parse_setting
         try:
-            value = parse_setting(text, spec.settings[name])
+            value = parse(text, spec.settings[name])
         except ValueError as err:
             self._set_hint(f"{name}: {err}")
             return False
@@ -1648,7 +1727,10 @@ class DiagramController(QObject):
         library = [
             spec_to_dict(s, self._registry.is_builtin(s.name)) for s in self._registry.specs()
         ]
-        library += [spec_to_dict(p.block, True) for p in self._physical.specs()]
+        for p in self._physical.specs():
+            cls = self._physical.get(p.name)
+            group = physical_group(cls.__module__ if cls is not None else "")
+            library.append(spec_to_dict(p.block, True, group))
         if library != self._library:
             self._library = library
             self.libraryChanged.emit()

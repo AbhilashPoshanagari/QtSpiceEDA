@@ -6,12 +6,29 @@ import QtSpice
 // Block library (F5): the built-in blocks and the user's @block functions, each drawn
 // in its shape and colour with input ports on the left and outputs on the right.
 // Hover a block for its docstring and settings; click a user block to edit its code.
+//
+// Groups (U2): My blocks, Signal, then Physical > Electrical, Rotational,
+// Translational, Thermal, Sensors and sources (DiagramController.libraryGroups).
+// Physical tiles show their round conserving ports in the domain colour; the physical
+// groups start folded and open with a click on their header.
 Item {
     id: root
     objectName: "blockLibrary"
 
-    readonly property var builtinBlocks: DiagramController.library.filter(b => b.builtin)
-    readonly property var userBlocks: DiagramController.library.filter(b => !b.builtin)
+    readonly property var builtinBlocks: DiagramController.library.filter(b => b.group === "Signal")
+    readonly property var userBlocks: DiagramController.library.filter(b => b.group === "User")
+    readonly property var physicalGroups: DiagramController.libraryGroups.filter(
+        g => g.startsWith("Physical/"))
+    property var openGroups: ({})
+
+    function blocksOf(group) {
+        return DiagramController.library.filter(b => b.group === group)
+    }
+    function setGroupOpen(group, open) {
+        const groups = Object.assign({}, openGroups)
+        groups[group] = open
+        openGroups = groups
+    }
 
     signal editBlock(string name)
 
@@ -25,9 +42,15 @@ Item {
         readonly property var inputNames: modelData.inputs
         readonly property var outputNames: modelData.outputs
         readonly property bool builtin: modelData.builtin
+        // Conserving ports: the first half (rounded up) on the left, below the inputs.
+        readonly property var conserving: modelData.conserving
+        readonly property var leftConserving: conserving.slice(0, Math.ceil(conserving.length / 2))
+        readonly property var rightConserving: conserving.slice(Math.ceil(conserving.length / 2))
+        readonly property int leftCount: inputNames.length + leftConserving.length
+        readonly property int rightCount: outputNames.length + rightConserving.length
 
         readonly property int portPitch: 16
-        readonly property int ports: Math.max(1, inputNames.length, outputNames.length)
+        readonly property int ports: Math.max(1, leftCount, rightCount)
         readonly property real bodyHeight: Math.max(44, ports * portPitch + 12)
         readonly property real bodyWidth: shape === "rectangle" ? bodyHeight * 1.6 : bodyHeight
         readonly property real labelWidth: 44
@@ -62,7 +85,7 @@ Item {
                 delegate: Item {
                     required property int index
                     required property string modelData
-                    readonly property real py: tile.portY(index, tile.inputNames.length)
+                    readonly property real py: tile.portY(index, tile.leftCount)
                     Rectangle {
                         objectName: "inputPort"
                         property string portName: parent.modelData
@@ -89,7 +112,7 @@ Item {
                 delegate: Item {
                     required property int index
                     required property string modelData
-                    readonly property real py: tile.portY(index, tile.outputNames.length)
+                    readonly property real py: tile.portY(index, tile.rightCount)
                     Rectangle {
                         objectName: "outputPort"
                         property string portName: parent.modelData
@@ -107,6 +130,28 @@ Item {
                         font.pointSize: 8
                     }
                 }
+            }
+        }
+
+        // Round conserving ports in their domain colour, left then right.
+        Repeater {
+            model: tile.conserving
+            delegate: Rectangle {
+                required property int index
+                required property var modelData
+                readonly property bool onLeft: index < tile.leftConserving.length
+                readonly property real py: onLeft
+                    ? tile.portY(tile.inputNames.length + index, tile.leftCount)
+                    : tile.portY(tile.outputNames.length + index - tile.leftConserving.length,
+                                 tile.rightCount)
+                objectName: "conservingPort"
+                property string portName: modelData.name
+                property string domain: modelData.domain
+                x: body.x + (onLeft ? 0 : tile.bodyWidth) - 5
+                y: body.y + py - 5
+                width: 10; height: 10; radius: 5
+                color: modelData.color
+                border.color: Qt.darker(modelData.color, 1.4)
             }
         }
 
@@ -226,7 +271,7 @@ Item {
             Label {
                 Layout.leftMargin: 6
                 Layout.topMargin: 6
-                text: qsTr("Built-in")
+                text: qsTr("Signal")
                 font.bold: true
             }
             Flow {
@@ -238,6 +283,44 @@ Item {
                 Repeater {
                     model: root.builtinBlocks
                     delegate: BlockTile {}
+                }
+            }
+
+            Label {
+                Layout.leftMargin: 6
+                Layout.topMargin: 6
+                visible: root.physicalGroups.length > 0
+                text: qsTr("Physical")
+                font.bold: true
+            }
+            Repeater {
+                model: root.physicalGroups
+                delegate: ColumnLayout {
+                    id: section
+                    required property string modelData
+                    readonly property string group: modelData
+                    readonly property bool open: root.openGroups[group] === true
+                    Layout.fillWidth: true
+                    spacing: 4
+                    ToolButton {
+                        objectName: "group_" + section.group
+                        Layout.leftMargin: 10
+                        text: (section.open ? "\u25BE " : "\u25B8 ") + section.group.slice(9)
+                        flat: true
+                        onClicked: root.setGroupOpen(section.group, !section.open)
+                    }
+                    Flow {
+                        objectName: "groupBlocks_" + section.group
+                        visible: section.open
+                        Layout.fillWidth: true
+                        Layout.leftMargin: 16
+                        Layout.bottomMargin: 6
+                        spacing: 8
+                        Repeater {
+                            model: section.open ? root.blocksOf(section.group) : []
+                            delegate: BlockTile {}
+                        }
+                    }
                 }
             }
         }

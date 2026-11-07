@@ -5,7 +5,8 @@ import QtSpice
 
 // Settings of the one selected block. A field is applied when editing finishes
 // (Enter or leaving the field); text that does not fit the setting's type is refused
-// and the reason is shown below. Every change can be undone.
+// and the reason is shown below. Every change can be undone. A physical block's
+// settings show their SI unit, e.g. "J [kg*m^2]", and accept SPICE numbers (10m, 2.2u).
 Pane {
     id: root
     objectName: "propertiesPanel"
@@ -54,9 +55,14 @@ Pane {
                     Layout.columnSpan: 2
                     Layout.fillWidth: true
                     Label {
-                        text: row.modelData.name
-                        Layout.preferredWidth: 80
+                        objectName: "caption_" + row.modelData.name
+                        text: row.modelData.caption !== undefined ? row.modelData.caption
+                                                                   : row.modelData.name
+                        Layout.preferredWidth: 110
                         elide: Text.ElideRight
+                        ToolTip.visible: captionHover.hovered && row.modelData.label !== ""
+                        ToolTip.text: row.modelData.label !== undefined ? row.modelData.label : ""
+                        HoverHandler { id: captionHover }
                     }
                     TextField {
                         objectName: "setting_" + row.modelData.name
