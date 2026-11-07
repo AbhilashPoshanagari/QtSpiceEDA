@@ -10,8 +10,16 @@ the time settings. Functions are never pickled. The child process:
 3. rebuilds the diagram, compiles it and runs it;
 4. sends back ``SimulationResult`` or the error message and traceback.
 
+Combined runs (C4). The child also imports the physical component modules named in
+``physical_modules`` (default: the built-in library, ``core.physical.library``). If
+the compiled diagram has physical networks, the child runs it with the CoSimulator,
+which loads its own sync-mode NgspiceAdapter in this child process: ngspice and the
+user's block code never run in the UI process. The diagram's time step is the
+controller tick Ts. The result is the merged SimulationResult (C5).
+
 ``wait()`` returns a RunOutcome. The timeout covers the whole run, including starting
-the process. ``cancel()`` may be called from any thread and stops the process at once.
+the process. ``cancel()`` may be called from any thread and stops the process at once
+(for a combined run that ends ngspice too: it lives in the child).
 """
 
 from __future__ import annotations
@@ -29,6 +37,9 @@ from core.blocks.decorator import block, spec_of
 from core.blocks.diagram import Diagram
 from core.blocks.engine import ExecutionEngine
 from core.blocks.library import builtin_blocks
+from core.blocks.spec import BlockSpec
+from core.physical.cosim import CoSimulator
+from core.physical.library import physical_registry
 from core.sim.result import SimulationResult
 
 DEFAULT_TIMEOUT = 10.0
@@ -65,8 +76,10 @@ class BlockRunner:
         t_end: float,
         dt: float,
         timeout: float = DEFAULT_TIMEOUT,
+        physical_modules: list[str] | None = None,
     ) -> None:
-        self._args = (diagram, dict(sources), float(t_end), float(dt))
+        modules = None if physical_modules is None else list(physical_modules)
+        self._args = (diagram, dict(sources), float(t_end), float(dt), modules)
         self.timeout = float(timeout)
         self._lock = threading.Lock()
         self._cancelled = threading.Event()
@@ -181,21 +194,42 @@ def load_blocks(sources: dict[str, str]) -> dict[str, object]:
 
 
 def run_diagram(
-    diagram: dict[str, Any], sources: dict[str, str], t_end: float, dt: float
+    diagram: dict[str, Any],
+    sources: dict[str, str],
+    t_end: float,
+    dt: float,
+    physical_modules: list[str] | None = None,
 ) -> SimulationResult:
-    """Load the blocks, then compile and run the diagram (in the current process)."""
+    """Load the blocks, then compile and run the diagram (in the current process).
+
+    A diagram with physical networks is a combined run: ngspice (sync mode) is set
+    up in this process, so call it only in the runner process or a fresh one.
+    """
     blocks = load_blocks(sources)
-    specs = {name: spec_of(obj) for name, obj in blocks.items()}
-    engine = ExecutionEngine(blocks)
-    engine.compile(Diagram.from_dict(diagram, specs.get))
+    physical = physical_registry(physical_modules)
+    specs: dict[str, BlockSpec | None] = {name: spec_of(obj) for name, obj in blocks.items()}
+
+    def lookup(name: str) -> BlockSpec | None:
+        spec = physical.spec(name)
+        return spec.block if spec is not None else specs.get(name)
+
+    engine = ExecutionEngine(blocks, physical)
+    engine.compile(Diagram.from_dict(diagram, lookup))
+    if engine.networks:
+        return CoSimulator(engine, physical).run(t_end, dt).result
     return engine.run(t_end, dt)
 
 
 def _child_main(
-    conn: Connection, diagram: dict[str, Any], sources: dict[str, str], t_end: float, dt: float
+    conn: Connection,
+    diagram: dict[str, Any],
+    sources: dict[str, str],
+    t_end: float,
+    dt: float,
+    physical_modules: list[str] | None,
 ) -> None:
     try:
-        result = run_diagram(diagram, sources, t_end, dt)
+        result = run_diagram(diagram, sources, t_end, dt, physical_modules)
         conn.send((OK, result))
     except BaseException as err:  # everything goes back to the parent
         message = "".join(traceback.format_exception_only(err)).strip()
