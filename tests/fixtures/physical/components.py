@@ -8,6 +8,10 @@ Domain registry (rule 12).
 
 from __future__ import annotations
 
+import math
+
+import numpy as np
+
 from core.blocks.diagram import Diagram
 from core.blocks.library import builtin_specs
 from core.blocks.spec import BlockSpec
@@ -207,6 +211,42 @@ class RotDamper(PhysicalComponent):
         return [Resistor("R", ports.A, ports.B, ROT.resistance_from(params["b"]))]
 
 
+# ---- rotational, for the combined-run tests (C1-C5)
+
+
+@physical_component
+class Inertia(PhysicalComponent):
+    """Inertia J at port A; ``w0`` is its start speed."""
+
+    ports = (Port("A", ROTATIONAL),)
+    parameters = (Parameter("J", 0.01, "kg*m^2"), Parameter("w0", 0.0, "rad/s"))
+
+    def network(self, ports, params):
+        return [
+            Capacitor("C", ports.A, ports.ground, ROT.capacitance_from(params["J"]), params["w0"])
+        ]
+
+
+@physical_component
+class TorqueInput(PhysicalComponent):
+    """Torque into port A (out of port B) taken from signal input ``tau``."""
+
+    ports = (Port("A", ROTATIONAL), Port("B", ROTATIONAL), SignalInput("tau", "N*m"))
+
+    def network(self, ports, params):
+        return [ExternalSource("I", ports.B, ports.A, "i", "tau", 0.0)]
+
+
+@physical_component
+class SpeedSensor(PhysicalComponent):
+    """Speed of port A relative to the reference, as signal output ``w``."""
+
+    ports = (Port("A", ROTATIONAL), SignalOutput("w", "rad/s"))
+
+    def network(self, ports, params):
+        return [Sensor("S", "w", "V(A)")]
+
+
 @physical_component
 class Machine(PhysicalComponent):
     """Toy DC machine: E = k*w, tau = k*i, coupled only through controlled sources."""
@@ -274,3 +314,60 @@ def new_diagram(reg: PhysicalRegistry | None = None) -> tuple[Diagram, PhysicalR
 
 def wire(d: Diagram, a: str, b: str) -> None:
     d.add_physical_wire(*a.split("."), *b.split("."))
+
+
+def speed_loop(
+    J: float = 0.01,  # noqa: N803
+    b: float = 0.001,
+    kp: float = 1.0,
+    w_set: float = 100.0,
+    reg: PhysicalRegistry | None = None,
+) -> tuple[Diagram, PhysicalRegistry]:
+    """Inertia + damper driven by a controlled torque, with a P speed controller of
+    v0.1 blocks: tau = kp * (w_set - w). Scopes ``w`` and ``tau``."""
+    d, reg = new_diagram(reg)
+    d.add_block("Solver", block_id="solver")
+    d.add_block("RotRef", block_id="ref")
+    d.add_block("Inertia", settings={"J": J}, block_id="inertia")
+    d.add_block("RotDamper", settings={"b": b}, block_id="damper")
+    d.add_block("TorqueInput", block_id="motor")
+    d.add_block("SpeedSensor", block_id="sensor")
+    wire(d, "solver.port", "ref.W")
+    wire(d, "inertia.A", "damper.A")
+    wire(d, "damper.B", "ref.W")
+    wire(d, "motor.A", "inertia.A")
+    wire(d, "motor.B", "ref.W")
+    wire(d, "sensor.A", "inertia.A")
+    d.add_block("Constant", settings={"value": w_set}, block_id="setpoint")
+    d.add_block("Sum", settings={"signs": "+-"}, block_id="error")
+    d.add_block("Gain", settings={"k": kp}, block_id="kp")
+    d.add_block("Scope", settings={"label": "w"}, block_id="scope_w")
+    d.add_block("Scope", settings={"label": "tau"}, block_id="scope_tau")
+    d.add_wire("setpoint", "y", "error", "a")
+    d.add_wire("sensor", "w", "error", "b")
+    d.add_wire("error", "y", "kp", "u")
+    d.add_wire("kp", "y", "motor", "tau")
+    d.add_wire("sensor", "w", "scope_w", "u")
+    d.add_wire("kp", "y", "scope_tau", "u")
+    return d, reg
+
+
+def speed_loop_reference(
+    J: float,
+    b: float,
+    kp: float,
+    w_set: float,
+    ts: float,
+    ticks: int,  # noqa: N803
+) -> tuple[np.ndarray, np.ndarray]:
+    """Exact answer of ``speed_loop`` with a zero-order hold, at the ticks:
+    between ticks tau is constant, so w(t) relaxes to tau/b with time constant J/b.
+    Returns (w at each tick, tau set at each tick)."""
+    a = math.exp(-b * ts / J)
+    w = np.zeros(ticks)
+    tau = np.zeros(ticks)
+    for k in range(ticks):
+        tau[k] = kp * (w_set - w[k])
+        if k + 1 < ticks:
+            w[k + 1] = a * w[k] + (1 - a) * tau[k] / b
+    return w, tau
