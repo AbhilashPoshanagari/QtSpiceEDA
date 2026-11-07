@@ -335,7 +335,6 @@ def test_click_selects_a_physical_wire(scene: Scene, qtbot) -> None:
     mid = canvas_point(scene.canvas, pts[2]["x"], (pts[2]["y"] + pts[3]["y"]) / 2)
     click(scene.window, mid)
     qtbot.waitUntil(lambda: scene.ctl.physicalWires.rows()[0]["selected"], timeout=2000)
-    qtbot.waitUntil(lambda: scene.ctl.physicalWires.rows()[0]["selected"], timeout=2000)
 
 
 def test_controller_is_freed_without_the_garbage_collector(qapp: object) -> None:
