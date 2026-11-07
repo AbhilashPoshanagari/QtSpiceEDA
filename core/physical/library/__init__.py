@@ -8,7 +8,8 @@ the built-in library; the block runner imports them by name in its child process
 from __future__ import annotations
 
 import importlib
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 from core.physical.registry import PhysicalRegistry
 
@@ -29,13 +30,23 @@ BUILTIN_MODULES: tuple[str, ...] = (
 """The built-in library, in the order its groups are shown."""
 
 
-def physical_registry(modules: Iterable[str] | None = None) -> PhysicalRegistry:
-    """A registry of the components of ``modules`` (default: the built-in library).
+def physical_registry(
+    modules: Iterable[str] | None = None, circuits: Iterable[Mapping[str, Any]] = ()
+) -> PhysicalRegistry:
+    """A registry of the components of ``modules`` (default: the built-in library)
+    plus the Circuit blocks (M2) of ``circuits`` (``CircuitDefinition.to_dict()``).
 
     Raises ImportError for a module that cannot be imported and ValueError for two
-    components with the same name.
+    components with the same name or a circuit block that cannot be rebuilt.
     """
+    from core.physical.circuit_block import load_definition
+
     registry = PhysicalRegistry()
     for name in BUILTIN_MODULES if modules is None else modules:
         registry.add_module(importlib.import_module(name))
+    for data in circuits:
+        block = load_definition(data)
+        if not block.ok or block.component is None:
+            raise ValueError("; ".join(d.message for d in block.diagnostics))
+        registry.add(block.component)
     return registry

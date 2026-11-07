@@ -20,6 +20,9 @@ For one ``PhysicalNetwork`` (from ``NetworkExtractor``):
   takes its value from the GetVSRCData / GetISRCData callbacks, C1). With
   ``external=False`` it is a plain ``dc <initial>`` source, so the deck runs in
   plain ngspice;
+- a ``SubcircuitInstance`` becomes ``X_<block>_<name> <nodes> <subckt>``; the
+  ``.subckt`` blocks and models of its text are added to the circuit once (the same
+  name with a different definition is an error);
 - a ``Sensor`` becomes ``B_<block>_<name> s_<block>_<signal> 0 V=<expr>``, saved as
   the vector ``<block>.<signal>``;
 - the Solver Configuration's ``reltol`` / ``abstol`` become an ``.options`` card
@@ -40,6 +43,7 @@ from dataclasses import dataclass, field
 
 from core.netlist.builder import build
 from core.netlist.model import ERROR, Analysis, Circuit, Element
+from core.netlist.parser import parse
 from core.physical.component import (
     CCCS,
     CCVS,
@@ -60,6 +64,7 @@ from core.physical.component import (
     Sensor,
     SignalOutput,
     Sine,
+    SubcircuitInstance,
     VoltageSource,
     build_network,
     rewrite_references,
@@ -80,6 +85,7 @@ _LETTERS: dict[type, str] = {
     CCVS: "H",
     Behavioural: "B",
     Sensor: "B",
+    SubcircuitInstance: "X",
 }
 
 
@@ -207,6 +213,56 @@ def element_name(prim: Primitive, block: str) -> str:
     return f"{_letter(prim)}_{block}_{prim.name}"
 
 
+def _subcircuit_element(
+    prim: SubcircuitInstance,
+    block: str,
+    nodes: dict[str, str],
+    names: dict[str, str],
+    out: MappedNetwork,
+) -> Element | None:
+    """The X element of ``prim``; its definitions go into ``out.circuit``."""
+
+    def fail(message: str) -> None:
+        out.diagnostics.append(NetworkDiagnostic(block, ERROR, message, prim.name))
+
+    parsed = parse(prim.text)
+    errors = [d for d in parsed.diagnostics if d.severity == ERROR]
+    if errors:
+        fail(f"subcircuit text, line {errors[0].line}: {errors[0].message}")
+        return None
+    subs = {s.name.casefold(): s for s in parsed.circuit.subcircuits}
+    sub = subs.get(prim.subckt.casefold())
+    if sub is None:
+        fail(f"the text has no .subckt {prim.subckt}")
+        return None
+    if len(sub.ports) != len(prim.nodes):
+        fail(f".subckt {prim.subckt} has {len(sub.ports)} ports, not {len(prim.nodes)}")
+        return None
+    circuit = out.circuit
+    have_subs = {s.name.casefold(): s for s in circuit.subcircuits}
+    have_models = {m.name.casefold(): m for m in circuit.models}
+    for new in parsed.circuit.subcircuits:
+        old = have_subs.get(new.name.casefold())
+        if old is not None and old != new:
+            fail(f"another block already defines a different .subckt {new.name}")
+            return None
+    for model in parsed.circuit.models:
+        old_model = have_models.get(model.name.casefold())
+        if old_model is not None and old_model != model:
+            fail(f"another block already defines a different .model {model.name}")
+            return None
+    for key, value in parsed.circuit.params.items():
+        if circuit.params.get(key, value) != value:
+            fail(f"another block already sets a different .param {key}")
+            return None
+    circuit.subcircuits += [
+        s for s in parsed.circuit.subcircuits if s.name.casefold() not in have_subs
+    ]
+    circuit.models += [m for m in parsed.circuit.models if m.name.casefold() not in have_models]
+    circuit.params.update(parsed.circuit.params)
+    return Element(names[prim.name], "X", [nodes[n] for n in prim.nodes], sub.name)
+
+
 class NetworkMapper:
     """Turns PhysicalNetworks into Circuits, using the components of ``registry``."""
 
@@ -315,6 +371,11 @@ class NetworkMapper:
             outputs = {p.name: p.unit for p in spec.ports if isinstance(p, SignalOutput)}
             domains = spec.node_domains()
             for prim in result.primitives:
+                if isinstance(prim, SubcircuitInstance):
+                    element = _subcircuit_element(prim, block.id, nodes, names, out)
+                    if element is not None:
+                        circuit.elements.append(element)
+                    continue
                 circuit.elements.append(
                     self._element(prim, block.id, nodes, names, external, out, outputs, domains)
                 )

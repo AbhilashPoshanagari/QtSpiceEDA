@@ -40,6 +40,9 @@ Primitive sign conventions are those of SPICE:
 - ``VoltageSource``: V(a) - V(b) = value;
 - ``CurrentSource``: ``value`` flows from ``a`` through the source to ``b``.
 
+A ``SubcircuitInstance`` (SPICE X element) places a ``.subckt`` between electrical
+nodes; the M2 Circuit block is built from one.
+
 Composite parts (M1) reuse other components with ``compose``: it builds the other
 component's primitives and renames them under a prefix, so a DC motor is made of the
 library's own resistor, inductor, inertia and damper. ``composed_internal`` gives the
@@ -66,7 +69,7 @@ from typing import Any, ClassVar
 
 from core.blocks.spec import CONSERVING, BlockSpec, PortSpec, is_plain_constant
 from core.netlist.model import ERROR, WARNING
-from core.physical.domains import ANY_DOMAIN, DOMAINS
+from core.physical.domains import ANY_DOMAIN, DOMAINS, ELECTRICAL
 
 GROUND = "0"
 """Name of the reference node, shared by all domains (every reference value is 0)."""
@@ -358,6 +361,21 @@ class Sensor:
     expression: str
 
 
+@dataclass(frozen=True)
+class SubcircuitInstance:
+    """An instance of a SPICE ``.subckt`` between electrical nodes (SPICE X element).
+
+    ``nodes`` follow the ``.subckt`` port order. ``text`` is a self-contained netlist
+    (title line first) holding the ``.subckt <subckt> ...`` definition and the models
+    and other ``.subckt`` blocks it uses; the mapper parses it and adds them to the deck.
+    """
+
+    name: str
+    nodes: tuple[str, ...]
+    subckt: str
+    text: str
+
+
 Primitive = (
     Resistor
     | Capacitor
@@ -371,6 +389,7 @@ Primitive = (
     | Behavioural
     | ExternalSource
     | Sensor
+    | SubcircuitInstance
 )
 PRIMITIVE_TYPES = (
     Resistor,
@@ -385,6 +404,7 @@ PRIMITIVE_TYPES = (
     Behavioural,
     ExternalSource,
     Sensor,
+    SubcircuitInstance,
 )
 
 
@@ -708,6 +728,9 @@ def check_network(
             sensed.add(prim.signal)
             _check_expression(prim, nodes, sources, err)
             continue
+        if isinstance(prim, SubcircuitInstance):
+            _check_subcircuit(prim, domain_of, err)
+            continue
         same_domain(prim.a, prim.b, n)
         if prim.a == prim.b:
             err(f"both terminals are {prim.a!r}", n, WARNING)
@@ -734,6 +757,24 @@ def check_network(
         if isinstance(prim, VoltageSource | CurrentSource) and prim.waveform is not None:
             _check_waveform(prim.waveform, n, err)
     return out
+
+
+def _check_subcircuit(
+    prim: SubcircuitInstance,
+    domain_of: Callable[[object, str], str | None],
+    err: Callable[..., None],
+) -> None:
+    if not isinstance(prim.nodes, tuple) or not prim.nodes:
+        err("nodes must be a non-empty tuple of node names", prim.name)
+        return
+    for node in prim.nodes:
+        domain = domain_of(node, prim.name)
+        if domain is not None and domain != ELECTRICAL:
+            err(f"a subcircuit connects only electrical nodes, not {node!r} ({domain})", prim.name)
+    if not isinstance(prim.subckt, str) or not prim.subckt.strip():
+        err("subckt must name a .subckt", prim.name)
+    if not isinstance(prim.text, str) or ".subckt" not in prim.text.lower():
+        err("text must hold the .subckt definition", prim.name)
 
 
 def _check_waveform(wave: object, prim: str, err: Callable[..., None]) -> None:
@@ -862,5 +903,7 @@ def compose(
             changes["expression"] = rewrite_references(prim.expression, node_map, names)
         if isinstance(prim, ExternalSource | Sensor):
             changes["signal"] = sig[prim.signal]
+        if isinstance(prim, SubcircuitInstance):
+            changes["nodes"] = tuple(node_map[n] for n in prim.nodes)
         out.append(dataclasses.replace(prim, **changes))  # type: ignore[arg-type]
     return out

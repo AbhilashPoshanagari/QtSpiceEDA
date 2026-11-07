@@ -16,6 +16,8 @@ the compiled diagram has physical networks, the child runs it with the CoSimulat
 which loads its own sync-mode NgspiceAdapter in this child process: ngspice and the
 user's block code never run in the UI process. The diagram's time step is the
 controller tick Ts. The result is the merged SimulationResult (C5).
+Circuit blocks (M2) arrive as ``circuits``, plain ``CircuitDefinition.to_dict()``
+data, and the child rebuilds their component classes.
 
 Console lines (U3). ``RunOutcome.console`` holds what the run printed for the user:
 for a combined run, ngspice's console output and the CoSimulator's warnings (ticks
@@ -83,9 +85,11 @@ class BlockRunner:
         dt: float,
         timeout: float = DEFAULT_TIMEOUT,
         physical_modules: list[str] | None = None,
+        circuits: list[dict[str, Any]] | None = None,
     ) -> None:
         modules = None if physical_modules is None else list(physical_modules)
-        self._args = (diagram, dict(sources), float(t_end), float(dt), modules)
+        circuit_data = [dict(c) for c in circuits or []]
+        self._args = (diagram, dict(sources), float(t_end), float(dt), modules, circuit_data)
         self.timeout = float(timeout)
         self._lock = threading.Lock()
         self._cancelled = threading.Event()
@@ -206,6 +210,7 @@ def run_diagram(
     dt: float,
     physical_modules: list[str] | None = None,
     console: list[str] | None = None,
+    circuits: list[dict[str, Any]] | None = None,
 ) -> SimulationResult:
     """Load the blocks, then compile and run the diagram (in the current process).
 
@@ -215,7 +220,7 @@ def run_diagram(
     when the run fails).
     """
     blocks = load_blocks(sources)
-    physical = physical_registry(physical_modules)
+    physical = physical_registry(physical_modules, circuits or [])
     specs: dict[str, BlockSpec | None] = {name: spec_of(obj) for name, obj in blocks.items()}
 
     def lookup(name: str) -> BlockSpec | None:
@@ -244,10 +249,11 @@ def _child_main(
     t_end: float,
     dt: float,
     physical_modules: list[str] | None,
+    circuits: list[dict[str, Any]],
 ) -> None:
     console: list[str] = []
     try:
-        result = run_diagram(diagram, sources, t_end, dt, physical_modules, console)
+        result = run_diagram(diagram, sources, t_end, dt, physical_modules, console, circuits)
         conn.send((OK, result, console))
     except BaseException as err:  # everything goes back to the parent
         message = "".join(traceback.format_exception_only(err)).strip()
