@@ -8,7 +8,7 @@ import QtSpice
 // Hover a block for its docstring and settings; click a user block to edit its code.
 //
 // Groups (U2): My blocks, Signal, then Physical > Electrical, Rotational,
-// Translational, Thermal, Sensors and sources (DiagramController.libraryGroups).
+// Translational, Thermal, Sensors and sources, Composite (DiagramController.libraryGroups).
 // Physical tiles show their round conserving ports in the domain colour; the physical
 // groups start folded and open with a click on their header.
 Item {

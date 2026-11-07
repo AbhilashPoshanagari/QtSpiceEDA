@@ -40,6 +40,11 @@ Primitive sign conventions are those of SPICE:
 - ``VoltageSource``: V(a) - V(b) = value;
 - ``CurrentSource``: ``value`` flows from ``a`` through the source to ``b``.
 
+Composite parts (M1) reuse other components with ``compose``: it builds the other
+component's primitives and renames them under a prefix, so a DC motor is made of the
+library's own resistor, inductor, inertia and damper. ``composed_internal`` gives the
+internal nodes such a part must declare.
+
 Either source may carry a ``Sine`` or ``Pulse`` waveform instead of a constant
 (LTspice argument order); the mapper writes it as ngspice ``sin(...)`` / ``pulse(...)``,
 so ngspice sets breakpoints at the pulse edges itself.
@@ -51,6 +56,7 @@ decorator raises ``PhysicalComponentError`` for a broken declaration, like ``@bl
 
 from __future__ import annotations
 
+import dataclasses
 import inspect
 import math
 import re
@@ -770,3 +776,91 @@ def _check_expression(
                     err(f"unknown node {node!r} in expression", prim.name)
         elif len(args) != 1 or args[0] not in sources:
             err(f"I() must name a VoltageSource of this component: {match.group(0)!r}", prim.name)
+
+
+# ---- composing components (M1)
+
+
+def rewrite_references(expression: str, nodes: Mapping[str, str], names: Mapping[str, str]) -> str:
+    """``expression`` with ``V(node)`` nodes renamed by ``nodes`` and ``I(source)``
+    sources by ``names``; names not in the maps are kept."""
+
+    def sub(match: re.Match[str]) -> str:
+        args = [a.strip() for a in match.group(2).split(",")]
+        if match.group(1).upper() == "V":
+            return "V(" + ",".join(nodes.get(a, a) for a in args) + ")"
+        return "I(" + names.get(args[0], args[0]) + ")"
+
+    return REFERENCE_RE.sub(sub, expression)
+
+
+def _spec_or_raise(cls: type) -> PhysicalSpec:
+    spec = physical_spec_of(cls)
+    if spec is None:
+        raise PhysicalComponentError(f"{cls!r} is not a @physical_component class")
+    return spec
+
+
+def composed_internal(cls: type, prefix: str) -> dict[str, str]:
+    """Internal nodes (name -> domain) that ``compose(cls, prefix, ...)`` uses: the
+    caller declares them in its own ``internal``."""
+    spec = _spec_or_raise(cls)
+    return {f"{prefix}_{node}": domain for node, domain in spec.internal.items()}
+
+
+_NODE_FIELDS = ("a", "b", "ctrl_a", "ctrl_b")
+
+
+def compose(
+    cls: type,
+    prefix: str,
+    nodes: Mapping[str, str],
+    params: Mapping[str, object] | None = None,
+    signals: Mapping[str, str] | None = None,
+) -> list[Primitive]:
+    """The primitives of component ``cls`` for use inside another ``network``.
+
+    ``nodes`` maps every conserving port of ``cls`` to a node of the caller (a port,
+    an internal node or ``GROUND``); internal nodes of ``cls`` become
+    ``<prefix>_<node>`` (declare them with ``composed_internal``). Primitive names
+    become ``<prefix>_<name>``, and ``V()``/``I()`` references and controls follow.
+    ``signals`` renames the signal inputs and outputs of ``cls`` (default: same name).
+
+    Raises ValueError when ``cls`` cannot be built; inside ``network`` that becomes a
+    diagnostic of the calling block (``build_network`` catches it).
+    """
+    spec = _spec_or_raise(cls)
+    result = build_network(cls, params, prefix)
+    if not result.ok:
+        errors = [d.message for d in result.diagnostics if d.severity == ERROR]
+        raise ValueError(f"{prefix} ({spec.name}): " + "; ".join(errors))
+    conserving = [p.name for p in spec.ports if isinstance(p, Port)]
+    missing = [p for p in conserving if p not in nodes]
+    extra = [p for p in nodes if p not in conserving]
+    if missing or extra:
+        raise ValueError(
+            f"{prefix} ({spec.name}): ports to connect are {', '.join(conserving)}"
+            + (f"; missing {', '.join(missing)}" if missing else "")
+            + (f"; unknown {', '.join(extra)}" if extra else "")
+        )
+    node_map: dict[str, str] = {GROUND: GROUND}
+    node_map.update({n: f"{prefix}_{n}" for n in spec.internal})
+    node_map.update(nodes)
+    sig = {s: s for s in spec.signal_inputs() + spec.signal_outputs()}
+    sig.update(signals or {})
+    names = {p.name: f"{prefix}_{p.name}" for p in result.primitives}
+
+    out: list[Primitive] = []
+    for prim in result.primitives:
+        changes: dict[str, object] = {"name": names[prim.name]}
+        for name in _NODE_FIELDS:
+            if hasattr(prim, name):
+                changes[name] = node_map[getattr(prim, name)]
+        if isinstance(prim, CCCS | CCVS):
+            changes["control"] = names[prim.control]
+        if isinstance(prim, Behavioural | Sensor):
+            changes["expression"] = rewrite_references(prim.expression, node_map, names)
+        if isinstance(prim, ExternalSource | Sensor):
+            changes["signal"] = sig[prim.signal]
+        out.append(dataclasses.replace(prim, **changes))  # type: ignore[arg-type]
+    return out
