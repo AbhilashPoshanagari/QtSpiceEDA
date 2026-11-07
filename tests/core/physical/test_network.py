@@ -258,3 +258,49 @@ def test_settings_are_snapshotted_with_defaults() -> None:
     net = NetworkExtractor(reg).extract(d).networks[0]
     assert net.block("Mass").settings == {"m": 2.5, "v0": 0.0}
     assert net.block("Mass").spec_name == "Mass"
+
+
+def test_every_part_of_a_domain_needs_a_reference() -> None:
+    """Two shafts joined only through the electrical side of two machines."""
+    d, reg = new_diagram()
+    for block_id, spec in [
+        ("M1", "Machine"),
+        ("D1", "RotDamper"),
+        ("Gnd", "ElecRef"),
+        ("W1", "RotRef"),
+        ("M2", "Machine"),
+        ("D2", "RotDamper"),
+        ("S", "Solver"),
+    ]:
+        d.add_block(spec, block_id=block_id)
+    wire(d, "M1.p", "M2.p")
+    wire(d, "M1.n", "Gnd.G")
+    wire(d, "M2.n", "Gnd.G")
+    wire(d, "M1.shaft", "D1.A")
+    wire(d, "D1.B", "W1.W")
+    wire(d, "M2.shaft", "D2.A")
+    wire(d, "D2.B", "D2.A")  # second shaft has no reference
+    wire(d, "S.port", "M1.p")
+    result = NetworkExtractor(reg).extract(d)
+    assert len(result.networks) == 1
+    assert messages(result) == [
+        (
+            "M2",
+            "this rotational part (M2, D2) is not connected to a rotational reference: "
+            "add a mechanical rotational reference block to it",
+        )
+    ]
+    d.add_block("RotRef", block_id="W2")
+    wire(d, "D2.B", "W2.W")
+    assert NetworkExtractor(reg).extract(d).diagnostics == []
+
+
+def test_a_gearbox_like_block_keeps_its_domain_in_one_part() -> None:
+    """A block with two ports of one domain joins them: one reference is enough."""
+    d, reg = new_diagram()
+    msd(d)
+    d.add_block("Damper", block_id="Link")
+    d.add_block("Mass", block_id="Far")
+    wire(d, "Link.A", "Mass.A")
+    wire(d, "Link.B", "Far.A")
+    assert NetworkExtractor(reg).extract(d).diagnostics == []

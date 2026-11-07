@@ -12,6 +12,10 @@ about; nothing raises, rule 6):
   network's first block, a second one is an error on that extra block;
 - a reference block (role "reference") for every domain the network uses: a
   missing one is an error on the first block with a port in that domain;
+- a reference for every *part* of a domain: nodes of one domain that are joined
+  only through a component's ports of another domain (two shafts linked by the
+  electrical side of two motors) are separate parts, and ngspice would see the one
+  without a reference as floating. The error is on the part's first block;
 - a conserving port with no wire is a warning on its block;
 - a Solver Configuration port that joins two domains, or no network at all, is an
   error on the Solver Configuration.
@@ -265,3 +269,41 @@ class NetworkExtractor:
                 f"no {domain} reference in this network: add a {label} reference block "
                 f"connected to the {domain} ports",
             )
+
+        # Each part of a domain needs its own reference: parts joined only through a
+        # component's ports of another domain (two shafts linked by the electrical
+        # side of two motors) share no node, so ngspice would see a floating node.
+        for island in self._islands(net):
+            domain = island[0].domain
+            if domain not in referenced or any(net.is_reference_node(n) for n in island):
+                continue
+            in_island = {block_id for node in island for block_id, _port in node.ports}
+            blocks = [b.id for b in net.blocks if b.id in in_island and b.role != SOLVER]
+            label = DOMAINS[domain].label.lower()
+            report(
+                blocks[0],
+                f"this {domain} part ({', '.join(blocks)}) is not connected to a {domain} "
+                f"reference: add a {label} reference block to it",
+            )
+
+    @staticmethod
+    def _islands(net: PhysicalNetwork) -> list[list[PhysicalNode]]:
+        """Nodes of one domain joined by wires or by a block with ports on both.
+
+        In network order; every island has a single domain.
+        """
+        uf = UnionFind()
+        for i, node in enumerate(net.nodes):
+            uf.add(i, node.domain or None)
+        by_block: dict[tuple[str, str], int] = {}
+        for i, node in enumerate(net.nodes):
+            if not node.domain:
+                continue
+            for block_id, _port in node.ports:
+                first = by_block.setdefault((block_id, node.domain), i)
+                uf.union(first, i)
+        groups: dict[object, list[PhysicalNode]] = {}
+        for i, node in enumerate(net.nodes):
+            if node.domain:
+                groups.setdefault(uf.find(i), []).append(node)
+        return list(groups.values())
