@@ -88,6 +88,9 @@ class ExternalInput:
     kind: str
     """"v" or "i"."""
     initial: float
+    domain: str = ""
+    """Domain of the source's nodes: the CoSimulator converts the signal value to a
+    voltage or current with this domain (rule 12)."""
 
 
 @dataclass
@@ -116,6 +119,14 @@ def _letter(prim: Primitive) -> str:
     if isinstance(prim, ExternalSource):
         return "V" if prim.kind == "v" else "I"
     return _LETTERS[type(prim)]
+
+
+def source_value(domain: str, kind: str, value: float) -> float:
+    """A signal value (across or through, SI) as the voltage or current of a source."""
+    dom = DOMAINS.get(domain)
+    if dom is None:
+        return float(value)
+    return dom.to_voltage(value) if kind == "v" else dom.to_current(value)
 
 
 def element_name(prim: Primitive, block: str) -> str:
@@ -148,11 +159,41 @@ class NetworkMapper:
         title: str = "",
     ) -> MappedNetwork:
         """Map ``network``; ``analysis`` (e.g. ``".tran 1m 1 uic"``) goes into the deck."""
-        circuit = Circuit(
-            title=title or "QtSpice physical network: " + ", ".join(network.block_ids)
-        )
+        return self.map_all([network], analysis, external=external, title=title)
+
+    def map_all(
+        self,
+        networks: list[PhysicalNetwork],
+        analysis: Analysis | str | None = None,
+        *,
+        external: bool = True,
+        title: str = "",
+    ) -> MappedNetwork:
+        """Map several networks into ONE circuit (ngspice holds one per process).
+
+        Node and element numbering is shared, so the networks never clash: the second
+        network's first rotational node is ``rotational_<n+1>``, not ``rotational_1``.
+        One network maps exactly as ``map`` does.
+        """
+        ids = [b for network in networks for b in network.block_ids]
+        circuit = Circuit(title=title or "QtSpice physical network: " + ", ".join(ids))
         out = MappedNetwork(circuit=circuit, deck="")
         counters: dict[str, int] = {}
+        used: dict[str, str] = {}  # casefolded element name -> block
+        for network in networks:
+            self._map_into(network, out, counters, used, external)
+        out.deck = build(circuit, analysis)
+        return out
+
+    def _map_into(
+        self,
+        network: PhysicalNetwork,
+        out: MappedNetwork,
+        counters: dict[str, int],
+        used: dict[str, str],
+        external: bool,
+    ) -> None:
+        circuit = out.circuit
 
         def new_node(domain: str) -> str:
             counters[domain] = counters.get(domain, 0) + 1
@@ -165,7 +206,6 @@ class NetworkMapper:
             for ref in node.ports:
                 out.node_names[ref] = name
 
-        used: dict[str, str] = {}  # casefolded element name -> block
         for block in network.blocks:
             cls = self._registry.get(block.spec_name)
             spec = self._registry.spec(block.spec_name)
@@ -205,9 +245,10 @@ class NetworkMapper:
                 continue
 
             outputs = {p.name: p.unit for p in spec.ports if isinstance(p, SignalOutput)}
+            domains = spec.node_domains()
             for prim in result.primitives:
                 circuit.elements.append(
-                    self._element(prim, block.id, nodes, names, external, out, outputs)
+                    self._element(prim, block.id, nodes, names, external, out, outputs, domains)
                 )
 
             if spec.role == SOLVER:
@@ -220,9 +261,6 @@ class NetworkMapper:
                     out.vectors[key] = f"V({node.lower()})"
                     out.units[key] = across.unit
 
-        out.deck = build(circuit, analysis)
-        return out
-
     @staticmethod
     def _element(
         prim: Primitive,
@@ -232,6 +270,7 @@ class NetworkMapper:
         external: bool,
         out: MappedNetwork,
         outputs: dict[str, str],
+        domains: dict[str, str],
     ) -> Element:
         name = names[prim.name]
         kind = name[0]
@@ -259,8 +298,11 @@ class NetworkMapper:
             expr = _rewrite(prim.expression, nodes, names)
             return Element(name, kind, ab, f"{prim.kind.upper()}={expr}")
         assert isinstance(prim, ExternalSource)
+        domain = domains.get(prim.a) or domains.get(prim.b, "")
         out.external_inputs.append(
-            ExternalInput(name, block, prim.signal, prim.kind, float(prim.initial))
+            ExternalInput(name, block, prim.signal, prim.kind, float(prim.initial), domain)
         )
-        value = f"dc {_num(prim.initial)}" + (" external" if external else "")
+        value = f"dc {_num(source_value(domain, prim.kind, prim.initial))}" + (
+            " external" if external else ""
+        )
         return Element(name, kind, ab, value)

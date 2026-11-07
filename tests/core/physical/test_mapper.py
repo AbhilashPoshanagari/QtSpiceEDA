@@ -311,3 +311,37 @@ def test_registry_has_the_fixtures() -> None:
     assert THERMAL in {
         p.domain for p in registry().spec("ThermalMass").ports if isinstance(p, Port)
     }
+
+
+def test_external_source_knows_its_domain() -> None:
+    d, reg = new_diagram()
+    for spec in ("Mass", "ForceInput", "TransRef", "Solver"):
+        d.add_block(spec)
+    wire(d, "Mass1.A", "ForceInput1.A")
+    wire(d, "ForceInput1.B", "TransRef1.V")
+    wire(d, "Solver1.port", "Mass1.A")
+    (ext,) = mapped(d, reg).external_inputs
+    assert ext.domain == "translational"
+
+
+def test_map_all_shares_node_and_element_numbering() -> None:
+    d, reg = new_diagram()
+    for i in (1, 2):
+        d.add_block("Solver", block_id=f"S{i}")
+        d.add_block("RotRef", block_id=f"R{i}")
+        d.add_block("Inertia", block_id=f"J{i}")
+        d.add_block("RotDamper", block_id=f"B{i}")
+        wire(d, f"S{i}.port", f"J{i}.A")
+        wire(d, f"J{i}.A", f"B{i}.A")
+        wire(d, f"B{i}.B", f"R{i}.W")
+    extracted = NetworkExtractor(reg).extract(d)
+    assert extracted.ok and len(extracted.networks) == 2
+    out = NetworkMapper(reg).map_all(extracted.networks, ".tran 1m 10m")
+    assert out.ok
+    assert out.vectors["J1.A.w"] == "V(rotational_1)"
+    assert out.vectors["J2.A.w"] == "V(rotational_2)"
+    names = [e.name for e in out.circuit.elements]
+    assert names == ["C_J1_C", "R_B1_R", "C_J2_C", "R_B2_R"]
+    # One network maps exactly as map() does.
+    one = NetworkMapper(reg).map(extracted.networks[0], ".tran 1m 10m")
+    assert one.vectors == {k: v for k, v in out.vectors.items() if k.startswith(("J1", "B1"))}
