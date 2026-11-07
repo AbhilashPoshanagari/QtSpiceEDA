@@ -3,9 +3,13 @@ from __future__ import annotations
 import pytest
 
 from core.blocks.spec import (
+    CONSERVING,
+    SIGNAL,
     BlockOptions,
+    BlockSpec,
     BlockSpecError,
     Param,
+    PortSpec,
     class_spec,
     function_spec,
     is_plain_constant,
@@ -114,3 +118,73 @@ def test_function_spec_from_params() -> None:
     assert spec.inputs == ["a"]
     assert spec.settings == {"k": 1}
     assert spec.shape == "rectangle"
+
+
+# ---- F2: port kinds
+
+
+def test_v01_blocks_have_only_signal_ports() -> None:
+    def f(u, gain=2.0):
+        return u * gain
+
+    spec = spec_from_callable(f, BlockOptions(outputs=["y"]))
+    assert spec.conserving == []
+    assert not spec.is_physical
+    assert spec.port("u") == PortSpec("u", SIGNAL)
+    assert spec.port("y") == PortSpec("y")
+    assert spec.port("gain") is None
+    assert spec.port("nope") is None
+
+
+def test_all_builtin_library_blocks_load_unchanged() -> None:
+    from core.blocks.library import builtin_specs
+
+    specs = builtin_specs()
+    assert specs
+    for spec in specs:
+        assert spec.conserving == []
+        assert all(spec.port(p) == PortSpec(p) for p in spec.inputs + spec.outputs)
+
+
+def test_conserving_port_needs_known_domain() -> None:
+    port = PortSpec("shaft", CONSERVING, "rotational")
+    assert port.is_conserving
+    with pytest.raises(BlockSpecError, match="needs a domain"):
+        PortSpec("shaft", CONSERVING)
+    with pytest.raises(BlockSpecError, match="needs a domain") as err:
+        PortSpec("pipe", CONSERVING, "hydraulic")
+    assert err.value.param == "pipe"
+
+
+def test_signal_port_cannot_have_domain_and_kind_is_checked() -> None:
+    with pytest.raises(BlockSpecError, match="cannot have a domain"):
+        PortSpec("u", SIGNAL, "electrical")
+    with pytest.raises(BlockSpecError, match="kind must be one of"):
+        PortSpec("u", "magnetic")
+    with pytest.raises(BlockSpecError, match="identifier"):
+        PortSpec("1x", CONSERVING, "thermal")
+
+
+def test_block_with_conserving_ports() -> None:
+    spec = BlockSpec(
+        name="motor",
+        inputs=["V"],
+        outputs=["w_meas"],
+        conserving=[
+            PortSpec("shaft", CONSERVING, "rotational"),
+            PortSpec("case", CONSERVING, "thermal"),
+        ],
+    )
+    assert spec.is_physical
+    assert spec.port("shaft") == PortSpec("shaft", CONSERVING, "rotational")
+    assert spec.port("V") == PortSpec("V")
+
+
+def test_conserving_port_names_must_be_unique() -> None:
+    a = PortSpec("p", CONSERVING, "electrical")
+    with pytest.raises(BlockSpecError, match="used twice"):
+        BlockSpec("r", [], [], conserving=[a, PortSpec("p", CONSERVING, "electrical")])
+    with pytest.raises(BlockSpecError, match="used twice"):
+        BlockSpec("r", ["p"], [], conserving=[a])
+    with pytest.raises(BlockSpecError, match="not a conserving port"):
+        BlockSpec("r", [], [], conserving=[PortSpec("u")])

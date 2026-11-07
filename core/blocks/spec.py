@@ -18,6 +18,11 @@ Two paths build the same spec: ``spec_from_callable`` inspects a live object (bu
 blocks, and later the block runner process), and ``core.blocks.registry`` reads source
 code with ``ast`` so user code is never executed in the UI process. Both go through
 ``function_spec`` / ``class_spec`` so they cannot drift apart.
+
+Port kinds (v0.3): every port made from a signature is a ``signal`` port, as in
+v0.1. Physical components (``core.physical.component``) add ``conserving`` ports,
+each with a domain from ``core.physical.domains``; they live in
+``BlockSpec.conserving`` so ``inputs`` / ``outputs`` keep their v0.1 meaning.
 """
 
 from __future__ import annotations
@@ -26,6 +31,12 @@ import inspect
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+
+from core.physical.domains import DOMAINS
+
+SIGNAL = "signal"
+CONSERVING = "conserving"
+PORT_KINDS = (SIGNAL, CONSERVING)
 
 SHAPES = ("square", "rectangle", "circle")
 DEFAULT_OUTPUTS = ("y",)
@@ -83,9 +94,51 @@ class BlockOptions:
     color: str | None = None
 
 
+@dataclass(frozen=True)
+class PortSpec:
+    """The kind of one port.
+
+    ``signal`` ports (the default) are the v0.1 directed ports: a value flows from an
+    output to an input. ``conserving`` ports belong to a physical domain and have no
+    direction: they carry an across and a through quantity and are joined by
+    physical wires. Raises BlockSpecError on an invalid definition.
+    """
+
+    name: str
+    kind: str = SIGNAL
+    domain: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.name, str) or not self.name.isidentifier():
+            raise BlockSpecError(f"port name {self.name!r} is not a valid identifier", None)
+        if self.kind not in PORT_KINDS:
+            raise BlockSpecError(
+                f"port {self.name!r}: kind must be one of "
+                f"{', '.join(repr(k) for k in PORT_KINDS)}, not {self.kind!r}",
+                self.name,
+            )
+        if self.kind == SIGNAL and self.domain is not None:
+            raise BlockSpecError(f"signal port {self.name!r} cannot have a domain", self.name)
+        if self.kind == CONSERVING and self.domain not in DOMAINS:
+            raise BlockSpecError(
+                f"conserving port {self.name!r} needs a domain "
+                f"({', '.join(DOMAINS.names())}), not {self.domain!r}",
+                self.name,
+            )
+
+    @property
+    def is_conserving(self) -> bool:
+        return self.kind == CONSERVING
+
+
 @dataclass
 class BlockSpec:
-    """Everything the UI and the engine need to know about a block."""
+    """Everything the UI and the engine need to know about a block.
+
+    ``inputs`` and ``outputs`` are the signal ports, by name, exactly as in v0.1.
+    ``conserving`` holds the physical ports (empty for every v0.1 block); their names
+    must differ from each other and from the signal port names.
+    """
 
     name: str
     inputs: list[str]
@@ -97,6 +150,34 @@ class BlockSpec:
     doc: str = ""
     time_args: list[str] = field(default_factory=list)
     """Which of ``t`` / ``dt`` the block's function (or ``step``) asks for."""
+    conserving: list[PortSpec] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if not self.conserving:
+            return
+        seen = set(self.inputs) | set(self.outputs)
+        for port in self.conserving:
+            if not isinstance(port, PortSpec) or not port.is_conserving:
+                raise BlockSpecError(f"block {self.name!r}: {port!r} is not a conserving port")
+            if port.name in seen:
+                raise BlockSpecError(
+                    f"block {self.name!r}: port name {port.name!r} is used twice", port.name
+                )
+            seen.add(port.name)
+
+    def port(self, name: str) -> PortSpec | None:
+        """The port called ``name``: a conserving port, or a signal input/output."""
+        for port in self.conserving:
+            if port.name == name:
+                return port
+        if name in self.inputs or name in self.outputs:
+            return PortSpec(name)
+        return None
+
+    @property
+    def is_physical(self) -> bool:
+        """True if the block has at least one conserving port."""
+        return bool(self.conserving)
 
 
 def check_options(
