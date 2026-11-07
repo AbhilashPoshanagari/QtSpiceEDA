@@ -12,7 +12,10 @@ from collections.abc import Iterable
 
 from core.physical.registry import PhysicalRegistry
 
-BUILTIN_MODULES: tuple[str, ...] = ("core.physical.library.electrical.components",)
+BUILTIN_MODULES: tuple[str, ...] = (
+    "core.physical.library.electrical.components",
+    "core.physical.library.rotational.components",
+)
 """The built-in library, in the order its groups are shown."""
 
 
