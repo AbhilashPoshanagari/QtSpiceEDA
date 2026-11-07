@@ -143,3 +143,29 @@ def test_the_deck_has_external_sources_and_sensors() -> None:
 def test_node_of() -> None:
     assert node_of("V(rotational_1)") == "rotational_1"
     assert node_of("time") == "time"
+
+
+def _held_force_with_nonzero_initial() -> float:
+    from tests.fixtures.physical.components import new_diagram, wire
+
+    d, reg = new_diagram()
+    d.add_block("Solver", block_id="solver")
+    d.add_block("TransRef", block_id="ref")
+    d.add_block("Damper", settings={"b": 4.0}, block_id="damper")
+    d.add_block("ForceInput", block_id="push")  # initial 0.5 N (the deck's dc value)
+    d.add_block("Constant", settings={"value": 2.0}, block_id="f")
+    wire(d, "solver.port", "ref.V")
+    wire(d, "push.A", "damper.A")
+    wire(d, "push.B", "ref.V")
+    wire(d, "damper.B", "ref.V")
+    d.add_wire("f", "y", "push", "F")
+    engine = ExecutionEngine(builtin_blocks(), reg)
+    engine.compile(d)
+    run = CoSimulator(engine, reg).run(0.01, 1e-3)
+    return float(run.physical.vectors[run.mapped.vectors["damper.A.v"]].real[-1])
+
+
+@pytest.mark.ngspice
+def test_external_source_with_a_nonzero_initial_carries_exactly_the_held_value() -> None:
+    # ngspice adds the `dc` value of an external source to the callback's value.
+    assert in_fresh_process(_held_force_with_nonzero_initial) == pytest.approx(2.0 / 4.0)

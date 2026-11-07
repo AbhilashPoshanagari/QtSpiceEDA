@@ -206,6 +206,7 @@ class CoSimulator:
             )
 
         held: dict[str, float] = {}
+        dc: dict[str, float] = {}
         holders: dict[str, _HeldNetwork] = {}
         for net in self.engine.networks:
             blocks = set(net.network.block_ids)
@@ -223,6 +224,7 @@ class CoSimulator:
                     element = ext.element.lower()
                     sources[f"{ext.block}.{ext.signal}"] = (element, ext.kind, ext.domain)
                     held[element] = source_value(ext.domain, ext.kind, ext.initial)
+                    dc[element] = held[element]
             holders[net.id] = _HeldNetwork(sensors, sources, held)
 
         steps = self.engine.begin(t_end, ts, holders)
@@ -252,7 +254,11 @@ class CoSimulator:
                 adapter.stop()
 
         def on_source(name: str, _t: float) -> float:
-            return held.get(name, 0.0)
+            # The deck declares `dc <initial> external` (the operating point uses the
+            # initial value), and in a transient ngspice ADDS that dc value to the one
+            # returned here (vsrcload.c / isrcload.c, SHARED_MODULE). Subtract it, so
+            # the source carries exactly the held value.
+            return held.get(name, 0.0) - dc.get(name, 0.0)
 
         adapter.handlers = SyncHandlers(data=on_point, source=on_source)
         if not adapter.available():
