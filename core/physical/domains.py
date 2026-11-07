@@ -33,6 +33,11 @@ ROTATIONAL = "rotational"
 TRANSLATIONAL = "translational"
 THERMAL = "thermal"
 
+ANY_DOMAIN = "any"
+"""Wildcard port domain, only for the Solver Configuration block: its port joins a
+network of any domain and takes the domain of the node it is wired to. It is not a
+domain: ``ANY_DOMAIN not in DOMAINS``."""
+
 
 @dataclass(frozen=True)
 class DisplayUnit:

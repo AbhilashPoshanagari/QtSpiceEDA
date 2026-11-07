@@ -8,14 +8,27 @@ Wiring rules (each broken rule raises DiagramError):
 
 - a wire goes from an output port to an input port;
 - an input port has at most one wire;
-- a wire cannot go from a port back to that same port.
+- a wire cannot go from a port back to that same port;
+- a signal wire never touches a conserving (physical) port.
+
+Physical wires (v0.3) join two conserving ports. They have no direction, so
+``PhysicalWire("A", "p", "B", "n")`` equals ``PhysicalWire("B", "n", "A", "p")``.
+Both ends must be conserving ports of the same domain (a Solver Configuration port,
+domain ``any``, joins any domain). A port may have many physical wires: the ports
+they join form one node. ``check_physical_wire`` gives the reason a wire is refused
+("" when it is allowed) without raising; ``add_physical_wire`` raises DiagramError
+with that reason.
 
 Instance settings hold only the values the user changed; the spec's defaults fill in
 the rest (``effective_settings``). ``to_dict`` / ``from_dict`` give the JSON form
 stored in a project file::
 
     {"blocks": [{"id": "Gain1", "spec": "Gain", "x": 0, "y": 0, "settings": {"k": 2}}],
-     "wires":  [{"src": "Sine1.y", "dst": "Gain1.u"}]}
+     "wires":  [{"src": "Sine1.y", "dst": "Gain1.u"}],
+     "physical_wires": [{"a": "Mass1.A", "b": "Spring1.A"}]}
+
+``physical_wires`` is written only when there are some, so a diagram without
+physical wires gives exactly the v0.1 JSON.
 """
 
 from __future__ import annotations
@@ -25,6 +38,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from core.blocks.spec import BlockSpec, is_plain_constant
+from core.physical.domains import ANY_DOMAIN
 
 SpecLookup = Callable[[str], BlockSpec | None]
 
@@ -62,6 +76,42 @@ class Wire:
         return f"{self.dst_block}.{self.dst_port}"
 
 
+@dataclass(frozen=True, init=False)
+class PhysicalWire:
+    """An undirected connection between two conserving ports.
+
+    The ends are stored in sorted order, so the same two ports always give an equal
+    (and equally hashed) wire, whichever end was named first.
+    """
+
+    a_block: str
+    a_port: str
+    b_block: str
+    b_port: str
+
+    def __init__(self, a_block: str, a_port: str, b_block: str, b_port: str) -> None:
+        (ab, ap), (bb, bp) = sorted([(a_block, a_port), (b_block, b_port)])
+        object.__setattr__(self, "a_block", ab)
+        object.__setattr__(self, "a_port", ap)
+        object.__setattr__(self, "b_block", bb)
+        object.__setattr__(self, "b_port", bp)
+
+    @property
+    def a(self) -> str:
+        return f"{self.a_block}.{self.a_port}"
+
+    @property
+    def b(self) -> str:
+        return f"{self.b_block}.{self.b_port}"
+
+    @property
+    def ends(self) -> tuple[tuple[str, str], tuple[str, str]]:
+        return (self.a_block, self.a_port), (self.b_block, self.b_port)
+
+    def touches(self, block_id: str) -> bool:
+        return block_id in (self.a_block, self.b_block)
+
+
 class Diagram:
     """Block instances (by id, in the order placed) and wires (in the order drawn)."""
 
@@ -69,6 +119,7 @@ class Diagram:
         self._lookup = specs
         self._blocks: dict[str, BlockInstance] = {}
         self._wires: list[Wire] = []
+        self._physical_wires: list[PhysicalWire] = []
 
     # ---- queries
 
@@ -79,6 +130,14 @@ class Diagram:
     @property
     def wires(self) -> list[Wire]:
         return list(self._wires)
+
+    @property
+    def physical_wires(self) -> list[PhysicalWire]:
+        return list(self._physical_wires)
+
+    def physical_wires_at(self, block_id: str, port: str) -> list[PhysicalWire]:
+        """Physical wires with one end at ``block_id.port``."""
+        return [w for w in self._physical_wires if (block_id, port) in w.ends]
 
     def block(self, block_id: str) -> BlockInstance:
         try:
@@ -131,6 +190,7 @@ class Diagram:
         self.block(block_id)
         del self._blocks[block_id]
         self._wires = [w for w in self._wires if block_id not in (w.src_block, w.dst_block)]
+        self._physical_wires = [w for w in self._physical_wires if not w.touches(block_id)]
 
     def move_block(self, block_id: str, x: float, y: float) -> None:
         inst = self.block(block_id)
@@ -149,6 +209,16 @@ class Diagram:
             raise DiagramError(f"cannot wire {src_block}.{src_port} to itself")
         src_spec = self.spec(src_block)
         dst_spec = self.spec(dst_block)
+        for block_id, port, spec in (
+            (src_block, src_port, src_spec),
+            (dst_block, dst_port, dst_spec),
+        ):
+            found = spec.port(port)
+            if found is not None and found.is_conserving:
+                raise DiagramError(
+                    f"{block_id}.{port} is a physical ({found.domain}) port: "
+                    "use a physical wire, not a signal wire"
+                )
         if src_port not in src_spec.outputs:
             if src_port in src_spec.inputs:
                 raise DiagramError(
@@ -174,10 +244,58 @@ class Diagram:
         except ValueError:
             raise DiagramError(f"no wire from {wire.src} to {wire.dst}") from None
 
+    def check_physical_wire(self, a_block: str, a_port: str, b_block: str, b_port: str) -> str:
+        """Why a physical wire between these ports is refused, or "" if it is allowed."""
+        if (a_block, a_port) == (b_block, b_port):
+            return f"cannot wire {a_block}.{a_port} to itself"
+        domains = []
+        for block_id, port in ((a_block, a_port), (b_block, b_port)):
+            inst = self._blocks.get(block_id)
+            if inst is None:
+                return f"no block with id {block_id!r}"
+            spec = self._lookup(inst.spec_name)
+            if spec is None:
+                return f"unknown block type {inst.spec_name!r}"
+            found = spec.port(port)
+            if found is None:
+                return f"block {block_id!r} has no port {port!r}"
+            if not found.is_conserving:
+                return (
+                    f"{block_id}.{port} is a signal port: a physical wire joins "
+                    "two physical (conserving) ports"
+                )
+            domains.append(found.domain)
+        da, db = domains
+        if da != db and ANY_DOMAIN not in (da, db):
+            return (
+                f"cannot connect {a_block}.{a_port} ({da}) to {b_block}.{b_port} ({db}): "
+                "ports of different domains never connect"
+            )
+        if PhysicalWire(a_block, a_port, b_block, b_port) in self._physical_wires:
+            return f"{a_block}.{a_port} and {b_block}.{b_port} are already wired"
+        return ""
+
+    def add_physical_wire(
+        self, a_block: str, a_port: str, b_block: str, b_port: str
+    ) -> PhysicalWire:
+        """Join two conserving ports. Raises DiagramError with the reason if refused."""
+        reason = self.check_physical_wire(a_block, a_port, b_block, b_port)
+        if reason:
+            raise DiagramError(reason)
+        wire = PhysicalWire(a_block, a_port, b_block, b_port)
+        self._physical_wires.append(wire)
+        return wire
+
+    def remove_physical_wire(self, wire: PhysicalWire) -> None:
+        try:
+            self._physical_wires.remove(wire)
+        except ValueError:
+            raise DiagramError(f"no physical wire between {wire.a} and {wire.b}") from None
+
     # ---- serialisation
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "blocks": [
                 {
                     "id": b.id,
@@ -190,6 +308,9 @@ class Diagram:
             ],
             "wires": [{"src": w.src, "dst": w.dst} for w in self._wires],
         }
+        if self._physical_wires:
+            data["physical_wires"] = [{"a": w.a, "b": w.b} for w in self._physical_wires]
+        return data
 
     @classmethod
     def from_dict(cls, data: object, specs: SpecLookup) -> Diagram:
@@ -198,8 +319,9 @@ class Diagram:
             raise DiagramError("a diagram must be a JSON object")
         blocks = data.get("blocks", [])
         wires = data.get("wires", [])
-        if not isinstance(blocks, list) or not isinstance(wires, list):
-            raise DiagramError("'blocks' and 'wires' must be lists")
+        physical = data.get("physical_wires", [])
+        if not all(isinstance(v, list) for v in (blocks, wires, physical)):
+            raise DiagramError("'blocks', 'wires' and 'physical_wires' must be lists")
         diagram = cls(specs)
         for item in blocks:
             if not isinstance(item, dict):
@@ -220,6 +342,12 @@ class Diagram:
             src = _split_port(item.get("src"))
             dst = _split_port(item.get("dst"))
             diagram.add_wire(*src, *dst)
+        for item in physical:
+            if not isinstance(item, dict):
+                raise DiagramError("each physical wire must be a JSON object")
+            a = _split_port(item.get("a"))
+            b = _split_port(item.get("b"))
+            diagram.add_physical_wire(*a, *b)
         return diagram
 
     # ---- helpers

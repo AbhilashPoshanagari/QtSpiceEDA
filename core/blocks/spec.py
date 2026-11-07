@@ -32,7 +32,7 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
-from core.physical.domains import DOMAINS
+from core.physical.domains import ANY_DOMAIN, DOMAINS
 
 SIGNAL = "signal"
 CONSERVING = "conserving"
@@ -119,10 +119,10 @@ class PortSpec:
             )
         if self.kind == SIGNAL and self.domain is not None:
             raise BlockSpecError(f"signal port {self.name!r} cannot have a domain", self.name)
-        if self.kind == CONSERVING and self.domain not in DOMAINS:
+        if self.kind == CONSERVING and self.domain not in DOMAINS and self.domain != ANY_DOMAIN:
             raise BlockSpecError(
                 f"conserving port {self.name!r} needs a domain "
-                f"({', '.join(DOMAINS.names())}), not {self.domain!r}",
+                f"({', '.join([*DOMAINS.names(), ANY_DOMAIN])}), not {self.domain!r}",
                 self.name,
             )
 
