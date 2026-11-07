@@ -15,6 +15,7 @@ For one ``PhysicalNetwork`` (from ``NetworkExtractor``):
   port are circuit node ``0``;
 - ``V()``/``I()`` in behavioural expressions and the control of F/H elements are
   rewritten to the mapped node and element names;
+- a source with a ``Sine`` / ``Pulse`` waveform becomes ``sin(...)`` / ``pulse(...)``;
 - an ``ExternalSource`` becomes ``V.../I... a b dc <initial> external`` (ngspice
   takes its value from the GetVSRCData / GetISRCData callbacks, C1). With
   ``external=False`` it is a plain ``dc <initial>`` source, so the deck runs in
@@ -52,9 +53,11 @@ from core.physical.component import (
     NetworkDiagnostic,
     Port,
     Primitive,
+    Pulse,
     Resistor,
     Sensor,
     SignalOutput,
+    Sine,
     VoltageSource,
     build_network,
 )
@@ -127,6 +130,16 @@ def source_value(domain: str, kind: str, value: float) -> float:
     if dom is None:
         return float(value)
     return dom.to_voltage(value) if kind == "v" else dom.to_current(value)
+
+
+def _waveform(wave: Sine | Pulse) -> str:
+    """ngspice ``sin(...)`` / ``pulse(...)``; the operating point uses its t = 0 value."""
+    if isinstance(wave, Sine):
+        return "sin(" + " ".join(_num(v) for _, v in wave.numbers()) + ")"
+    args = [_num(v) for _, v in wave.numbers()[:-1]]
+    if wave.ncycles:
+        args.append(str(int(wave.ncycles)))
+    return "pulse(" + " ".join(args) + ")"
 
 
 def element_name(prim: Primitive, block: str) -> str:
@@ -288,6 +301,8 @@ class NetworkMapper:
         if isinstance(prim, Resistor):
             return Element(name, kind, ab, _num(prim.value))
         if isinstance(prim, VoltageSource | CurrentSource):
+            if prim.waveform is not None:
+                return Element(name, kind, ab, _waveform(prim.waveform))
             return Element(name, kind, ab, f"dc {_num(prim.value)}")
         if isinstance(prim, VCVS | VCCS):
             ctrl = [nodes[prim.ctrl_a], nodes[prim.ctrl_b]]

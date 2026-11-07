@@ -136,6 +136,15 @@ class Domain:
     def from_current(self, current: float) -> float:
         return float(current)
 
+    def across_expr(self, a: str, b: str | None = None) -> str:
+        """Sensor/behavioural expression of the across value A - B (or A alone)."""
+        return f"V({a})" if b is None else f"V({a},{b})"
+
+    def through_expr(self, source: str) -> str:
+        """Expression of the through value measured by 0 V VoltageSource ``source``
+        (positive flowing into its first node)."""
+        return f"I({source})"
+
     # ---- element values
 
     @property

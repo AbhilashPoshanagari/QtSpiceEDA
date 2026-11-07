@@ -12,8 +12,8 @@ from collections.abc import Iterable
 
 from core.physical.registry import PhysicalRegistry
 
-BUILTIN_MODULES: tuple[str, ...] = ()
-"""Empty until the B1-B5 library tasks add their modules."""
+BUILTIN_MODULES: tuple[str, ...] = ("core.physical.library.electrical.components",)
+"""The built-in library, in the order its groups are shown."""
 
 
 def physical_registry(modules: Iterable[str] | None = None) -> PhysicalRegistry:

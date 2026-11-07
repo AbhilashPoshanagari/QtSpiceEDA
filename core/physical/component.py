@@ -40,6 +40,10 @@ Primitive sign conventions are those of SPICE:
 - ``VoltageSource``: V(a) - V(b) = value;
 - ``CurrentSource``: ``value`` flows from ``a`` through the source to ``b``.
 
+Either source may carry a ``Sine`` or ``Pulse`` waveform instead of a constant
+(LTspice argument order); the mapper writes it as ngspice ``sin(...)`` / ``pulse(...)``,
+so ngspice sets breakpoints at the pulse edges itself.
+
 ``build_network`` and ``check_network`` never raise on bad input: they return the
 primitives they could build plus ``NetworkDiagnostic`` entries (rule 6). The
 decorator raises ``PhysicalComponentError`` for a broken declaration, like ``@block``.
@@ -166,19 +170,84 @@ class Inductor:
 
 
 @dataclass(frozen=True)
+class Sine:
+    """A sine waveform, LTspice ``SINE(offset amplitude freq delay theta phase)``.
+
+    ``theta`` is the damping factor [1/s], ``phase`` is in degrees. Values are the
+    source's own voltage or current (the component converts them with its Domain).
+    """
+
+    offset: float
+    amplitude: float
+    freq: float
+    delay: float = 0.0
+    theta: float = 0.0
+    phase: float = 0.0
+
+    def numbers(self) -> tuple[tuple[str, float], ...]:
+        return (
+            ("offset", self.offset),
+            ("amplitude", self.amplitude),
+            ("freq", self.freq),
+            ("delay", self.delay),
+            ("theta", self.theta),
+            ("phase", self.phase),
+        )
+
+
+@dataclass(frozen=True)
+class Pulse:
+    """A pulse waveform, LTspice ``PULSE(v1 v2 delay rise fall width period ncycles)``.
+
+    ``period`` 0 means a single pulse; ``ncycles`` 0 means no limit. A rise or fall of
+    0 is replaced by ngspice with its time step, so give a real edge time.
+    """
+
+    v1: float
+    v2: float
+    delay: float = 0.0
+    rise: float = 1e-6
+    fall: float = 1e-6
+    width: float = 1.0
+    period: float = 0.0
+    ncycles: int = 0
+
+    def numbers(self) -> tuple[tuple[str, float], ...]:
+        return (
+            ("v1", self.v1),
+            ("v2", self.v2),
+            ("delay", self.delay),
+            ("rise", self.rise),
+            ("fall", self.fall),
+            ("width", self.width),
+            ("period", self.period),
+            ("ncycles", self.ncycles),
+        )
+
+
+Waveform = Sine | Pulse
+
+
+@dataclass(frozen=True)
 class VoltageSource:
+    """V(a) - V(b) = value, or ``waveform`` over time when one is given."""
+
     name: str
     a: str
     b: str
     value: float
+    waveform: Waveform | None = None
 
 
 @dataclass(frozen=True)
 class CurrentSource:
+    """``value`` (or ``waveform``) flows from a through the source to b."""
+
     name: str
     a: str
     b: str
     value: float
+    waveform: Waveform | None = None
 
 
 @dataclass(frozen=True)
@@ -656,7 +725,30 @@ def check_network(
                 or not math.isfinite(value)
             ):
                 err(f"{field_name} must be a finite number, not {value!r}", n)
+        if isinstance(prim, VoltageSource | CurrentSource) and prim.waveform is not None:
+            _check_waveform(prim.waveform, n, err)
     return out
+
+
+def _check_waveform(wave: object, prim: str, err: Callable[..., None]) -> None:
+    if not isinstance(wave, Sine | Pulse):
+        err(f"waveform must be a Sine or a Pulse, not {wave!r}", prim)
+        return
+    for field_name, value in wave.numbers():
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int | float)
+            or not math.isfinite(value)
+        ):
+            err(f"waveform {field_name} must be a finite number, not {value!r}", prim)
+            return
+    if isinstance(wave, Pulse):
+        if min(wave.delay, wave.rise, wave.fall, wave.width, wave.period, wave.ncycles) < 0:
+            err("pulse times and ncycles must not be negative", prim)
+        elif wave.period and wave.period < wave.rise + wave.width + wave.fall:
+            err("pulse period is shorter than rise + width + fall", prim)
+    elif wave.freq < 0 or wave.delay < 0:
+        err("sine freq and delay must not be negative", prim)
 
 
 def _check_expression(
