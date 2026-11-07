@@ -51,6 +51,11 @@ a circuit; and that ngspice can be loaded. Only then does a BlockRunner child ru
 it. ``consoleText`` collects the run's messages for the Console: the checks, the
 engine's start and end lines, ngspice's own output from the child and any error.
 
+The canvas step and the Solver Configuration's Ts are one setting: the step is the
+controller tick. Setting a Solver's Ts (and undoing or redoing that) sets ``dt``; at
+Run, every Solver whose Ts differs from the run's step gets the step, as one undo
+step, with a Console line saying so.
+
 Library groups and units (U2). Every library entry has a ``group``: "User", "Signal",
 or "Physical/<domain>" from the module its component comes from ("Physical/Sensors
 and sources" for the converters: controlled sources, sensors and the Solver
@@ -91,7 +96,7 @@ from core.blocks.registry import BlockRegistry, SourceResult
 from core.blocks.runner import DEFAULT_TIMEOUT, BlockRunner, RunOutcome
 from core.blocks.spec import BlockSpec, is_plain_constant
 from core.netlist.parser import parse_number
-from core.physical.component import NetworkDiagnostic
+from core.physical.component import SOLVER, NetworkDiagnostic
 from core.physical.cosim import MIN_TS, CoSimulator
 from core.physical.domains import ANY_DOMAIN, DOMAINS
 from core.physical.library import physical_registry
@@ -166,6 +171,7 @@ class DiagramState:
 
 
 MAX_CONSOLE_LINES = 5000
+SOLVER_TS = "Ts"  # the Solver Configuration's controller tick: the canvas step
 
 
 def spec_lookup(
@@ -739,6 +745,7 @@ class DiagramController(QObject):
         self._undo.indexChanged.connect(self.diagramEdited)
 
         self._runner: BlockRunner | None = None
+        self._thread: threading.Thread | None = None
         self._running = False
         self._run_status = ""
         self._run_details = ""
@@ -1426,6 +1433,8 @@ class DiagramController(QObject):
                 f"the time step is the controller tick Ts of the physical network; "
                 f"{dt:g} s is below the smallest supported {MIN_TS:g} s"
             )
+        if mixed:
+            self._sync_solver_ts(dt)
         # compile() only orders and checks the blocks: the specs stand in for the block
         # objects, so no user code runs in this process. Physical networks are
         # checked here too (F5), with the built-in components only.
@@ -1463,8 +1472,40 @@ class DiagramController(QObject):
         else:
             self._log([f"Block diagram run: step {dt:g} s, end time {t_end:g} s"])
         self._set_run_status("Running…")
-        threading.Thread(target=self._run_thread, args=(runner,), daemon=True).start()
+        self._thread = threading.Thread(target=self._run_thread, args=(runner,), daemon=True)
+        self._thread.start()
         return True
+
+    def _solver_ids(self) -> list[str]:
+        out = []
+        for inst in self._diagram.blocks:
+            physical = (
+                self._physical.spec(inst.spec_name)
+                if self._registry.get(inst.spec_name) is None
+                else None
+            )
+            if physical is not None and physical.role == SOLVER:
+                out.append(inst.id)
+        return out
+
+    def _sync_solver_ts(self, dt: float) -> None:
+        """Give every Solver Configuration the run's step as its Ts (one undo step)."""
+        changes = []
+        for bid in self._solver_ids():
+            old = dict(self._diagram.block(bid).settings)
+            ts = self._diagram.effective_settings(bid).get(SOLVER_TS)
+            if isinstance(ts, int | float) and math.isclose(float(ts), dt, rel_tol=1e-9):
+                continue
+            changes.append((bid, old, {**old, SOLVER_TS: float(dt)}, ts))
+        if not changes:
+            return
+        self._undo.beginMacro(f"set the Solver Ts to the time step {dt:g} s")
+        for bid, old, new, _ in changes:
+            self._push(_SetSettings(self, bid, SOLVER_TS, old, new))
+        self._undo.endMacro()
+        self._log(
+            [f"{bid}: Ts {ts:g} s set to the time step {dt:g} s" for bid, _, _, ts in changes]
+        )
 
     def _not_started(self, reason: str) -> bool:
         self._set_run_status(f"Not started: {reason}")
@@ -1499,8 +1540,15 @@ class DiagramController(QObject):
 
     @Slot()
     def shutdown(self) -> None:
-        """Stop any run. Called when the app quits."""
+        """Stop any run and wait for its thread. Called when the app quits.
+
+        The thread ends by emitting a signal of this object, so it must be done before
+        the object is destroyed; cancel() ends the child at once, so this is quick.
+        """
         self.stop()
+        thread = self._thread
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=10)
 
     def _run_thread(self, runner: BlockRunner) -> None:
         outcome = runner.run()
@@ -1725,6 +1773,11 @@ class DiagramController(QObject):
         self._diagram.set_settings(
             block_id, {k: v for k, v in settings.items() if k in spec.settings}
         )
+        if block_id in self._solver_ids():
+            # The Solver's Ts is the canvas step (the controller tick).
+            ts = self._diagram.effective_settings(block_id).get(SOLVER_TS)
+            if isinstance(ts, int | float) and not isinstance(ts, bool) and ts > 0:
+                self._set_dt(float(ts))
         if block_id in self._selected_blocks:
             self.selectionChanged.emit()
 
