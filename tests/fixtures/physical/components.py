@@ -25,7 +25,9 @@ from core.physical.component import (
     PhysicalComponent,
     Port,
     Resistor,
+    Sensor,
     SignalInput,
+    SignalOutput,
     VoltageSource,
     physical_component,
 )
@@ -233,15 +235,17 @@ class ElecResistor(PhysicalComponent):
 
 @physical_component
 class Integrator(PhysicalComponent):
-    """Integrates the velocity at A into internal node ``x`` (G source into 1 F)."""
+    """Position sensor: integrates the velocity at A into internal node ``pos`` (G source
+    into 1 F) and reports it as signal output ``x``."""
 
-    ports = (Port("A", TRANSLATIONAL),)
-    internal = {"x": TRANSLATIONAL}
+    ports = (Port("A", TRANSLATIONAL), SignalOutput("x", "m"))
+    internal = {"pos": TRANSLATIONAL}
 
     def network(self, ports, params):
         return [
-            VCCS("G", ports.ground, ports.x, ports.A, ports.ground, 1.0),
-            Capacitor("C", ports.x, ports.ground, 1.0, 0.0),
+            VCCS("G", ports.ground, ports.pos, ports.A, ports.ground, 1.0),
+            Capacitor("C", ports.pos, ports.ground, 1.0, 0.0),
+            Sensor("S", "x", "V(pos)"),
         ]
 
 

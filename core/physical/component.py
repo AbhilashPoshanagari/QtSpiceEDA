@@ -268,6 +268,21 @@ class ExternalSource:
     initial: float = 0.0
 
 
+@dataclass(frozen=True)
+class Sensor:
+    """The value of signal output ``signal``: ``expression`` in ``V()`` / ``I()`` of the
+    component's own nodes and VoltageSources, as in ``Behavioural``.
+
+    The mapper (F6) evaluates it inside ngspice (a B source on a node of its own) and
+    saves it as the vector ``<block>.<signal>``. Through quantities are measured with
+    ``I()`` of a 0 V ``VoltageSource`` in series.
+    """
+
+    name: str
+    signal: str
+    expression: str
+
+
 Primitive = (
     Resistor
     | Capacitor
@@ -280,6 +295,7 @@ Primitive = (
     | CCVS
     | Behavioural
     | ExternalSource
+    | Sensor
 )
 PRIMITIVE_TYPES = (
     Resistor,
@@ -293,6 +309,7 @@ PRIMITIVE_TYPES = (
     CCVS,
     Behavioural,
     ExternalSource,
+    Sensor,
 )
 
 
@@ -362,6 +379,9 @@ class PhysicalSpec:
 
     def defaults(self) -> dict[str, object]:
         return {p.name: p.default for p in self.parameters}
+
+    def signal_outputs(self) -> list[str]:
+        return [p.name for p in self.ports if isinstance(p, SignalOutput)]
 
     def signal_inputs(self) -> list[str]:
         return [p.name for p in self.ports if isinstance(p, SignalInput)]
@@ -544,7 +564,11 @@ def build_network(
     return result
 
 
-_REF_RE = re.compile(r"\b([VI])\s*\(\s*([^()]*?)\s*\)", re.IGNORECASE)
+REFERENCE_RE = re.compile(r"\b([VI])\s*\(\s*([^()]*?)\s*\)", re.IGNORECASE)
+
+
+_REF_RE = REFERENCE_RE
+"""``V(node)``, ``V(node1,node2)`` and ``I(source)`` in an expression."""
 
 
 def _values_of(prim: Primitive) -> list[tuple[str, object]]:
@@ -560,6 +584,8 @@ def check_network(
     out: list[NetworkDiagnostic] = []
     nodes = spec.node_domains()
     inputs = set(spec.signal_inputs())
+    outputs = set(spec.signal_outputs())
+    sensed: set[str] = set()
 
     def err(message: str, prim: str = "", severity: str = ERROR) -> None:
         out.append(NetworkDiagnostic(label, severity, message, prim))
@@ -599,6 +625,14 @@ def check_network(
 
     for prim in good:
         n = prim.name
+        if isinstance(prim, Sensor):
+            if prim.signal not in outputs:
+                err(f"signal {prim.signal!r} is not a SignalOutput of this component", n)
+            elif prim.signal in sensed:
+                err(f"signal output {prim.signal!r} has more than one Sensor", n)
+            sensed.add(prim.signal)
+            _check_expression(prim, nodes, sources, err)
+            continue
         same_domain(prim.a, prim.b, n)
         if prim.a == prim.b:
             err(f"both terminals are {prim.a!r}", n, WARNING)
@@ -626,7 +660,7 @@ def check_network(
 
 
 def _check_expression(
-    prim: Behavioural,
+    prim: Behavioural | Sensor,
     nodes: Mapping[str, str],
     sources: set[str],
     err: Callable[..., None],
