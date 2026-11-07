@@ -104,6 +104,17 @@ FocusScope {
         z: 5
     }
 
+    // ---- Y axis unit (U4), e.g. "[rad/s]" or "[rpm]"; empty when the traces differ
+    Label {
+        objectName: "yAxisLabel"
+        visible: text !== ""
+        text: pane.info.yLabel || ""
+        x: Math.max(2, pane.plotLeft - implicitWidth - 6)
+        y: 2
+        font.pointSize: 8
+        color: "#404040"
+    }
+
     // ---- trace names
     Flow {
         id: header

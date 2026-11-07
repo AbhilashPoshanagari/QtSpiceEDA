@@ -15,6 +15,15 @@ the layout stores real units. ``fillPane`` puts the decimated points of one pane
 its LineSeries and returns that pane's Y range; an AC pane draws the phase of each
 trace too, scaled onto the magnitude axis and labelled on the right (QtGraphs 6.8 has
 one Y axis per GraphsView).
+
+Physical results (U4). Block diagram results (analysis ``blocks``, and ``cosim`` for a
+combined run) are time runs and use the transient layout. Each pane has a ``yLabel``
+with the unit of its traces ("[rad/s]"; empty when they differ). ``displayUnits``
+switches to the display units rpm and degC: traces in rad/s and K are shown, read
+out and labelled in those units, taken from the Domain registry. It is a view
+setting only: expressions are still computed from the SI values. ``vectorGroup``
+names the component a physical vector belongs to (``inertia`` for ``inertia.A.w``)
+and ``groupedVectorNames`` lists the vectors group by group, for the Add Trace dialog.
 """
 
 from __future__ import annotations
@@ -25,6 +34,7 @@ import math
 import weakref
 from typing import Any
 
+import numpy as np
 from PySide6.QtCore import Property, QObject, QPointF, Signal, Slot
 from PySide6.QtGraphs import QXYSeries
 from PySide6.QtGui import QColor, QUndoCommand, QUndoStack
@@ -32,6 +42,7 @@ from PySide6.QtQml import QmlElement, QmlSingleton
 
 from bridge.waveform_model import si
 from core.netlist.parser import parse_number
+from core.physical.domains import DOMAINS, DisplayUnit
 from core.waveform.expr import Data
 from core.waveform.layout import ANALYSES, PlotLayout, layouts_to_dict
 from core.waveform.plotdefs import DEFAULT_TEXT, parse_plotdefs
@@ -54,6 +65,25 @@ COLORS = (
     "#bcbd22",
     "#7f7f7f",
 )
+TIME_RUNS = {"blocks": "tran", "cosim": "tran"}
+"""Block diagram results are time runs: the waveform window shows them as .tran."""
+DISPLAY_UNIT_NAMES = ("rpm", "degC")
+"""The display units of the rpm/degC toggle."""
+SIGNALS_GROUP = "Signals"
+PHYSICAL_ANALYSIS = "cosim"
+
+
+def display_units() -> dict[str, DisplayUnit]:
+    """SI unit -> display unit for the rpm/degC toggle, from the Domain registry."""
+    out: dict[str, DisplayUnit] = {}
+    for domain in DOMAINS.domains():
+        for quantity in domain.quantities():
+            for unit in quantity.display_units:
+                if unit.name in DISPLAY_UNIT_NAMES:
+                    out[quantity.unit] = unit
+    return out
+
+
 UNSHOWN_COLOR = "#b8b8b8"  # trace list: a vector that is in no pane
 TRACE_WIDTH = 2.0
 PHASE_WIDTH = 1.25
@@ -158,6 +188,11 @@ class WaveformController(QObject):
         self._plot_defs_text = DEFAULT_TEXT
         self._plot_defs = parse_plotdefs(DEFAULT_TEXT)
         self._engine = self._plot_defs.engine()
+        # U4: the rpm/degC toggle and the SI values behind what is shown
+        self._display_units = display_units()
+        self._display_on = False
+        self._si_traces: dict[str, tuple[str, Any]] = {}
+        self._result_analysis = ""
 
     # ---- wiring
 
@@ -211,11 +246,15 @@ class WaveformController(QObject):
         result = model.result()  # type: ignore[attr-defined]
         x, traces = model.raw_data()  # type: ignore[attr-defined]
         analysis = getattr(result, "analysis", "") if result is not None else ""
+        self._result_analysis = analysis
+        analysis = TIME_RUNS.get(analysis, analysis)
         if not getattr(result, "axis", "") or analysis not in ANALYSES:
             analysis = ""
         new_result = result is not self._result
         self._result = result
-        self._store = TraceStore.build(analysis, x, model.axis_unit(), traces)  # type: ignore[attr-defined]
+        self._si_traces = dict(traces)
+        shown = {name: self._shown(unit, values) for name, (unit, values) in traces.items()}
+        self._store = TraceStore.build(analysis, x, model.axis_unit(), shown)  # type: ignore[attr-defined]
         self._raw = set(self._store.names())
         self._expr_errors = {}
         self._analysis = analysis
@@ -233,6 +272,13 @@ class WaveformController(QObject):
         self._evaluate_expressions()
         self.dataChanged.emit()
         self.layoutChanged.emit()
+
+    def _shown(self, unit: str, values: Any) -> tuple[str, Any]:
+        """(unit, values) as the waveform window shows them (the rpm/degC toggle)."""
+        target = self._display_units.get(unit) if self._display_on else None
+        if target is None:
+            return unit, values
+        return target.name, target.from_si(np.asarray(values))
 
     def _initial_layout(self, base: PlotLayout | None = None) -> PlotLayout:
         """A new layout shows the traces that WaveformModel shows (as v0.1 did)."""
@@ -313,6 +359,8 @@ class WaveformController(QObject):
                 for n in pane.traces
             ]
             present = sum(1 for t in traces if t["present"])
+            units = {self._store.unit(t["name"]) for t in traces if t["present"]}
+            y_unit = units.pop() if len(units) == 1 else ""
             out.append(
                 {
                     "index": i,
@@ -324,6 +372,7 @@ class WaveformController(QObject):
                     "showAbs": pane.y.show_abs,
                     "grid": pane.grid,
                     "seriesNeeded": present * (2 if layout.is_ac else 1),
+                    "yLabel": f"[{y_unit}]" if y_unit and not layout.is_ac else "",
                 }
             )
         return out
@@ -609,7 +658,12 @@ class WaveformController(QObject):
         result = self._result
         axis_name = getattr(result, "axis", "") or ""
         store = self._store
-        vectors = {n: (store.unit(n), store.raw(n)) for n in store.names() if n in self._raw}
+        # Expressions always see the SI values, whatever the rpm/degC toggle shows.
+        vectors = {
+            n: self._si_traces.get(n, (store.unit(n), store.raw(n)))
+            for n in store.names()
+            if n in self._raw
+        }
         if axis_name and axis_name not in vectors:
             vectors[axis_name] = (store.axis_unit, store.x)
         return Data(self._analysis, axis_name, store.x if len(store.x) else None, vectors)
@@ -628,7 +682,7 @@ class WaveformController(QObject):
             if (
                 result.ok
                 and result.values is not None
-                and self._store.add(name, result.unit, result.values)
+                and self._store.add(name, *self._shown(result.unit, result.values))
             ):
                 continue
             self._expr_errors[name] = result.message or "cannot be computed for this run"
@@ -650,6 +704,49 @@ class WaveformController(QObject):
         if not any(c in pattern for c in "*?["):
             return [n for n in names if pattern in n.lower()]
         return [n for n in names if fnmatch.fnmatchcase(n.lower(), pattern)]
+
+    @Slot(str, result=str)
+    def vectorGroup(self, name: str) -> str:  # noqa: N802 - QML API
+        """The Add Trace group of vector ``name``: the component of a physical vector
+        (``inertia`` for ``inertia.A.w``), "Signals" for the other vectors of a combined
+        run, and "" (no groups) for every other result."""
+        if self._result_analysis != PHYSICAL_ANALYSIS:
+            return ""
+        return name.split(".", 1)[0] if "." in name else SIGNALS_GROUP
+
+    @Slot(str, result="QStringList")
+    def groupedVectorNames(self, pattern: str) -> list[str]:  # noqa: N802 - QML API
+        """``vectorNames(pattern)`` ordered group by group: Signals first, then each
+        component in the order its first vector appears."""
+        names = self.vectorNames(pattern)
+        order: dict[str, list[str]] = {}
+        for name in names:
+            order.setdefault(self.vectorGroup(name), []).append(name)
+        groups = sorted(order, key=lambda g: g not in (SIGNALS_GROUP, ""))  # stable
+        return [n for g in groups for n in order[g]]
+
+    def _get_display_units(self) -> bool:
+        return self._display_on
+
+    def _set_display_units(self, on: bool) -> None:
+        on = bool(on)
+        if on == self._display_on:
+            return
+        self._display_on = on
+        self.displayUnitsChanged.emit()
+        if self._model is not None:
+            self._on_result()  # same result: rebuild the shown values only
+
+    def _get_display_units_available(self) -> bool:
+        return any(unit in self._display_units for unit, _ in self._si_traces.values())
+
+    displayUnitsChanged = Signal()
+    displayUnits = Property(  # noqa: N815
+        bool, _get_display_units, _set_display_units, notify=displayUnitsChanged
+    )
+    displayUnitsAvailable = Property(  # noqa: N815
+        bool, _get_display_units_available, notify=layoutChanged
+    )
 
     @Slot(str, result=str)
     def checkExpression(self, text: str) -> str:  # noqa: N802 - QML API

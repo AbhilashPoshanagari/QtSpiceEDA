@@ -9,6 +9,8 @@ import QtSpice
 // syntax (WaveformController / core/waveform/expr.py) and are checked as you type.
 // editTrace() opens the dialog on an existing trace name to change its expression.
 // "Plot definitions…" edits the .func / .param lines (W9); OK is one undo step.
+// After a combined run (U4) the vectors are grouped: Signals, then one heading per
+// physical component (inertia.A.w under "inertia").
 Dialog {
     id: root
     objectName: "addTraceDialog"
@@ -97,19 +99,38 @@ Dialog {
                 clip: true
                 model: {
                     WaveformController.resultTraces  // re-read on a new result
-                    return WaveformController.vectorNames(filter.text)
+                    return WaveformController.groupedVectorNames(filter.text)
                 }
-                delegate: ItemDelegate {
+                delegate: Column {
+                    id: entry
                     required property string modelData
-                    objectName: "vector_" + modelData
+                    required property int index
+                    readonly property string group: WaveformController.vectorGroup(modelData)
+                    readonly property bool firstOfGroup: group !== "" && (index === 0
+                        || WaveformController.vectorGroup(ListView.view.model[index - 1]) !== group)
                     width: ListView.view.width
-                    height: implicitHeight - 8
-                    text: modelData
-                    font.pointSize: 9
-                    ToolTip.visible: hovered
-                    ToolTip.delay: 600
-                    ToolTip.text: qsTr("Click to insert into the expression")
-                    onClicked: root.insertName(modelData)
+                    Label {
+                        objectName: "vectorGroup_" + entry.group
+                        visible: entry.firstOfGroup
+                        height: visible ? implicitHeight + 6 : 0
+                        leftPadding: 6
+                        topPadding: 4
+                        text: entry.group
+                        font.bold: true
+                        font.pointSize: 9
+                    }
+                    ItemDelegate {
+                        objectName: "vector_" + entry.modelData
+                        width: parent.width
+                        height: implicitHeight - 8
+                        leftPadding: entry.group !== "" ? 20 : padding
+                        text: entry.modelData
+                        font.pointSize: 9
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 600
+                        ToolTip.text: qsTr("Click to insert into the expression")
+                        onClicked: root.insertName(entry.modelData)
+                    }
                 }
                 ScrollBar.vertical: ScrollBar {}
             }

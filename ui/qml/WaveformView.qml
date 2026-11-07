@@ -197,6 +197,16 @@ FocusScope {
                     ToolTip.text: qsTr("Click trace names to remove them (Esc to stop)")
                     onToggled: WaveformController.deleteMode = checked
                 }
+                ToolButton {
+                    objectName: "displayUnitsButton"
+                    text: qsTr("rpm / °C")
+                    checkable: true
+                    visible: WaveformController.displayUnitsAvailable
+                    checked: WaveformController.displayUnits
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Show angular velocity in rpm and temperature in °C (display only; the results stay in SI)")
+                    onToggled: WaveformController.displayUnits = checked
+                }
                 ToolSeparator {}
                 ToolButton {
                     objectName: "addTraceButton"
