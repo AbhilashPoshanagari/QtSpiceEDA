@@ -5,7 +5,8 @@ import QtQuick.Shapes
 import QtSpice
 
 // Block diagram canvas (F6). Drop blocks from the library, drag them (snapped to the
-// grid), drag from an output port to an input port to wire them. Left-drag on empty
+// grid), drag from an output port to an input port to wire them, or from a round
+// physical port to another one of the same domain for a physical wire (U1). Left-drag on empty
 // space selects with a rubber band, middle-drag pans, the wheel zooms around the
 // cursor. Delete removes the selection; Ctrl+Z / Ctrl+Y undo and redo.
 //
@@ -28,6 +29,7 @@ Item {
     property point wireEnd
     property string wireTarget: ""
     property string wireHint: ""
+    property bool wirePhysical: false
 
     function toCanvas(vx, vy) {
         return Qt.point((vx - panX) / zoom, (vy - panY) / zoom)
@@ -40,8 +42,9 @@ Item {
         panY = vy - c.y * zoom
     }
 
-    function beginWire(src, x, y) {
+    function beginWire(src, x, y, physical) {
         root.forceActiveFocus()
+        wirePhysical = physical === true
         wireSource = src
         wireStart = Qt.point(x, y)
         wireEnd = wireStart
@@ -52,17 +55,31 @@ Item {
     function dragWire(scenePos) {
         const p = content.mapFromItem(null, scenePos.x, scenePos.y)
         wireEnd = p
-        const target = DiagramController.portAt(p.x, p.y)
-        wireHint = target !== "" ? DiagramController.canConnect(wireSource, target) : ""
+        let target = wirePhysical ? DiagramController.conservingPortAt(p.x, p.y)
+                                  : DiagramController.portAt(p.x, p.y)
+        if (target === wireSource)
+            target = ""
+        if (target === "")
+            wireHint = ""
+        else if (wirePhysical)
+            wireHint = DiagramController.canConnectPhysical(wireSource, target)
+        else
+            wireHint = DiagramController.canConnect(wireSource, target)
         wireTarget = target
     }
 
+    // A refused drop leaves its reason in the canvas status (DiagramController.hint).
     function endWire() {
-        if (wireSource !== "" && wireTarget !== "")
-            DiagramController.connectPorts(wireSource, wireTarget)  // sets the hint if invalid
+        if (wireSource !== "" && wireTarget !== "") {
+            if (wirePhysical)
+                DiagramController.connectPhysical(wireSource, wireTarget)
+            else
+                DiagramController.connectPorts(wireSource, wireTarget)
+        }
         wireSource = ""
         wireTarget = ""
         wireHint = ""
+        wirePhysical = false
     }
 
     function run() {
@@ -291,8 +308,12 @@ Item {
                     if (band.width < 4 && band.height < 4) {
                         const c = root.toCanvas(mouse.x, mouse.y)
                         const hit = DiagramController.wireAt(c.x, c.y, 6 / root.zoom)
+                        const physical = hit < 0
+                            ? DiagramController.physicalWireAt(c.x, c.y, 6 / root.zoom) : -1
                         if (hit >= 0)
                             DiagramController.selectWire(hit, additive)
+                        else if (physical >= 0)
+                            DiagramController.selectPhysicalWire(physical, additive)
                         else if (!additive)
                             DiagramController.clearSelection()
                     } else {
@@ -321,14 +342,54 @@ Item {
                 }
 
                 Repeater {
+                    objectName: "physicalWireRepeater"
+                    model: DiagramController.physicalWires
+                    delegate: PhysicalWire {}
+                }
+
+                Repeater {
                     objectName: "blockRepeater"
                     model: DiagramController.blocks
                     delegate: Block { canvas: root }
                 }
 
+                // Junction dots: where two or more physical wires meet at a port.
+                Repeater {
+                    objectName: "junctionRepeater"
+                    model: DiagramController.junctions
+                    delegate: Rectangle {
+                        required property var modelData
+                        objectName: "junction_" + modelData.port
+                        x: modelData.x - 4
+                        y: modelData.y - 4
+                        z: 2
+                        width: 8
+                        height: 8
+                        radius: 4
+                        color: modelData.color
+                        border.color: Qt.darker(modelData.color, 1.5)
+                    }
+                }
+
+                Shape {
+                    objectName: "rubberPhysicalWire"
+                    visible: root.wireSource !== "" && root.wirePhysical
+                    ShapePath {
+                        strokeColor: root.wireTarget === "" ? "#6e7781"
+                                     : root.wireHint === "" ? "#2da44e" : "#d73a49"
+                        strokeWidth: 2
+                        strokeStyle: ShapePath.DashLine
+                        fillColor: "transparent"
+                        startX: root.wireStart.x
+                        startY: root.wireStart.y
+                        PathLine { x: root.wireEnd.x; y: root.wireStart.y }
+                        PathLine { x: root.wireEnd.x; y: root.wireEnd.y }
+                    }
+                }
+
                 Shape {
                     objectName: "rubberWire"
-                    visible: root.wireSource !== ""
+                    visible: root.wireSource !== "" && !root.wirePhysical
                     ShapePath {
                         strokeColor: root.wireTarget === "" ? "#6e7781"
                                      : root.wireHint === "" ? "#2da44e" : "#d73a49"

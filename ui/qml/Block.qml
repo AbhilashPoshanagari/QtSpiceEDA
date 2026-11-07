@@ -2,7 +2,8 @@ import QtQuick
 import QtQuick.Shapes
 
 // One block on the canvas: a square, rectangle or circle with its name in the middle,
-// input ports on the left and output ports on the right. Click selects (Ctrl/Shift
+// input ports on the left and output ports on the right. A physical block's conserving
+// ports (round, in their domain colour) follow on both edges. Click selects (Ctrl/Shift
 // adds), drag moves it and the rest of the selection, snapped to the grid. A block in
 // an algebraic loop gets a red outline.
 Item {
@@ -19,6 +20,7 @@ Item {
     required property color color
     required property var inputs
     required property var outputs
+    required property var conserving
     required property bool selected
     required property bool inLoop
 
@@ -134,6 +136,23 @@ Item {
             px: modelData.x
             py: modelData.y
             tint: block.color
+        }
+    }
+
+    Repeater {
+        model: block.conserving
+        delegate: Port {
+            required property var modelData
+            canvas: block.canvas
+            blockId: block.blockId
+            portName: modelData.name
+            kind: "conserving"
+            domain: modelData.domain
+            isInput: modelData.side === "left"
+            showLabel: block.conserving.length > 1 || block.inputs.length + block.outputs.length > 0
+            px: modelData.x
+            py: modelData.y
+            tint: modelData.color
         }
     }
 
