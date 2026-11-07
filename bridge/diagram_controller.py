@@ -57,6 +57,7 @@ import math
 import re
 import threading
 import weakref
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from PySide6.QtCore import (
@@ -83,6 +84,7 @@ from core.blocks.spec import BlockSpec, is_plain_constant
 from core.netlist.parser import parse_number
 from core.physical.domains import ANY_DOMAIN, DOMAINS
 from core.physical.library import physical_registry
+from core.physical.registry import PhysicalRegistry
 
 QML_IMPORT_NAME = "QtSpice"
 QML_IMPORT_MAJOR_VERSION = 1
@@ -149,6 +151,21 @@ class DiagramState:
     diagram: dict = field(default_factory=lambda: {"blocks": [], "wires": []})
     t_end: float = DEFAULT_T_END
     dt: float = DEFAULT_DT
+
+
+def spec_lookup(
+    registry: BlockRegistry, physical: PhysicalRegistry
+) -> Callable[[str], BlockSpec | None]:
+    """The spec of a block type: a signal block first, else a physical component."""
+
+    def lookup(name: str) -> BlockSpec | None:
+        spec = registry.get(name)
+        if spec is not None:
+            return spec
+        found = physical.spec(name)
+        return found.block if found is not None else None
+
+    return lookup
 
 
 def domain_color(domain: str | None) -> str:
@@ -652,6 +669,10 @@ class DiagramController(QObject):
         super().__init__(parent)
         self._registry = BlockRegistry(builtin_specs())
         self._physical = physical_registry()
+        # Not a bound method: the Diagram would then hold the controller in a reference
+        # cycle, and the garbage collector freeing a QObject tree in any order at exit
+        # corrupts the heap.
+        self._spec = spec_lookup(self._registry, self._physical)
         self._library: list[dict[str, object]] = []
         self._diagnostics: list[dict[str, object]] = []
         self._removed_ports: list[str] = []
@@ -855,14 +876,6 @@ class DiagramController(QObject):
         if physical is None:
             return {}
         return {p.name: (p.unit, p.label) for p in physical.parameters}
-
-    def _spec(self, name: str) -> BlockSpec | None:
-        """The spec of block type ``name``: a signal block first, else a physical one."""
-        spec = self._registry.get(name)
-        if spec is not None:
-            return spec
-        physical = self._physical.spec(name)
-        return physical.block if physical is not None else None
 
     @property
     def undo_stack(self) -> QUndoStack:

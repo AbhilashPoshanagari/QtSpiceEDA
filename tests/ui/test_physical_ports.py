@@ -335,3 +335,24 @@ def test_click_selects_a_physical_wire(scene: Scene, qtbot) -> None:
     mid = canvas_point(scene.canvas, pts[2]["x"], (pts[2]["y"] + pts[3]["y"]) / 2)
     click(scene.window, mid)
     qtbot.waitUntil(lambda: scene.ctl.physicalWires.rows()[0]["selected"], timeout=2000)
+    qtbot.waitUntil(lambda: scene.ctl.physicalWires.rows()[0]["selected"], timeout=2000)
+
+
+def test_controller_is_freed_without_the_garbage_collector(qapp: object) -> None:
+    # A reference cycle through the controller (e.g. the Diagram holding a bound
+    # method) leaves its QObject tree to the cyclic GC, which frees it in any order at
+    # exit and corrupts the heap. It must go as soon as the last reference does.
+    import gc
+    import weakref
+
+    gc.disable()
+    try:
+        ctl = DiagramController()
+        j = ctl.addBlock("Inertia", 0, 0)
+        d = ctl.addBlock("RotationalDamper", 200, 0)
+        ctl.connectPhysical(f"{j}.A", f"{d}.A")
+        ref = weakref.ref(ctl)
+        del ctl
+        assert ref() is None
+    finally:
+        gc.enable()
