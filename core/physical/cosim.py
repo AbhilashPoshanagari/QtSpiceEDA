@@ -31,6 +31,8 @@ import threading
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
+import numpy as np
+
 from core.blocks.diagram import DiagramError
 from core.blocks.engine import ExecutionEngine, NetworkError, port_key
 from core.netlist.model import ERROR
@@ -39,6 +41,8 @@ from core.physical.registry import PhysicalRegistry
 from core.sim.backend import SimulationError
 from core.sim.ngspice_adapter import NgspiceAdapter, SyncHandlers, tran_card
 from core.sim.result import SimulationResult
+
+TIME = "time"
 
 MIN_TS = 10e-6
 """Smallest controller tick v0.3 supports."""
@@ -64,6 +68,49 @@ class CoSimRun:
     t_end: float
     warnings: list[str] = field(default_factory=list)
     redo_count: int = 0
+
+    @property
+    def result(self) -> SimulationResult:
+        """Everything as one SimulationResult (``merge``)."""
+        return merge(self)
+
+
+ANALYSIS = "cosim"
+
+
+def merge(run: CoSimRun) -> SimulationResult:
+    """One SimulationResult for a combined run (C5).
+
+    - axis ``time``: ngspice's accepted time points up to ``t_end`` (every tick is
+      one of them, since a breakpoint is set on each);
+    - every physical vector, named ``<component>.<port>.<quantity>`` (across
+      variables, e.g. ``inertia.A.w``) or ``<component>.<signal>`` (sensor outputs),
+      in SI with its unit;
+    - every Scope trace, sampled at Ts and held until the next tick on this axis
+      (zero-order hold: at the ticks it equals the Scope's samples exactly).
+    """
+    tol = _TICK_TOL * run.ts
+    phys = run.physical
+    t_all = np.asarray(phys.vectors[TIME], dtype=float).real
+    keep = t_all <= run.t_end + tol
+    t = t_all[keep]
+    vectors: dict[str, np.ndarray] = {TIME: t}
+    units: dict[str, str] = {TIME: "s"}
+    for name, source in run.mapped.vectors.items():
+        data = phys.vectors.get(source)
+        if data is None:
+            continue
+        vectors[name] = np.asarray(data).real[keep].copy()
+        units[name] = run.mapped.units.get(name, "")
+    ticks = np.clip(np.floor((t + tol) / run.ts).astype(int), 0, None)
+    for name in run.signal.trace_names():
+        samples = np.asarray(run.signal.vectors[name])
+        if not len(samples):
+            continue
+        vectors[name] = samples[np.minimum(ticks, len(samples) - 1)]
+        if name in run.signal.units:
+            units[name] = run.signal.units[name]
+    return SimulationResult(axis=TIME, vectors=vectors, units=units, analysis=ANALYSIS)
 
 
 def node_of(vector: str) -> str:
@@ -152,6 +199,11 @@ class CoSimulator:
         if not self.engine.networks:
             raise DiagramError("this diagram has no physical network")
         mapped = self.map(t_end, ts)
+        clash = [n for n in self.engine.scope_names if n in mapped.vectors]
+        if clash:
+            raise DiagramError(
+                f"Scope {clash[0]!r} has the name of a physical vector: give it another label"
+            )
 
         held: dict[str, float] = {}
         holders: dict[str, _HeldNetwork] = {}
