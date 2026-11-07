@@ -21,6 +21,17 @@ come from the Domain registry: a component never hard-codes "R = 1/b" (rule 12).
 
 Built-in components use exactly this API, the same one users get in M5 (rule 13).
 
+``role`` tells the network checks (F5) what a component is for:
+
+- ``"component"`` (the default): an ordinary part;
+- ``"reference"``: a domain reference (ground). It has exactly one conserving
+  port; the mapper (F6) puts that port's node on circuit node 0;
+- ``"solver"``: the Solver Configuration. It has exactly one conserving port,
+  usually of domain ``ANY_DOMAIN`` so it joins a network of any domain. Every
+  physical network needs exactly one.
+
+Only a ``"solver"`` component may have an ``ANY_DOMAIN`` port.
+
 Primitive sign conventions are those of SPICE:
 
 - two-terminal elements: current is positive from ``a`` through the element to
@@ -45,7 +56,7 @@ from typing import Any, ClassVar
 
 from core.blocks.spec import CONSERVING, BlockSpec, PortSpec, is_plain_constant
 from core.netlist.model import ERROR, WARNING
-from core.physical.domains import DOMAINS
+from core.physical.domains import ANY_DOMAIN, DOMAINS
 
 GROUND = "0"
 """Name of the reference node, shared by all domains (every reference value is 0)."""
@@ -55,6 +66,13 @@ SPEC_ATTR = "__physical_spec__"
 SIGNAL_IN = "input"
 SIGNAL_OUT = "output"
 PORT_ROLES = (CONSERVING, SIGNAL_IN, SIGNAL_OUT)
+
+COMPONENT = "component"
+REFERENCE = "reference"
+SOLVER = "solver"
+COMPONENT_ROLES = (COMPONENT, REFERENCE, SOLVER)
+
+_ANY_COLOR = "#4a5568"
 
 
 class PhysicalComponentError(ValueError):
@@ -316,6 +334,8 @@ class PhysicalComponent:
     parameters: ClassVar[Sequence[Parameter]] = ()
     internal: ClassVar[Mapping[str, str]] = {}
     """Internal node name -> domain."""
+    role: ClassVar[str] = COMPONENT
+    """"component", "reference" or "solver" (see the module docstring)."""
 
     def network(self, ports: Ports, params: Mapping[str, object]) -> list[Primitive]:
         raise NotImplementedError
@@ -332,6 +352,7 @@ class PhysicalSpec:
     doc: str
     block: BlockSpec
     """The component as a block in the v0.1 engine (conserving ports included)."""
+    role: str = COMPONENT
 
     def node_domains(self) -> dict[str, str]:
         """Domain of every named node: conserving ports, then internal nodes."""
@@ -375,12 +396,27 @@ def component_spec(cls: type, name: str | None = None) -> PhysicalSpec:
         if not isinstance(port, Port | SignalInput | SignalOutput):
             raise PhysicalComponentError(f"{comp_name}: {port!r} is not a port declaration")
         claim(port.name, "port")
-        if isinstance(port, Port) and port.domain not in DOMAINS:
+        if isinstance(port, Port) and port.domain == ANY_DOMAIN:
+            if getattr(cls, "role", COMPONENT) != SOLVER:
+                raise PhysicalComponentError(
+                    f"{comp_name}: only a role='solver' component may have a port of "
+                    f"domain {ANY_DOMAIN!r}"
+                )
+        elif isinstance(port, Port) and port.domain not in DOMAINS:
             raise PhysicalComponentError(
                 f"{comp_name}: port {port.name!r} has unknown domain {port.domain!r}"
             )
     if not any(isinstance(p, Port) for p in ports):
         raise PhysicalComponentError(f"{comp_name} needs at least one conserving Port")
+    role = getattr(cls, "role", COMPONENT)
+    if role not in COMPONENT_ROLES:
+        raise PhysicalComponentError(
+            f"{comp_name}: role must be one of {', '.join(COMPONENT_ROLES)}, not {role!r}"
+        )
+    if role != COMPONENT and sum(isinstance(p, Port) for p in ports) != 1:
+        raise PhysicalComponentError(
+            f"{comp_name}: a {role} component has exactly one conserving Port"
+        )
     for node, domain in internal.items():
         claim(node, "internal node")
         if domain not in DOMAINS:
@@ -401,7 +437,8 @@ def component_spec(cls: type, name: str | None = None) -> PhysicalSpec:
             )
 
     conserving = [PortSpec(p.name, CONSERVING, p.domain) for p in ports if isinstance(p, Port)]
-    first_domain = DOMAINS[conserving[0].domain or ""]
+    first = conserving[0].domain or ""
+    color = DOMAINS[first].color if first in DOMAINS else _ANY_COLOR
     raw_doc = cls.__doc__
     doc = inspect.cleandoc(raw_doc) if isinstance(raw_doc, str) else ""
     block = BlockSpec(
@@ -410,12 +447,12 @@ def component_spec(cls: type, name: str | None = None) -> PhysicalSpec:
         outputs=[p.name for p in ports if isinstance(p, SignalOutput)],
         settings={p.name: p.default for p in parameters},
         shape="rectangle",
-        color=first_domain.color,
+        color=color,
         stateful=True,  # rule 14: sensor outputs are the previous tick's values
         doc=doc,
         conserving=conserving,
     )
-    return PhysicalSpec(comp_name, ports, parameters, internal, doc, block)
+    return PhysicalSpec(comp_name, ports, parameters, internal, doc, block, role)
 
 
 def physical_component(cls: type | None = None, *, name: str | None = None) -> Any:

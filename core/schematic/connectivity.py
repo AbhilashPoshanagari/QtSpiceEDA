@@ -26,7 +26,7 @@ is a wire.
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Hashable, Iterable
 from dataclasses import dataclass, field
 
 from core.netlist.model import ERROR, WARNING, Diagnostic
@@ -54,14 +54,27 @@ class NetMap:
     diagnostics: list[Diagnostic] = field(default_factory=list)
 
 
-class _UnionFind:
+class UnionFind:
+    """Union-find over hashable items, optionally tagged with a physical domain.
+
+    The schematic adds items without a domain, and nothing changes for it. The
+    physical network extractor (v0.3) tags each conserving port with its domain:
+    ``union`` then refuses to join two groups of different domains and returns
+    False (it never raises). An item added with ``domain=None`` takes the domain of
+    whatever it is joined to (the Solver Configuration's wildcard port).
+    """
+
     def __init__(self) -> None:
-        self.parent: dict[Item, Item] = {}
+        self.parent: dict[Hashable, Hashable] = {}
+        self._domain: dict[Hashable, str] = {}  # root -> domain
 
-    def add(self, item: Item) -> None:
-        self.parent.setdefault(item, item)
+    def add(self, item: Hashable, domain: str | None = None) -> None:
+        if item not in self.parent:
+            self.parent[item] = item
+            if domain is not None:
+                self._domain[item] = domain
 
-    def find(self, item: Item) -> Item:
+    def find(self, item: Hashable) -> Hashable:
         parent = self.parent
         root = item
         while parent[root] != root:
@@ -70,16 +83,32 @@ class _UnionFind:
             parent[item], item = root, parent[item]
         return root
 
-    def union(self, a: Item, b: Item) -> None:
+    def domain(self, item: Hashable) -> str | None:
+        """Domain of the group ``item`` is in (None if no item of it has one)."""
+        return self._domain.get(self.find(item))
+
+    def union(self, a: Hashable, b: Hashable) -> bool:
+        """Join the groups of ``a`` and ``b``; False (and no change) if domains differ."""
         ra, rb = self.find(a), self.find(b)
-        if ra != rb:
-            self.parent[rb] = ra
+        if ra == rb:
+            return True
+        da, db = self._domain.get(ra), self._domain.get(rb)
+        if da is not None and db is not None and da != db:
+            return False
+        self.parent[rb] = ra
+        if db is not None:
+            self._domain[ra] = db
+            del self._domain[rb]
+        return True
+
+
+_UnionFind = UnionFind  # v0.2 name
 
 
 def connect(schematic: Schematic, lookup: Callable[[str], Symbol | None]) -> NetMap:
     """Nets of every pin and wire. ``lookup`` gives the Symbol for a symbol name."""
     out = NetMap()
-    uf = _UnionFind()
+    uf = UnionFind()
     at: dict[Point, list[Item]] = defaultdict(list)  # point -> things that end there
     degree: dict[Point, int] = defaultdict(int)
     wire_at: dict[Point, int] = defaultdict(int)
@@ -181,7 +210,7 @@ def connect(schematic: Schematic, lookup: Callable[[str], Symbol | None]) -> Net
 
 def _name_roots(
     schematic: Schematic,
-    uf: _UnionFind,
+    uf: UnionFind,
     named: list[tuple[Item, str]],
     diagnostics: list[Diagnostic],
 ) -> dict[Item, str]:
