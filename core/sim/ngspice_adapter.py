@@ -3,6 +3,28 @@
 Signatures follow third_party/ngspice/include/sharedspice.h. The library is loaded
 lazily with ctypes; if it cannot be found, available() returns False and nothing
 else in the app breaks.
+
+ngspice is set up once per process, in one of two modes chosen by the first adapter
+that asks for the library:
+
+- plain (``NgspiceAdapter()``): no SendData and no sync callbacks, as in v0.1/v0.2.
+  Netlist and schematic runs use it.
+- sync (``NgspiceAdapter(sync=True)``, C1): SendData + SendInitData (ngspice calls
+  SendData only when SendInitData is not NULL) and ``ngSpice_Init_Sync`` with
+  GetVSRCData, GetISRCData and GetSyncData. Only the BlockRunner child uses it, for
+  combined physical runs. ``SyncHandlers.data`` receives the accepted time points;
+  ``SyncHandlers.source`` gives the value of every ``external`` source.
+
+  GetSyncData always returns 0: a nonzero value makes ngspice redo the step, and the
+  redo steps over the tick breakpoint. It only records the redo information
+  (``location=1, redostep=1`` = rejected); a SendData point that follows a rejected
+  step is never passed on.
+
+Ticked runs (``run_ticks``) end with ngspice's ``stop when``: with GetSyncData
+registered ngspice often fails to finish at the deck's tstop, so the deck runs two
+ticks further (``tran_card``) and stops half a tick after the last tick.
+
+setlocale(LC_NUMERIC, "C") is called before every load (rule 4).
 """
 
 from __future__ import annotations
@@ -10,11 +32,14 @@ from __future__ import annotations
 import contextlib
 import ctypes
 import ctypes.util
+import locale
 import os
 import re
 import sys
 import threading
 import time
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -34,6 +59,9 @@ LIBRARY_ENV_VAR = "QTSPICE_NGSPICE_LIB"
 
 _THIRD_PARTY = Path(__file__).resolve().parents[2] / "third_party" / "ngspice"
 
+PLAIN = "plain"
+SYNC = "sync"
+
 # --- ctypes mirror of sharedspice.h ------------------------------------------
 
 
@@ -52,6 +80,24 @@ class _VectorInfo(ctypes.Structure):
     ]
 
 
+class _VecValues(ctypes.Structure):
+    _fields_ = [
+        ("name", ctypes.c_char_p),
+        ("creal", ctypes.c_double),
+        ("cimag", ctypes.c_double),
+        ("is_scale", ctypes.c_bool),
+        ("is_complex", ctypes.c_bool),
+    ]
+
+
+class _VecValuesAll(ctypes.Structure):
+    _fields_ = [
+        ("veccount", ctypes.c_int),
+        ("vecindex", ctypes.c_int),
+        ("vecsa", ctypes.POINTER(ctypes.POINTER(_VecValues))),
+    ]
+
+
 # typedef int (SendChar)(char*, int, void*);  SendStat has the same shape.
 _SendChar = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_void_p)
 _SendStat = _SendChar
@@ -61,11 +107,60 @@ _ControlledExit = ctypes.CFUNCTYPE(
 )
 # typedef int (BGThreadRunning)(NG_BOOL, int, void*);
 _BGThreadRunning = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_bool, ctypes.c_int, ctypes.c_void_p)
+# typedef int (SendData)(pvecvaluesall, int, int, void*);
+_SendData = ctypes.CFUNCTYPE(
+    ctypes.c_int, ctypes.POINTER(_VecValuesAll), ctypes.c_int, ctypes.c_int, ctypes.c_void_p
+)
+# typedef int (SendInitData)(pvecinfoall, int, void*);  the struct is not read.
+_SendInitData = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p)
+# typedef int (GetVSRCData)(double*, double, char*, int, void*);  GetISRCData alike.
+_GetSRCData = ctypes.CFUNCTYPE(
+    ctypes.c_int,
+    ctypes.POINTER(ctypes.c_double),
+    ctypes.c_double,
+    ctypes.c_char_p,
+    ctypes.c_int,
+    ctypes.c_void_p,
+)
+# typedef int (GetSyncData)(double, double*, double, int, int, int, void*);
+#   time, delta, olddelta, redostep, ident, location, userdata
+_GetSyncData = ctypes.CFUNCTYPE(
+    ctypes.c_int,
+    ctypes.c_double,
+    ctypes.POINTER(ctypes.c_double),
+    ctypes.c_double,
+    ctypes.c_int,
+    ctypes.c_int,
+    ctypes.c_int,
+    ctypes.c_void_p,
+)
 
 # v_type values from ngspice's sim.h (SV_*), mapped to display units.
 _UNITS_BY_TYPE = {1: "s", 2: "Hz", 3: "V", 4: "A"}
 _SCALE_NAMES = ("time", "frequency")
 _STAT_PERCENT = re.compile(r"(\d+(?:\.\d+)?)%")
+
+
+@dataclass
+class SyncHandlers:
+    """Python side of a sync-mode run. The callbacks run on ngspice's thread.
+
+    ``data(time, values)``: one accepted time point; ``values`` maps lower-case
+    ngspice vector names (``time``, ``v(out)``, ``v_x#branch``, ...) to real values.
+    ``source(name, time)``: the value of the ``external`` source ``name`` (lower
+    case). ngspice asks at trial points too, rejected ones included, so it must only
+    return a held value.
+    """
+
+    data: Callable[[float, dict[str, float]], None] | None = None
+    source: Callable[[str, float], float] | None = None
+    errors: list[str] = field(default_factory=list)
+    """Exceptions raised by the callbacks (they never unwind into ngspice)."""
+
+
+def tran_card(ts: float, t_stop: float) -> str:
+    """The ``.tran`` card for a ticked run that ``NgspiceAdapter.run_ticks`` ends."""
+    return f".tran {ts!r} {t_stop + 2 * ts!r} 0 {ts!r}"
 
 
 def library_candidates() -> list[Path | str]:
@@ -128,15 +223,18 @@ class _Session:
 
     ngspice is process-global: ngSpice_Init must run once, and the callback objects
     it receives must stay alive for as long as the library is loaded. Callbacks are
-    forwarded to the adapter that last loaded a deck (``owner``).
+    forwarded to the adapter that last loaded a deck (``owner``). ``mode`` is the
+    mode the first caller asked for (PLAIN or SYNC).
     """
 
     def __init__(self) -> None:
         self.lib: ctypes.CDLL | None = None
         self.error = ""
         self.tried = False
+        self.mode = ""
         self.owner: NgspiceAdapter | None = None
         self.lock = threading.Lock()
+        self.ident = ctypes.c_int(0)
         self.callbacks = (
             _SendChar(lambda text, ident, user: self._forward("_send_char", text, ident, user)),
             _SendStat(lambda text, ident, user: self._forward("_send_stat", text, ident, user)),
@@ -149,6 +247,15 @@ class _Session:
                 lambda running, ident, user: self._forward("_bg_running", running, ident, user)
             ),
         )
+        self.sync_callbacks = (
+            _SendData(lambda data, _count, _ident, _user: self._forward("_send_data", data)),
+            _SendInitData(lambda *_: 0),
+            _GetSRCData(lambda ret, t, name, _i, _u: self._forward("_get_src", ret, t, name)),
+            _GetSRCData(lambda ret, t, name, _i, _u: self._forward("_get_src", ret, t, name)),
+            _GetSyncData(
+                lambda _t, _d, _o, redo, _i, loc, _u: self._forward("_get_sync", redo, loc)
+            ),
+        )
 
     def _forward(self, method: str, *args: object) -> int:
         owner = self.owner
@@ -159,7 +266,8 @@ class _Session:
         except Exception:  # never let a Python error unwind into ngspice
             return 0
 
-    def ensure(self) -> ctypes.CDLL | None:
+    def ensure(self, mode: str = PLAIN) -> ctypes.CDLL | None:
+        """The library, set up by the first call in that call's ``mode``."""
         with self.lock:
             if self.tried:
                 return self.lib
@@ -171,9 +279,25 @@ class _Session:
             try:
                 _declare(lib)
                 send_char, send_stat, controlled_exit, bg_running = self.callbacks
-                status = lib.ngSpice_Init(
-                    send_char, send_stat, controlled_exit, None, None, bg_running, None
-                )
+                if mode == SYNC:
+                    send_data, send_init, vsrc, isrc, sync = self.sync_callbacks
+                    status = lib.ngSpice_Init(
+                        send_char,
+                        send_stat,
+                        controlled_exit,
+                        send_data,
+                        send_init,
+                        bg_running,
+                        None,
+                    )
+                    if status == 0:
+                        status = lib.ngSpice_Init_Sync(
+                            vsrc, isrc, sync, ctypes.byref(self.ident), None
+                        )
+                else:
+                    status = lib.ngSpice_Init(
+                        send_char, send_stat, controlled_exit, None, None, bg_running, None
+                    )
             except (AttributeError, OSError) as exc:
                 self.error = f"not an ngspice shared library: {exc}"
                 return None
@@ -181,6 +305,7 @@ class _Session:
                 self.error = f"ngSpice_Init returned {status}"
                 return None
             self.lib = lib
+            self.mode = mode
             return lib
 
 
@@ -192,12 +317,22 @@ def _declare(lib: ctypes.CDLL) -> None:
         _SendChar,
         _SendStat,
         _ControlledExit,
-        ctypes.c_void_p,  # SendData*: not used
-        ctypes.c_void_p,  # SendInitData*: not used
+        ctypes.c_void_p,  # SendData*: NULL in plain mode
+        ctypes.c_void_p,  # SendInitData*: NULL in plain mode
         _BGThreadRunning,
         ctypes.c_void_p,
     ]
     lib.ngSpice_Init.restype = ctypes.c_int
+    lib.ngSpice_Init_Sync.argtypes = [
+        _GetSRCData,
+        _GetSRCData,
+        _GetSyncData,
+        ctypes.POINTER(ctypes.c_int),
+        ctypes.c_void_p,
+    ]
+    lib.ngSpice_Init_Sync.restype = ctypes.c_int
+    lib.ngSpice_SetBkpt.argtypes = [ctypes.c_double]
+    lib.ngSpice_SetBkpt.restype = ctypes.c_bool
     lib.ngSpice_Command.argtypes = [ctypes.c_char_p]
     lib.ngSpice_Command.restype = ctypes.c_int
     lib.ngSpice_Circ.argtypes = [ctypes.POINTER(ctypes.c_char_p)]
@@ -255,6 +390,10 @@ class NgspiceAdapter(SimulatorBackend):
     Console lines are collected in ``console`` and also sent to ``on_message``.
     ``compat_mode`` is sent as ``set ngbehavior=<mode>`` before each load ("" sends
     ``unset ngbehavior``); ngspice reads it on every circuit load.
+
+    ``sync=True`` asks for the sync mode (see the module docstring). A process uses
+    one mode only: an adapter whose mode differs from the one ngspice was set up with
+    is not ``available()``.
     """
 
     def __init__(
@@ -262,17 +401,29 @@ class NgspiceAdapter(SimulatorBackend):
         on_message: MessageCallback | None = None,
         on_progress: ProgressCallback | None = None,
         compat_mode: str = DEFAULT_COMPAT_MODE,
+        *,
+        sync: bool = False,
+        handlers: SyncHandlers | None = None,
     ) -> None:
         super().__init__(on_message, on_progress)
         self.compat_mode = compat_mode
+        self.mode = SYNC if sync else PLAIN
+        self.handlers = handlers or SyncHandlers()
         self.console: list[str] = []
         self.last_error = ""
+        self.redo_count = 0
+        """Steps that ngspice rejected and redid in the last run (sync mode)."""
         self._lib: ctypes.CDLL | None = None
         self._loaded = False
         self._result: SimulationResult | None = None
         self._stop_requested = threading.Event()
         self._bg_done = threading.Event()
         self._bg_calls = 0
+        self._paused = False
+        self._halted_for_stop = False
+        self._started_at = 0.0
+        self._errors_before = 0
+        self._rejected = False
         self._lock = threading.Lock()
 
     # --- SimulatorBackend --------------------------------------------------
@@ -288,15 +439,22 @@ class NgspiceAdapter(SimulatorBackend):
         lib = self._require()
         if lib.ngSpice_running():
             raise SimulationError("ngspice is still running another simulation")
+        # Rule 4: ngspice reads numbers with the C runtime's strtod.
+        with contextlib.suppress(locale.Error):
+            locale.setlocale(locale.LC_NUMERIC, "C")
         _SESSION.owner = self
         self._stop_requested.clear()
         self._result = None
         self._loaded = False
+        self._rejected = False
+        self.redo_count = 0
         self.console.clear()
         lines = deck.splitlines()
         if not lines or not lines[-1].strip().lower().startswith(".end"):
             lines.append(".end")
         self._command("destroy all")
+        if self.mode == SYNC:
+            self._command("delete all")  # the previous run's `stop when`
         self._command(compat_command(self.compat_mode))
         errors_before = self._error_count()
         array = (ctypes.c_char_p * (len(lines) + 1))(
@@ -307,52 +465,137 @@ class NgspiceAdapter(SimulatorBackend):
         self._loaded = True
 
     def run(self) -> None:
-        lib = self._require()
-        if not self._loaded or _SESSION.owner is not self:
-            raise SimulationError("no deck loaded")
-        if self._stop_requested.is_set():  # stop() arrived before the run started
-            raise SimulationError("simulation stopped")
-        errors_before = self._error_count()
-        self._bg_calls = 0
-        self._bg_done.clear()
-        started = time.monotonic()
-        halted = False
-        self._command("bg_run")
-        # bg_run returns before the background thread reports it is running, so
-        # ngSpice_running() alone is racy. ngspice calls BGThreadRunning once when the
-        # thread starts and once when it ends; wait for the second call. If no thread
-        # ever starts (e.g. bg_run refused), fall back after a short grace period.
-        # A stop request is turned into bg_halt here, on the thread that sent bg_run.
-        while not self._bg_done.wait(0.02):
-            running = lib.ngSpice_running()
-            if self._stop_requested.is_set() and running and not halted:
-                self._command("bg_halt")
-                halted = True
-            no_thread = self._bg_calls == 0 and not running
-            if no_thread and time.monotonic() - started > 2.0:
-                break
-        if self._stop_requested.is_set():
-            raise SimulationError("simulation stopped")
-        if self._error_count() > errors_before:
-            raise SimulationError(self._first_error(errors_before) or "simulation failed")
-        self._result = self._collect()
-        if self.on_progress:
-            self.on_progress(100)
+        self.start()
+        self.wait()
 
     def results(self) -> SimulationResult | None:
         return self._result
 
     def stop(self) -> None:
-        # Only sets a flag: run() sends bg_halt from its own thread within ~20 ms.
+        # Only sets a flag: wait() sends bg_halt from its own thread within ~20 ms.
         self._stop_requested.set()
+
+    # --- background runs (C1) ----------------------------------------------
+
+    def start(self) -> None:
+        """Start the loaded deck on ngspice's background thread (returns at once)."""
+        self._require()
+        if not self._loaded or _SESSION.owner is not self:
+            raise SimulationError("no deck loaded")
+        if self._stop_requested.is_set():  # stop() arrived before the run started
+            raise SimulationError("simulation stopped")
+        self._errors_before = self._error_count()
+        self._bg_calls = 0
+        self._paused = False
+        self._halted_for_stop = False
+        self._bg_done.clear()
+        self._started_at = time.monotonic()
+        self._command("bg_run")
+
+    def wait(self) -> None:
+        """Block until the background run ends; then collect ``results()``.
+
+        Raises SimulationError if it was stopped or ngspice reported an error.
+        """
+        lib = self._require()
+        # bg_run returns before the background thread reports it is running, so
+        # ngSpice_running() alone is racy. ngspice calls BGThreadRunning once when the
+        # thread starts and once when it ends; wait for the second call. If no thread
+        # ever starts (e.g. bg_run refused), fall back after a short grace period.
+        # A stop request is turned into bg_halt here, on the thread that sent bg_run.
+        while True:
+            done = self._bg_done.wait(0.02)
+            if self._stop_requested.is_set():
+                if lib.ngSpice_running() and not self._halted_for_stop:
+                    self._command("bg_halt")
+                    self._halted_for_stop = True
+                if done or not lib.ngSpice_running():
+                    break
+                continue
+            if self._paused:
+                time.sleep(0.02)
+                continue
+            if done:
+                break
+            no_thread = self._bg_calls == 0 and not lib.ngSpice_running()
+            if no_thread and time.monotonic() - self._started_at > 2.0:
+                break
+        if self._stop_requested.is_set():
+            raise SimulationError("simulation stopped")
+        if self._error_count() > self._errors_before:
+            raise SimulationError(self._first_error(self._errors_before) or "simulation failed")
+        self._result = self._collect()
+        if self.on_progress:
+            self.on_progress(100)
+
+    def halt(self, timeout: float = 5.0) -> bool:
+        """Pause a background run (``bg_halt``); True once ngspice's thread has ended.
+
+        ``wait()`` keeps waiting while the run is paused; ``resume()`` continues it.
+        """
+        lib = self._require()
+        self._paused = True
+        self._command("bg_halt")
+        deadline = time.monotonic() + timeout
+        while lib.ngSpice_running() or self._bg_calls % 2:
+            if time.monotonic() > deadline:
+                return False
+            time.sleep(0.005)
+        return True
+
+    def resume(self) -> None:
+        """Continue a run paused with ``halt()`` (``bg_resume``)."""
+        self._require()
+        if not self._paused:
+            return
+        self._bg_done.clear()
+        self._paused = False
+        self._command("bg_resume")
+
+    @property
+    def running(self) -> bool:
+        """True while ngspice's background thread is simulating."""
+        lib = self._ensure_library()
+        return bool(lib is not None and lib.ngSpice_running())
+
+    def set_breakpoint(self, t: float) -> bool:
+        """``ngSpice_SetBkpt(t)``: ngspice lands a time point exactly on ``t``."""
+        return bool(self._require().ngSpice_SetBkpt(float(t)))
+
+    def run_ticks(self, t_stop: float, ts: float, *, background: bool = False) -> None:
+        """Run a deck made with ``tran_card(ts, t_stop)`` and end it after the tick at
+        ``t_stop``: ngspice's ``stop when`` halts it half a tick after that tick.
+
+        With ``background=True`` this only starts the run; call ``wait()``.
+        """
+        self._require()
+        if not self._loaded:
+            raise SimulationError("no deck loaded")
+        self._command(f"stop when time > {t_stop + 0.5 * ts!r}")
+        self.start()
+        if not background:
+            self.wait()
+
+    def command(self, text: str) -> int:
+        """Send one ngspice command (e.g. ``print``); returns ngspice's status."""
+        self._require()
+        return self._command(text)
 
     # --- internals -----------------------------------------------------------
 
     def _ensure_library(self) -> ctypes.CDLL | None:
         if self._lib is None:
-            self._lib = _SESSION.ensure()
-            if self._lib is None:
+            lib = _SESSION.ensure(self.mode)
+            if lib is None:
                 self.last_error = _SESSION.error
+                return None
+            if _SESSION.mode != self.mode:
+                self.last_error = (
+                    f"ngspice is already set up in {_SESSION.mode} mode in this process; "
+                    f"a {self.mode} run needs a process of its own"
+                )
+                return None
+            self._lib = lib
         return self._lib
 
     def _require(self) -> ctypes.CDLL:
@@ -451,6 +694,40 @@ class NgspiceAdapter(SimulatorBackend):
     def _bg_running(self, _running: bool, _ident: int, _user: int | None) -> int:
         # The flag's meaning is inverted in some ngspice versions, so count calls.
         self._bg_calls += 1
-        if self._bg_calls >= 2:
+        if self._bg_calls >= 2 and self._bg_calls % 2 == 0:
             self._bg_done.set()
+        return 0
+
+    def _get_sync(self, redo: int, location: int) -> int:
+        # location 0: before a step; location 1: after it, redostep says whether ngspice
+        # rejected it. The SendData of an accepted point follows location 1, redo 0.
+        if location == 1:
+            self._rejected = bool(redo)
+            if redo:
+                self.redo_count += 1
+        return 0  # never ask for a redo (see the module docstring)
+
+    def _send_data(self, pdata: ctypes._Pointer) -> int:  # type: ignore[type-arg]
+        handler = self.handlers.data
+        if handler is None or self._rejected:
+            return 0
+        try:
+            all_ = pdata.contents
+            values: dict[str, float] = {}
+            for i in range(all_.veccount):
+                vec = all_.vecsa[i].contents
+                values[_decode(vec.name).lower()] = vec.creal
+            handler(values.get("time", 0.0), values)
+        except Exception as exc:
+            self.handlers.errors.append(f"{type(exc).__name__}: {exc}")
+        return 0
+
+    def _get_src(self, ret: ctypes._Pointer, t: float, name: bytes | None) -> int:  # type: ignore[type-arg]
+        handler = self.handlers.source
+        if handler is None:
+            return 0
+        try:
+            ret[0] = float(handler(_decode(name).lower(), t))
+        except Exception as exc:
+            self.handlers.errors.append(f"{type(exc).__name__}: {exc}")
         return 0
