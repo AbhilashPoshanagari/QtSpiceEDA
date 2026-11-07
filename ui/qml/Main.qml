@@ -398,6 +398,17 @@ ApplicationWindow {
         function onResultReady() {
             bottomTabs.currentIndex = 0  // Waveforms
         }
+        // One Run button for every diagram (U3): the Console while it runs, and when
+        // it does not start or fails (the reason and the network checks are there).
+        function onRunningChanged() {
+            if (DiagramController.running)
+                bottomTabs.currentIndex = 2
+        }
+        function onRunStatusChanged() {
+            const s = DiagramController.runStatus
+            if (s.startsWith("Not started") || s.startsWith("Failed"))
+                bottomTabs.currentIndex = 2
+        }
     }
 
     header: ToolBar {

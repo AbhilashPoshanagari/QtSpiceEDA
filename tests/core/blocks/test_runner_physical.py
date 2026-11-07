@@ -93,3 +93,33 @@ def test_unknown_physical_blocks_without_their_modules() -> None:
     outcome = BlockRunner(speed_loop_dict(), {}, 0.01, 1e-3).run()
     assert outcome.status == ERROR
     assert "unknown block type" in outcome.message
+
+
+@pytest.mark.ngspice
+def test_combined_run_sends_back_the_ngspice_console() -> None:
+    runner = BlockRunner(speed_loop_dict(), {}, 0.01, 1e-3, physical_modules=FIXTURES)
+    outcome = runner.run()
+    assert outcome.status == OK, outcome.traceback
+    assert outcome.console, "no ngspice console lines came back"
+    assert any("ngspice" in line.lower() or "circuit" in line.lower() for line in outcome.console)
+
+
+def test_failed_combined_run_still_has_a_console_list() -> None:
+    # Ts below 10 us is refused before ngspice starts: the list is there, but empty.
+    runner = BlockRunner(speed_loop_dict(), {}, 0.01, 1e-6, physical_modules=FIXTURES)
+    outcome = runner.run()
+    assert outcome.status == ERROR
+    assert outcome.console == []
+
+
+def test_signal_only_run_has_an_empty_console() -> None:
+    diagram = {
+        "blocks": [
+            {"id": "c", "spec": "Constant", "x": 0, "y": 0, "settings": {}},
+            {"id": "s", "spec": "Scope", "x": 0, "y": 0, "settings": {}},
+        ],
+        "wires": [{"src": "c.y", "dst": "s.u"}],
+    }
+    outcome = BlockRunner(diagram, {}, 0.01, 1e-3).run()
+    assert outcome.status == OK, outcome.traceback
+    assert outcome.console == []

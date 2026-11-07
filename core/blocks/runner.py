@@ -17,6 +17,10 @@ which loads its own sync-mode NgspiceAdapter in this child process: ngspice and 
 user's block code never run in the UI process. The diagram's time step is the
 controller tick Ts. The result is the merged SimulationResult (C5).
 
+Console lines (U3). ``RunOutcome.console`` holds what the run printed for the user:
+for a combined run, ngspice's console output and the CoSimulator's warnings (ticks
+that ran late). It is sent back with the result and with an error alike.
+
 ``wait()`` returns a RunOutcome. The timeout covers the whole run, including starting
 the process. ``cancel()`` may be called from any thread and stops the process at once
 (for a combined run that ends ngspice too: it lives in the child).
@@ -29,7 +33,7 @@ import multiprocessing as mp
 import threading
 import time
 import traceback
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from multiprocessing.connection import Connection
 from typing import Any
 
@@ -60,6 +64,8 @@ class RunOutcome:
     message: str = ""
     """One line for the user, e.g. ``AlgebraicLoopError: algebraic loop through ...``."""
     traceback: str = ""
+    console: list[str] = field(default_factory=list)
+    """ngspice console lines and run warnings, for the Console (combined runs)."""
 
     @property
     def ok(self) -> bool:
@@ -157,8 +163,8 @@ class BlockRunner:
         except (EOFError, OSError) as err:
             return RunOutcome(ERROR, message=f"lost contact with the block runner: {err}")
         if msg[0] == OK:
-            return RunOutcome(OK, result=msg[1])
-        return RunOutcome(ERROR, message=msg[1], traceback=msg[2])
+            return RunOutcome(OK, result=msg[1], console=list(msg[2]))
+        return RunOutcome(ERROR, message=msg[1], traceback=msg[2], console=list(msg[3]))
 
     def _finish(self) -> None:
         with self._lock:
@@ -199,11 +205,14 @@ def run_diagram(
     t_end: float,
     dt: float,
     physical_modules: list[str] | None = None,
+    console: list[str] | None = None,
 ) -> SimulationResult:
     """Load the blocks, then compile and run the diagram (in the current process).
 
     A diagram with physical networks is a combined run: ngspice (sync mode) is set
     up in this process, so call it only in the runner process or a fresh one.
+    ngspice's console lines and the run's warnings are appended to ``console`` (also
+    when the run fails).
     """
     blocks = load_blocks(sources)
     physical = physical_registry(physical_modules)
@@ -216,7 +225,15 @@ def run_diagram(
     engine = ExecutionEngine(blocks, physical)
     engine.compile(Diagram.from_dict(diagram, lookup))
     if engine.networks:
-        return CoSimulator(engine, physical).run(t_end, dt).result
+        cosim = CoSimulator(engine, physical)
+        try:
+            run = cosim.run(t_end, dt)
+        finally:
+            if console is not None and cosim.adapter is not None:
+                console.extend(cosim.adapter.console)
+        if console is not None:
+            console.extend(f"Warning: {w}" for w in run.warnings)
+        return run.result
     return engine.run(t_end, dt)
 
 
@@ -228,11 +245,12 @@ def _child_main(
     dt: float,
     physical_modules: list[str] | None,
 ) -> None:
+    console: list[str] = []
     try:
-        result = run_diagram(diagram, sources, t_end, dt, physical_modules)
-        conn.send((OK, result))
+        result = run_diagram(diagram, sources, t_end, dt, physical_modules, console)
+        conn.send((OK, result, console))
     except BaseException as err:  # everything goes back to the parent
         message = "".join(traceback.format_exception_only(err)).strip()
-        conn.send((ERROR, message, traceback.format_exc()))
+        conn.send((ERROR, message, traceback.format_exc(), console))
     finally:
         conn.close()

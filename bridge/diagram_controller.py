@@ -42,6 +42,15 @@ two or more physical wires gets a junction dot (``junctions``). ``canConnectPhys
 gives the reason a physical wire is refused (``Diagram.check_physical_wire``), and
 connecting, disconnecting and removing physical wires are undo steps like the rest.
 
+One Run button (U3). ``run`` takes signal-only and mixed diagrams alike. For a
+diagram with physical blocks it first checks, in this process and without running
+any user code: the time step (it is the controller tick Ts, at least 10 us); the
+physical networks (F5: Solver Configuration, references, domains), whose failing
+blocks get ``hasError`` and are named in ``runStatus``; that every network maps to
+a circuit; and that ngspice can be loaded. Only then does a BlockRunner child run
+it. ``consoleText`` collects the run's messages for the Console: the checks, the
+engine's start and end lines, ngspice's own output from the child and any error.
+
 Library groups and units (U2). Every library entry has a ``group``: "User", "Signal",
 or "Physical/<domain>" from the module its component comes from ("Physical/Sensors
 and sources" for the converters: controlled sources, sensors and the Solver
@@ -76,15 +85,18 @@ from PySide6.QtGui import QUndoCommand, QUndoStack
 from PySide6.QtQml import QmlElement, QmlSingleton
 
 from core.blocks.diagram import BlockInstance, Diagram, DiagramError, PhysicalWire, Wire
-from core.blocks.engine import AlgebraicLoopError, ExecutionEngine
+from core.blocks.engine import AlgebraicLoopError, ExecutionEngine, NetworkError
 from core.blocks.library import builtin_specs
 from core.blocks.registry import BlockRegistry, SourceResult
 from core.blocks.runner import DEFAULT_TIMEOUT, BlockRunner, RunOutcome
 from core.blocks.spec import BlockSpec, is_plain_constant
 from core.netlist.parser import parse_number
+from core.physical.component import NetworkDiagnostic
+from core.physical.cosim import MIN_TS, CoSimulator
 from core.physical.domains import ANY_DOMAIN, DOMAINS
 from core.physical.library import physical_registry
 from core.physical.registry import PhysicalRegistry
+from core.sim.ngspice_adapter import NgspiceAdapter
 
 QML_IMPORT_NAME = "QtSpice"
 QML_IMPORT_MAJOR_VERSION = 1
@@ -153,6 +165,9 @@ class DiagramState:
     dt: float = DEFAULT_DT
 
 
+MAX_CONSOLE_LINES = 5000
+
+
 def spec_lookup(
     registry: BlockRegistry, physical: PhysicalRegistry
 ) -> Callable[[str], BlockSpec | None]:
@@ -166,6 +181,16 @@ def spec_lookup(
         return found.block if found is not None else None
 
     return lookup
+
+
+def ngspice_found() -> bool:
+    """True if the ngspice shared library loads.
+
+    A combined run loads ngspice again in its own child process, so a library that is
+    already set up here in another mode (the netlist simulator's) still counts.
+    """
+    adapter = NgspiceAdapter()
+    return adapter.available() or "already set up" in adapter.last_error
 
 
 def domain_color(domain: str | None) -> str:
@@ -431,6 +456,7 @@ BLOCK_ROLES = [
     "conserving",
     "selected",
     "inLoop",
+    "hasError",
 ]
 WIRE_ROLES = ["src", "dst", "x1", "y1", "x2", "y2", "bend", "selected"]
 PHYSICAL_WIRE_ROLES = ["a", "b", "domain", "color", "points", "selected"]
@@ -661,6 +687,7 @@ class DiagramController(QObject):
     runSettingsChanged = Signal()
     junctionsChanged = Signal()
     libraryGroupsChanged = Signal()
+    consoleTextChanged = Signal()
     diagramEdited = Signal()  # an undo-stack step was done, undone or redone
     documentReplaced = Signal(str)  # code of the current document after load_state
     _runDone = Signal(object)  # RunOutcome, emitted from the run thread
@@ -692,6 +719,10 @@ class DiagramController(QObject):
         self._selected_blocks: set[str] = set()
         self._selected_wires: set[Wire] = set()
         self._loop_blocks: set[str] = set()
+        self._error_blocks: set[str] = set()
+        self._console: list[str] = []
+        self.ngspice_available = ngspice_found
+        """Checked before a combined run starts; tests may replace it."""
         self._hint = ""
         self._move_session = 1
 
@@ -759,6 +790,9 @@ class DiagramController(QObject):
 
     def _get_junctions(self) -> list[dict[str, object]]:
         return self._junctions
+
+    def _get_console_text(self) -> str:
+        return "\n".join(self._console)
 
     def _get_library_groups(self) -> list[str]:
         present = {str(entry["group"]) for entry in self._library}
@@ -842,6 +876,7 @@ class DiagramController(QObject):
     physicalWires = Property(QObject, _get_physical_wires, constant=True)  # noqa: N815
     junctions = Property("QVariantList", _get_junctions, notify=junctionsChanged)
     domainColors = Property("QVariantMap", _get_domain_colors, constant=True)  # noqa: N815
+    consoleText = Property(str, _get_console_text, notify=consoleTextChanged)  # noqa: N815
     libraryGroups = Property(  # noqa: N815
         "QVariantList", _get_library_groups, notify=libraryChanged
     )
@@ -1372,7 +1407,10 @@ class DiagramController(QObject):
         if self._running:
             return False
         self._set_loop(set())
+        self._set_errors(set())
         self._run_details = ""
+        self._console = []
+        self.consoleTextChanged.emit()
         if not (math.isfinite(dt) and dt > 0):
             self._set_run_status("Not started: the time step must be a positive number")
             return False
@@ -1382,25 +1420,77 @@ class DiagramController(QObject):
         if not self._blocks.rowCount():
             self._set_run_status("Not started: the diagram is empty")
             return False
+        mixed = any(self._diagram.spec(b.id).is_physical for b in self._diagram.blocks)
+        if mixed and dt < MIN_TS * (1 - 1e-9):
+            return self._not_started(
+                f"the time step is the controller tick Ts of the physical network; "
+                f"{dt:g} s is below the smallest supported {MIN_TS:g} s"
+            )
         # compile() only orders and checks the blocks: the specs stand in for the block
-        # objects, so no user code runs in this process.
+        # objects, so no user code runs in this process. Physical networks are
+        # checked here too (F5), with the built-in components only.
         stand_ins = {spec.name: spec for spec in self._registry.specs()}
+        engine = ExecutionEngine(stand_ins, self._physical)
         try:
-            ExecutionEngine(stand_ins).compile(self._diagram)
+            engine.compile(self._diagram)
+            if engine.networks:
+                self._log([f"Warning: {d.block}: {d.message}" for d in engine.warnings])
+                CoSimulator(engine, self._physical).map(t_end, dt)
+        except NetworkError as err:
+            return self._network_failed(err.diagnostics)
         except AlgebraicLoopError as err:
             self._set_loop(set(err.blocks))
-            self._set_run_status(f"Not started: {err}")
-            return False
+            return self._not_started(str(err))
         except DiagramError as err:
-            self._set_run_status(f"Not started: {err}")
-            return False
+            return self._not_started(str(err))
+        if engine.networks and not self.ngspice_available():
+            return self._not_started(
+                "ngspice is not available: a diagram with physical blocks needs the "
+                "ngspice shared library"
+            )
         sources = {doc: self._registry.source(doc) for doc in self._registry.documents()}
         runner = BlockRunner(self._diagram.to_dict(), sources, t_end, dt, timeout=self.timeout)
         self._runner = runner
         self._set_running(True)
+        if engine.networks:
+            count = len(engine.networks)
+            self._log(
+                [
+                    f"Combined run: {count} physical network{'s' if count > 1 else ''} "
+                    f"in ngspice, controller tick Ts = {dt:g} s, end time {t_end:g} s"
+                ]
+            )
+        else:
+            self._log([f"Block diagram run: step {dt:g} s, end time {t_end:g} s"])
         self._set_run_status("Running…")
         threading.Thread(target=self._run_thread, args=(runner,), daemon=True).start()
         return True
+
+    def _not_started(self, reason: str) -> bool:
+        self._set_run_status(f"Not started: {reason}")
+        self._log([f"Not started: {reason}"])
+        return False
+
+    def _network_failed(self, diagnostics: list[NetworkDiagnostic]) -> bool:
+        """The physical network checks failed: mark and name the blocks, log them all."""
+        self._set_errors({d.block for d in diagnostics if d.block})
+        self._log(
+            ["Physical network check failed:"]
+            + [f"  {d.severity}: {d.block}: {d.message}" for d in diagnostics]
+        )
+        first = diagnostics[0]
+        more = len(diagnostics) - 1
+        extra = f" (and {more} more: see the Console)" if more else ""
+        self._set_run_status(f"Not started: {first.block}: {first.message}{extra}")
+        return False
+
+    def _log(self, lines: list[str]) -> None:
+        if not lines:
+            return
+        self._console.extend(lines)
+        if len(self._console) > MAX_CONSOLE_LINES:
+            del self._console[: len(self._console) - MAX_CONSOLE_LINES]
+        self.consoleTextChanged.emit()
 
     @Slot()
     def stop(self) -> None:
@@ -1422,6 +1512,7 @@ class DiagramController(QObject):
         if runner is not self._runner:
             return
         self._runner = None
+        self._log(list(outcome.console))
         if outcome.ok and outcome.result is not None:
             self._result = outcome.result
             if self._waveforms is not None:
@@ -1430,6 +1521,7 @@ class DiagramController(QObject):
             traces = outcome.result.trace_names()
             shown = ", ".join(traces) if traces else "no Scope blocks"
             self._set_run_status(f"Finished: {steps} steps ({shown})")
+            self._log([self._run_status])
             self._set_running(False)
             self.resultReady.emit()
             return
@@ -1440,6 +1532,7 @@ class DiagramController(QObject):
             self._set_run_status(f"Failed: {outcome.message}")
         else:
             self._set_run_status(f"Failed: {outcome.message}")
+        self._log([self._run_status])
         self._set_running(False)
 
     # ---- primitive changes (used by the undo commands)
@@ -1476,6 +1569,7 @@ class DiagramController(QObject):
                 **self._block_row_data(added.id, spec),
                 "selected": False,
                 "inLoop": False,
+                "hasError": False,
             }
         )
         self._set_loop(set())
@@ -1699,6 +1793,14 @@ class DiagramController(QObject):
         for i in range(self._physical_wires.rowCount()):
             self._physical_wires.update(i, selected=self._physical_wire_at_row(i) in physical)
         self.selectionChanged.emit()
+
+    def _set_errors(self, blocks: set[str]) -> None:
+        """Mark the blocks a physical network check failed on (red outline)."""
+        if blocks == self._error_blocks:
+            return
+        self._error_blocks = blocks
+        for i, row in enumerate(self._blocks.rows()):
+            self._blocks.update(i, hasError=row["blockId"] in blocks)
 
     def _set_loop(self, blocks: set[str]) -> None:
         if blocks == self._loop_blocks:

@@ -5,7 +5,8 @@ import QtQuick.Shapes
 // input ports on the left and output ports on the right. A physical block's conserving
 // ports (round, in their domain colour) follow on both edges. Click selects (Ctrl/Shift
 // adds), drag moves it and the rest of the selection, snapped to the grid. A block in
-// an algebraic loop gets a red outline.
+// an algebraic loop, or one a physical network check failed on (U3), gets a red
+// outline.
 Item {
     id: block
 
@@ -23,6 +24,7 @@ Item {
     required property var conserving
     required property bool selected
     required property bool inLoop
+    required property bool hasError
 
     property Item canvas
 
@@ -32,8 +34,9 @@ Item {
     width: blockWidth
     height: blockHeight
 
-    readonly property color outline: inLoop ? "#d73a49" : selected ? palette.highlight : color
-    readonly property real outlineWidth: inLoop || selected ? 3 : 2
+    readonly property bool marked: inLoop || hasError
+    readonly property color outline: marked ? "#d73a49" : selected ? palette.highlight : color
+    readonly property real outlineWidth: marked || selected ? 3 : 2
     readonly property color fill: Qt.lighter(color, 1.65)
 
     Shape {
@@ -88,7 +91,7 @@ Item {
         anchors.horizontalCenter: parent.horizontalCenter
         text: block.blockId
         font.pixelSize: 10
-        color: block.inLoop ? "#d73a49" : palette.placeholderText
+        color: block.marked ? "#d73a49" : palette.placeholderText
     }
 
     TapHandler {
