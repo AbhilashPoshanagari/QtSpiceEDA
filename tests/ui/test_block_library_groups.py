@@ -23,6 +23,7 @@ PHYSICAL = [
     "Physical/Translational",
     "Physical/Thermal",
     "Physical/Sensors and sources",
+    "Physical/Composite",
 ]
 
 

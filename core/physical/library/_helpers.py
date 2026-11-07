@@ -80,3 +80,21 @@ def pulse(params: Mapping[str, object], to: Callable[[float], float]) -> Pulse:
         period=real(params, "period"),
         ncycles=int(real(params, "ncycles")),
     )
+
+
+def coupling_gain(to: Callable[[float], float], frm: Callable[[float], float], k: float) -> float:
+    """Gain of a controlled source that couples two domains: ``to(k * frm(1))``.
+
+    ``frm`` turns the controlling voltage or current back into its physical quantity
+    and ``to`` turns ``k`` times it into the output's voltage or current (Domain
+    ``from_voltage`` / ``to_current`` ...). The maps are linear, so one unit is enough.
+    """
+    return to(k * frm(1.0))
+
+
+def text(params: Mapping[str, object], name: str) -> str:
+    """Parameter ``name`` as a string. Raises ValueError for a non-string."""
+    value = params[name]
+    if not isinstance(value, str):
+        raise ValueError(f"{name} must be text, not {value!r}")
+    return value

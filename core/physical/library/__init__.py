@@ -1,4 +1,4 @@
-"""Built-in physical components (filled by B1-B5). Qt-free.
+"""Built-in physical components (B1-B5, composite parts M1). Qt-free.
 
 ``BUILTIN_MODULES`` names the modules whose ``@physical_component`` classes make up
 the built-in library; the block runner imports them by name in its child process
@@ -20,6 +20,11 @@ BUILTIN_MODULES: tuple[str, ...] = (
     "core.physical.library.converters.sources",
     "core.physical.library.converters.sensors",
     "core.physical.library.converters.solver",
+    "core.physical.library.composite.motor",
+    "core.physical.library.composite.ratios",
+    "core.physical.library.composite.battery",
+    "core.physical.library.composite.bridges",
+    "core.physical.library.composite.thermal_parts",
 )
 """The built-in library, in the order its groups are shown."""
 

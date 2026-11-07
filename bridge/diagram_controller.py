@@ -123,6 +123,7 @@ PHYSICAL_GROUPS = {
     "core.physical.library.translational": "Physical/Translational",
     "core.physical.library.thermal": "Physical/Thermal",
     "core.physical.library.converters": "Physical/Sensors and sources",
+    "core.physical.library.composite": "Physical/Composite",
 }
 """Library group of a physical component, by the package its class lives in."""
 GROUP_ORDER = (USER_GROUP, SIGNAL_GROUP, *PHYSICAL_GROUPS.values(), OTHER_PHYSICAL_GROUP)

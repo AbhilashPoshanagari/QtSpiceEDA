@@ -36,7 +36,6 @@ Nothing here raises on a bad network (rule 6).
 from __future__ import annotations
 
 import math
-import re
 from dataclasses import dataclass, field
 
 from core.netlist.builder import build
@@ -45,7 +44,6 @@ from core.physical.component import (
     CCCS,
     CCVS,
     GROUND,
-    REFERENCE_RE,
     SOLVER,
     VCCS,
     VCVS,
@@ -64,6 +62,7 @@ from core.physical.component import (
     Sine,
     VoltageSource,
     build_network,
+    rewrite_references,
 )
 from core.physical.domains import DOMAINS
 from core.physical.network import PhysicalNetwork, PortRef
@@ -208,16 +207,6 @@ def element_name(prim: Primitive, block: str) -> str:
     return f"{_letter(prim)}_{block}_{prim.name}"
 
 
-def _rewrite(expression: str, nodes: dict[str, str], names: dict[str, str]) -> str:
-    def sub(match: re.Match[str]) -> str:
-        args = [a.strip() for a in match.group(2).split(",")]
-        if match.group(1).upper() == "V":
-            return "V(" + ",".join(nodes.get(a, a) for a in args) + ")"
-        return "I(" + names.get(args[0], args[0]) + ")"
-
-    return REFERENCE_RE.sub(sub, expression)
-
-
 class NetworkMapper:
     """Turns PhysicalNetworks into Circuits, using the components of ``registry``."""
 
@@ -358,7 +347,7 @@ class NetworkMapper:
             key = f"{block}.{prim.signal}"
             out.vectors[key] = f"V({node})"
             out.units[key] = outputs.get(prim.signal, "")
-            expr = _rewrite(prim.expression, nodes, names)
+            expr = rewrite_references(prim.expression, nodes, names)
             return Element(name, kind, [node, GROUND], f"V={expr}")
         ab = [nodes[prim.a], nodes[prim.b]]
         if isinstance(prim, Capacitor | Inductor):
@@ -376,7 +365,7 @@ class NetworkMapper:
         if isinstance(prim, CCCS | CCVS):
             return Element(name, kind, ab, f"{names[prim.control]} {_num(prim.gain)}")
         if isinstance(prim, Behavioural):
-            expr = _rewrite(prim.expression, nodes, names)
+            expr = rewrite_references(prim.expression, nodes, names)
             return Element(name, kind, ab, f"{prim.kind.upper()}={expr}")
         assert isinstance(prim, ExternalSource)
         domain = domains.get(prim.a) or domains.get(prim.b, "")
