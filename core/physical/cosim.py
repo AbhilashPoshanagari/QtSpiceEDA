@@ -21,6 +21,8 @@ setting all of them up front grows faster than linear).
 
 The deck runs two ticks past ``t_end`` and stops half a tick after the last tick
 (``NgspiceAdapter.run_ticks``). Ts below 10 us is refused (out of scope for v0.3).
+A Solver Configuration's ``Ts`` must equal the run's time step; its ``max_step``
+caps ngspice's internal step (never above Ts) and reltol / abstol go into the deck.
 Signal values become source values through the Domain registry (rule 12).
 """
 
@@ -36,7 +38,13 @@ import numpy as np
 from core.blocks.diagram import DiagramError
 from core.blocks.engine import ExecutionEngine, NetworkError, port_key
 from core.netlist.model import ERROR
-from core.physical.mapper import MappedNetwork, NetworkMapper, source_value
+from core.physical.mapper import (
+    MappedNetwork,
+    NetworkMapper,
+    max_step,
+    solver_settings,
+    source_value,
+)
 from core.physical.registry import PhysicalRegistry
 from core.sim.backend import SimulationError
 from core.sim.ngspice_adapter import NgspiceAdapter, SyncHandlers, tran_card
@@ -180,7 +188,8 @@ class CoSimulator:
         # the sensors there. The run starts from the operating point instead, with the
         # external sources at their initial values (device ic= values are ignored;
         # initial conditions are task M6).
-        mapped = NetworkMapper(self.registry).map_all(networks, tran_card(ts, t_end))
+        tran = tran_card(ts, t_end, max_step(solver_settings(networks)))
+        mapped = NetworkMapper(self.registry).map_all(networks, tran)
         errors = [d for d in mapped.diagnostics if d.severity == ERROR]
         if errors:
             raise NetworkError(errors)
@@ -198,6 +207,12 @@ class CoSimulator:
             raise ValueError(f"end time must be a positive number, not {t_end!r}")
         if not self.engine.networks:
             raise DiagramError("this diagram has no physical network")
+        for solver in solver_settings([n.network for n in self.engine.networks]):
+            if solver.ts is not None and abs(solver.ts - ts) > _TICK_TOL * ts:
+                raise DiagramError(
+                    f"Solver Configuration {solver.block}: Ts = {solver.ts:g} s, but the "
+                    f"run's time step is {ts:g} s; set them to the same value"
+                )
         mapped = self.map(t_end, ts)
         clash = [n for n in self.engine.scope_names if n in mapped.vectors]
         if clash:

@@ -22,6 +22,9 @@ For one ``PhysicalNetwork`` (from ``NetworkExtractor``):
   plain ngspice;
 - a ``Sensor`` becomes ``B_<block>_<name> s_<block>_<signal> 0 V=<expr>``, saved as
   the vector ``<block>.<signal>``;
+- the Solver Configuration's ``reltol`` / ``abstol`` become an ``.options`` card
+  (the strictest of all networks); its ``Ts`` and ``max_step`` are used by the
+  CoSimulator (``solver_settings``);
 - every conserving port not on the reference gets the vector
   ``<block>.<port>.<across>`` (e.g. ``Mass1.A.v``), in SI.
 
@@ -32,6 +35,7 @@ Nothing here raises on a bad network (rule 6).
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 
@@ -96,6 +100,61 @@ class ExternalInput:
     voltage or current with this domain (rule 12)."""
 
 
+SOLVER_SETTINGS = ("Ts", "reltol", "abstol", "max_step")
+"""Parameters of a role='solver' component that the mapper and the CoSimulator honour
+(the built-in Solver Configuration declares all four). Missing ones keep the default."""
+
+
+@dataclass(frozen=True)
+class SolverSettings:
+    """What one network's solver block asks for. None: not set (ngspice's default).
+
+    ``max_step`` None or 0 means "no limit beyond the controller tick Ts".
+    """
+
+    block: str
+    ts: float | None = None
+    reltol: float | None = None
+    abstol: float | None = None
+    max_step: float | None = None
+
+
+def _setting(settings: dict[str, object], name: str) -> float | None:
+    value = settings.get(name)
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    return float(value) if math.isfinite(value) and value > 0 else None
+
+
+def solver_settings(networks: list[PhysicalNetwork]) -> list[SolverSettings]:
+    """The solver settings of every network, in network order."""
+    out = []
+    for network in networks:
+        for block in network.blocks:
+            if block.role == SOLVER:
+                ts, reltol, abstol, max_step = (
+                    _setting(block.settings, n) for n in SOLVER_SETTINGS
+                )
+                out.append(SolverSettings(block.id, ts, reltol, abstol, max_step))
+    return out
+
+
+def options_card(settings: list[SolverSettings]) -> str:
+    """``.options reltol=... abstol=...`` from the strictest solver, or "" if none set."""
+    opts = {}
+    for key in ("reltol", "abstol"):
+        values = [getattr(s, key) for s in settings if getattr(s, key) is not None]
+        if values:
+            opts[key] = min(values)
+    return ".options " + " ".join(f"{k}={_num(v)}" for k, v in opts.items()) if opts else ""
+
+
+def max_step(settings: list[SolverSettings]) -> float | None:
+    """The smallest ``max_step`` asked for, or None."""
+    values = [s.max_step for s in settings if s.max_step]
+    return min(values) if values else None
+
+
 @dataclass
 class MappedNetwork:
     circuit: Circuit
@@ -108,6 +167,8 @@ class MappedNetwork:
     node_names: dict[PortRef, str] = field(default_factory=dict)
     """(block, port) -> circuit node."""
     diagnostics: list[NetworkDiagnostic] = field(default_factory=list)
+    solvers: list[SolverSettings] = field(default_factory=list)
+    """Settings of each network's Solver Configuration (reltol/abstol are in the deck)."""
 
     @property
     def ok(self) -> bool:
@@ -195,7 +256,12 @@ class NetworkMapper:
         used: dict[str, str] = {}  # casefolded element name -> block
         for network in networks:
             self._map_into(network, out, counters, used, external)
+        out.solvers = solver_settings(networks)
         out.deck = build(circuit, analysis)
+        options = options_card(out.solvers)
+        if options:
+            title, rest = out.deck.split("\n", 1)
+            out.deck = f"{title}\n{options}\n{rest}"
         return out
 
     def _map_into(

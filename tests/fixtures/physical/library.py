@@ -17,22 +17,7 @@ from core.sim.result import SimulationResult
 
 
 def library_registry() -> PhysicalRegistry:
-    reg = physical_registry()
-    if "SolverConfiguration" not in reg:  # until B5 adds it
-        from tests.fixtures.physical.components import Solver
-
-        reg.add(Solver)
-    return reg
-
-
-def add_solver(d: Diagram, reg: PhysicalRegistry, port: str) -> None:
-    """Add the Solver Configuration and wire it to ``port`` ("block.port")."""
-    if "SolverConfiguration" in reg:
-        d.add_block("SolverConfiguration", block_id="solver")
-        wire(d, "solver.port", port)
-    else:
-        d.add_block("Solver", block_id="solver")
-        wire(d, "solver.port", port)
+    return physical_registry()
 
 
 def new_diagram(reg: PhysicalRegistry | None = None) -> tuple[Diagram, PhysicalRegistry]:
@@ -49,6 +34,14 @@ def new_diagram(reg: PhysicalRegistry | None = None) -> tuple[Diagram, PhysicalR
 
 def wire(d: Diagram, a: str, b: str) -> None:
     d.add_physical_wire(*a.split("."), *b.split("."))
+
+
+def add_solver(
+    d: Diagram, reg: PhysicalRegistry, port: str, settings: dict[str, object] | None = None
+) -> None:
+    """Add a Solver Configuration ``solver`` and wire it to ``port`` ("block.port")."""
+    d.add_block("SolverConfiguration", settings=settings or {}, block_id="solver")
+    wire(d, "solver.port", port)
 
 
 def mapped(

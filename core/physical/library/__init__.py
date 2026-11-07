@@ -17,6 +17,9 @@ BUILTIN_MODULES: tuple[str, ...] = (
     "core.physical.library.rotational.components",
     "core.physical.library.translational.components",
     "core.physical.library.thermal.components",
+    "core.physical.library.converters.sources",
+    "core.physical.library.converters.sensors",
+    "core.physical.library.converters.solver",
 )
 """The built-in library, in the order its groups are shown."""
 

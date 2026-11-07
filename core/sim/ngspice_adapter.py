@@ -158,9 +158,13 @@ class SyncHandlers:
     """Exceptions raised by the callbacks (they never unwind into ngspice)."""
 
 
-def tran_card(ts: float, t_stop: float) -> str:
-    """The ``.tran`` card for a ticked run that ``NgspiceAdapter.run_ticks`` ends."""
-    return f".tran {ts!r} {t_stop + 2 * ts!r} 0 {ts!r}"
+def tran_card(ts: float, t_stop: float, max_step: float | None = None) -> str:
+    """The ``.tran`` card for a ticked run that ``NgspiceAdapter.run_ticks`` ends.
+
+    The largest internal step is Ts, or ``max_step`` when that is smaller.
+    """
+    tmax = ts if not max_step or max_step >= ts else float(max_step)
+    return f".tran {ts!r} {t_stop + 2 * ts!r} 0 {tmax!r}"
 
 
 def library_candidates() -> list[Path | str]:

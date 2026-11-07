@@ -224,7 +224,7 @@ def _switch_closed() -> float:
     d.add_wire("on", "y", "sw", "ctrl")
     engine = ExecutionEngine(builtin_blocks(), reg)
     engine.compile(d)
-    run = CoSimulator(engine, reg).run(1e-3, 1e-4)
+    run = CoSimulator(engine, reg).run(1e-2, 1e-3)
     return float(run.physical.vectors[run.mapped.vectors["sw.p.v"]].real[-1])
 
 
