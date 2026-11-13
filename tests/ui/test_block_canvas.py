@@ -214,6 +214,26 @@ def test_properties_panel_edits_setting(scene: Scene, qtbot) -> None:
     qtbot.waitUntil(lambda: find_item(scene.window, "setting_k").property("text") == "1.0")
 
 
+def test_properties_panel_shows_a_check_box_for_steady_state(scene: Scene, qtbot) -> None:
+    # M6: a true/false setting is a check box, not a text field
+    scene.ctl.addBlock("SolverConfiguration", 0, 0)
+    qtbot.wait(20)
+    click(scene.window, scene.block_center("SolverConfiguration1"))
+    box = find_item(scene.window, "check_steady_state")
+    assert box.isVisible() and box.property("checked") is False
+    assert not find_item(scene.window, "setting_steady_state").isVisible()
+    assert find_item(scene.window, "setting_Ts").isVisible()
+    assert not find_item(scene.window, "check_Ts").isVisible()
+    click(scene.window, item_center(box))
+    settings = scene.ctl.diagram.effective_settings
+    qtbot.waitUntil(lambda: settings("SolverConfiguration1")["steady_state"] is True)
+    qtbot.waitUntil(
+        lambda: find_item(scene.window, "check_steady_state").property("checked") is True
+    )
+    scene.ctl.undo()
+    assert settings("SolverConfiguration1")["steady_state"] is False
+
+
 def test_algebraic_loop_is_highlighted(scene: Scene, qtbot) -> None:
     scene.ctl.addBlock("Gain", 0, 0)
     scene.ctl.addBlock("Gain", 200, 0)

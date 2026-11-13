@@ -8,8 +8,8 @@ velocity is v(A) - v(B).
   source to A); a velocity source sets v(A) - v(B).
 - A mass is a one-port element on the reference.
 
-Initial values (``v0``, ``F0``) are used by runs with ``uic``; the combined run
-starts from the operating point and ignores them until M6.
+Initial values (``v0``, ``F0``) are the start values of a combined run (ngspice
+``ic=`` with ``uic``), unless its Solver Configuration has ``steady_state`` set (M6).
 """
 
 from __future__ import annotations

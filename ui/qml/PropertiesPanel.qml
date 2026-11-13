@@ -64,8 +64,21 @@ Pane {
                         ToolTip.text: row.modelData.label !== undefined ? row.modelData.label : ""
                         HoverHandler { id: captionHover }
                     }
+                    // M6: a true/false setting (e.g. steady_state) is a check box
+                    CheckBox {
+                        objectName: "check_" + row.modelData.name
+                        visible: typeof row.modelData.value === "boolean"
+                        checked: row.modelData.value === true
+                        onToggled: DiagramController.setSetting(root.selection.id, row.modelData.name,
+                                                                checked ? "true" : "false")
+                    }
+                    Item {
+                        visible: typeof row.modelData.value === "boolean"
+                        Layout.fillWidth: true
+                    }
                     TextField {
                         objectName: "setting_" + row.modelData.name
+                        visible: typeof row.modelData.value !== "boolean"
                         Layout.fillWidth: true
                         text: row.modelData.text
                         selectByMouse: true

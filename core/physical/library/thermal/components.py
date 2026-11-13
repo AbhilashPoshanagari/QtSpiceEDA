@@ -8,8 +8,8 @@ have ports A and B; their heat flow is positive flowing into A and out of B.
 - A heat flow source delivers its heat into the network at A (taken from B).
 - A thermal mass is a one-port element on the reference.
 
-``T0`` of a thermal mass is used by runs with ``uic``; the combined run starts from
-the operating point and ignores it until M6.
+``T0`` of a thermal mass is its start value in a combined run (ngspice ``ic=`` with
+``uic``), unless its Solver Configuration has ``steady_state`` set (M6).
 """
 
 from __future__ import annotations

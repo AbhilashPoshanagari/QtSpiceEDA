@@ -12,10 +12,10 @@ clamped to the table's range, so an over-discharged battery holds its last volta
 
 The state of charge is integrated inside the network (rule 11): a 1 F capacitor on
 internal node ``q`` is charged by I(Vi) / (3600 * capacity), so V(q) is the charge
-moved since the start and soc = soc0 + V(q). The combined run starts from the
-operating point without ``uic``, where the capacitor is open; so the integrating
-source is held at 0 while ``time`` is 0 (the operating point) and V(q) starts at 0.
-A 1e12 shunt keeps the operating point defined. Real initial conditions are M6.
+moved since the start and soc = soc0 + V(q). V(q) starts at 0 in both kinds of
+start (M6): from the start values the capacitor has ``ic=0``; from steady state the
+operating point has the capacitor open, so the integrating source is held at 0 while
+``time`` is 0 and a 1e12 shunt keeps the node defined.
 """
 
 from __future__ import annotations
@@ -112,7 +112,7 @@ class Battery(PhysicalComponent):
             Behavioural("Voc", ports.x, ports.n, "v", f"pwl({clamped}, {table})"),
             # charge fraction: flows from ground into q, integrated on 1 F
             Behavioural("Gq", GROUND, ports.q, "i", charge),
-            Capacitor("Cq", ports.q, GROUND, ELE.capacitance_from(1.0)),
+            Capacitor("Cq", ports.q, GROUND, ELE.capacitance_from(1.0), 0.0),
             Resistor("Rq", ports.q, GROUND, _SHUNT),
             Sensor("S", "soc", soc),
         ]

@@ -7,8 +7,9 @@ Ports are ``p`` (+) and ``n`` (-). Sign conventions are those of SPICE and LTspi
   leaves the source at ``n``;
 - the current of a passive part is positive flowing into ``p``.
 
-Initial values (``v0`` of a capacitor, ``i0`` of an inductor) are used by runs with
-``uic``; the combined run starts from the operating point and ignores them until M6.
+Initial values (``v0`` of a capacitor, ``i0`` of an inductor) are the start values of
+a combined run (ngspice ``ic=`` with ``uic``), unless its Solver Configuration has
+``steady_state`` set (M6).
 """
 
 from __future__ import annotations

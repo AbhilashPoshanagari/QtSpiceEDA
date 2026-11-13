@@ -19,6 +19,17 @@ GetISRCData only return the held value, so trial and rejected points never reach
 controller. A breakpoint is set at the next tick from each tick (one at a time:
 setting all of them up front grows faster than linear).
 
+Start (M6). By default the deck's ``.tran`` has ``uic``: ngspice starts from the
+storage elements' start values (``ic=`` on every capacitor and inductor; one without
+a start value starts at 0) and solves the other nodes at its first step. With
+``uic`` ngspice sends no point at t = 0, so tick 0 runs at the first accepted point
+(about 1e-3 Ts later; the sources hold their initial values until then), and the
+merged result gets a t = 0 row: the exact start value for every node with a
+capacitor to the reference, and the value at the first point for the rest.
+A Solver Configuration with ``steady_state`` runs without ``uic``: ngspice
+solves an operating point first (sources at their initial values, start values
+ignored) and tick 0 runs on its t = 0 point. All networks of a run must agree.
+
 The deck runs two ticks past ``t_end`` and stops half a tick after the last tick
 (``NgspiceAdapter.run_ticks``). Ts below 10 us is refused (out of scope for v0.3).
 A Solver Configuration's ``Ts`` must equal the run's time step; its ``max_step``
@@ -127,6 +138,8 @@ class CoSimRun:
     t_end: float
     warnings: list[str] = field(default_factory=list)
     redo_count: int = 0
+    uic: bool = False
+    """M6: the run started from the start values (ngspice ``uic``, no t = 0 point)."""
 
     @property
     def result(self) -> SimulationResult:
@@ -147,19 +160,29 @@ def merge(run: CoSimRun) -> SimulationResult:
       in SI with its unit;
     - every Scope trace, sampled at Ts and held until the next tick on this axis
       (zero-order hold: at the ticks it equals the Scope's samples exactly).
+
+    A run from the start values (``uic``) has no ngspice point at t = 0: a t = 0 row
+    is added (``start_row``).
     """
     tol = _TICK_TOL * run.ts
     phys = run.physical
     t_all = np.asarray(phys.vectors[TIME], dtype=float).real
     keep = t_all <= run.t_end + tol
     t = t_all[keep]
+    start = run.uic and len(t) > 0 and t[0] > tol
+    if start:
+        t = np.concatenate(([0.0], t))
     vectors: dict[str, np.ndarray] = {TIME: t}
     units: dict[str, str] = {TIME: "s"}
     for name, source in run.mapped.vectors.items():
         data = phys.vectors.get(source)
         if data is None:
             continue
-        vectors[name] = np.asarray(data).real[keep].copy()
+        values = np.asarray(data).real[keep].copy()
+        if start:
+            first = start_row(t[1:], values, run.mapped.initial.get(source))
+            values = np.concatenate(([first], values))
+        vectors[name] = values
         units[name] = run.mapped.units.get(name, "")
     ticks = np.clip(np.floor((t + tol) / run.ts).astype(int), 0, None)
     for name in run.signal.trace_names():
@@ -170,6 +193,35 @@ def merge(run: CoSimRun) -> SimulationResult:
         if name in run.signal.units:
             units[name] = run.signal.units[name]
     return SimulationResult(axis=TIME, vectors=vectors, units=units, analysis=ANALYSIS)
+
+
+def start_row(t: np.ndarray, values: np.ndarray, initial: float | None) -> float:
+    """The t = 0 value of a vector of a ``uic`` run whose first point is ``t[0] > 0``:
+    the start value when it is known (a node with a capacitor to the reference),
+    else the value at the first point. (Not extrapolated: tick 0 runs at the first
+    point and may change the sources there, so the slope after it says nothing about
+    [0, t[0]], where the sources still had their initial values.)"""
+    if initial is not None:
+        return float(initial)
+    return float(values[0])
+
+
+def start_from_steady_state(networks: list) -> bool:
+    """True if the Solver Configurations ask for an operating point first (M6).
+
+    Raises DiagramError when the networks of one run disagree (ngspice runs them all
+    in one deck, with or without ``uic``)."""
+    solvers = solver_settings(networks)
+    modes = {s.steady_state for s in solvers}
+    if len(modes) > 1:
+        steady = sorted(s.block for s in solvers if s.steady_state)
+        other = sorted(s.block for s in solvers if not s.steady_state)
+        raise DiagramError(
+            f"Solver Configuration {steady[0]} starts from steady state but {other[0]} "
+            "starts from the start values: set them the same (ngspice runs all physical "
+            "networks of a diagram together)"
+        )
+    return modes == {True}
 
 
 def node_of(vector: str) -> str:
@@ -235,11 +287,10 @@ class CoSimulator:
     def map(self, t_end: float, ts: float) -> MappedNetwork:
         """The deck of this run. Raises NetworkError if a network does not map."""
         networks = [n.network for n in self.engine.networks]
-        # No `uic`: with uic ngspice sends no point at t = 0, so tick 0 could not read
-        # the sensors there. The run starts from the operating point instead, with the
-        # external sources at their initial values (device ic= values are ignored;
-        # initial conditions are task M6).
-        tran = tran_card(ts, t_end, max_step(solver_settings(networks)))
+        # M6: `uic` starts from the start values (ic=); steady state runs the
+        # operating point first. Raises DiagramError if the networks disagree.
+        uic = not start_from_steady_state(networks)
+        tran = tran_card(ts, t_end, max_step(solver_settings(networks)), uic=uic)
         mapped = NetworkMapper(self.registry).map_all(networks, tran)
         errors = [d for d in mapped.diagnostics if d.severity == ERROR]
         if errors:
@@ -265,6 +316,7 @@ class CoSimulator:
                     f"run's time step is {ts:g} s; set them to the same value"
                 )
         mapped = self.map(t_end, ts)
+        uic = not start_from_steady_state([n.network for n in self.engine.networks])
         clash = [n for n in self.engine.scope_names if n in mapped.vectors]
         if clash:
             raise DiagramError(
@@ -321,9 +373,11 @@ class CoSimulator:
                 while self.engine.ticks_done < steps:
                     k = self.engine.ticks_done
                     tick = k * ts
-                    if t < tick - tol:
+                    # uic: no point at t = 0; tick 0 runs at the first accepted one
+                    first = uic and k == 0
+                    if t < tick - tol and not first:
                         return
-                    if t > tick + tol:
+                    if t > tick + tol and not first:
                         warnings.append(f"tick {k} (t = {tick:g} s) ran late, at t = {t:g} s")
                     for holder in holders.values():
                         holder.sense(point)
@@ -378,4 +432,5 @@ class CoSimulator:
             t_end=t_end,
             warnings=warnings,
             redo_count=adapter.redo_count,
+            uic=uic,
         )

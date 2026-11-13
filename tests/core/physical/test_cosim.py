@@ -89,8 +89,12 @@ def test_tau_is_held_between_ticks_with_one_sample_of_delay() -> None:
     out = in_fresh_process(_run, 1e-3, 0.01)
     t = np.asarray(out.physical["time"])
     w_node = np.asarray(out.physical[out.vectors["inertia.A.w"]])
-    # tau_0 = kp * w_set is applied over [0, Ts): w rises as a first-order step.
-    a = np.exp(-B * t / J)
+    # The run starts from the start values (M6, uic): ngspice's first point is the
+    # first step, t[0] > 0, where w is still 0 and tick 0 runs. tau_0 = kp * w_set is
+    # then applied over [t[0], Ts): w rises as a first-order step.
+    assert 0 < t[0] < 1e-2 * 1e-3
+    assert w_node[0] == 0.0
+    a = np.exp(-B * (t - t[0]) / J)
     first = t <= 1e-3
     expected = (1 - a[first]) * KP * W_SET / B
     np.testing.assert_allclose(w_node[first], expected, rtol=1e-3, atol=1e-6)
@@ -134,7 +138,8 @@ def test_the_deck_has_external_sources_and_sensors() -> None:
     engine, reg = _engine()
     mapped = CoSimulator(engine, reg).map(0.1, 1e-3)  # type: ignore[arg-type]
     assert "I_motor_I" in mapped.deck and "external" in mapped.deck
-    assert ".tran 0.001 0.10200000000000001 0 0.001\n" in mapped.deck
+    # M6: from the start values (uic) unless the Solver Configuration asks for steady state
+    assert ".tran 0.001 0.10200000000000001 0 0.001 uic\n" in mapped.deck
     (ext,) = mapped.external_inputs
     assert (ext.block, ext.signal, ext.kind, ext.domain) == ("motor", "tau", "i", "rotational")
     assert node_of(mapped.vectors["sensor.w"]) == "s_sensor_w"

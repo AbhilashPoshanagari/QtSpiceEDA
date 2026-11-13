@@ -9,8 +9,8 @@ relative speed is w(A) - w(B).
 - An inertia is a one-port element on the reference (rule: mass-like elements are
   connected to the reference).
 
-Initial values (``w0``, ``tau0``) are used by runs with ``uic``; the combined run
-starts from the operating point and ignores them until M6.
+Initial values (``w0``, ``tau0``) are the start values of a combined run (ngspice
+``ic=`` with ``uic``), unless its Solver Configuration has ``steady_state`` set (M6).
 """
 
 from __future__ import annotations

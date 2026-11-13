@@ -28,8 +28,11 @@ For one ``PhysicalNetwork`` (from ``NetworkExtractor``):
 - a ``Sensor`` becomes ``B_<block>_<name> s_<block>_<signal> 0 V=<expr>``, saved as
   the vector ``<block>.<signal>``;
 - the Solver Configuration's ``reltol`` / ``abstol`` become an ``.options`` card
-  (the strictest of all networks); its ``Ts`` and ``max_step`` are used by the
-  CoSimulator (``solver_settings``);
+  (the strictest of all networks); its ``Ts``, ``max_step`` and ``steady_state`` are
+  used by the CoSimulator (``solver_settings``);
+- a capacitor's start value goes into the deck as ``ic=`` (used by runs with ``uic``,
+  M6); for a capacitor with one side on the reference the start value of its node is
+  also kept in ``initial`` (``V(node)`` -> volts), for the t = 0 row of a run;
 - every conserving port not on the reference gets the vector
   ``<block>.<port>.<across>`` (e.g. ``Mass1.A.v``), in SI.
 
@@ -44,7 +47,7 @@ import math
 from dataclasses import dataclass, field
 
 from core.netlist.builder import build
-from core.netlist.model import ERROR, Analysis, Circuit, Element
+from core.netlist.model import ERROR, WARNING, Analysis, Circuit, Element
 from core.netlist.parser import parse
 from core.physical.component import (
     CCCS,
@@ -119,9 +122,10 @@ class CrossingHint:
     """Circuit element name of the external source, e.g. ``V_pwm_Vd``."""
 
 
-SOLVER_SETTINGS = ("Ts", "reltol", "abstol", "max_step")
+SOLVER_SETTINGS = ("Ts", "reltol", "abstol", "max_step", "steady_state")
 """Parameters of a role='solver' component that the mapper and the CoSimulator honour
-(the built-in Solver Configuration declares all four). Missing ones keep the default."""
+(the built-in Solver Configuration declares all of them). Missing ones keep the
+default."""
 
 
 @dataclass(frozen=True)
@@ -136,6 +140,12 @@ class SolverSettings:
     reltol: float | None = None
     abstol: float | None = None
     max_step: float | None = None
+    steady_state: bool = False
+    """M6: start from the operating point (no ``uic``); False: from the start values."""
+
+
+def _flag(settings: dict[str, object], name: str) -> bool:
+    return settings.get(name) is True
 
 
 def _setting(settings: dict[str, object], name: str) -> float | None:
@@ -152,9 +162,10 @@ def solver_settings(networks: list[PhysicalNetwork]) -> list[SolverSettings]:
         for block in network.blocks:
             if block.role == SOLVER:
                 ts, reltol, abstol, max_step = (
-                    _setting(block.settings, n) for n in SOLVER_SETTINGS
+                    _setting(block.settings, n) for n in SOLVER_SETTINGS[:4]
                 )
-                out.append(SolverSettings(block.id, ts, reltol, abstol, max_step))
+                steady = _flag(block.settings, "steady_state")
+                out.append(SolverSettings(block.id, ts, reltol, abstol, max_step, steady))
     return out
 
 
@@ -189,6 +200,9 @@ class MappedNetwork:
     diagnostics: list[NetworkDiagnostic] = field(default_factory=list)
     solvers: list[SolverSettings] = field(default_factory=list)
     """Settings of each network's Solver Configuration (reltol/abstol are in the deck)."""
+    initial: dict[str, float] = field(default_factory=dict)
+    """M6: SimulationResult vector (``V(node)``) -> start voltage, for every node with a
+    capacitor to the reference that has a start value."""
 
     @property
     def ok(self) -> bool:
@@ -441,6 +455,21 @@ class NetworkMapper:
         ab = [nodes[prim.a], nodes[prim.b]]
         if isinstance(prim, Capacitor | Inductor):
             params = {} if prim.ic is None else {"ic": _num(prim.ic)}
+            if isinstance(prim, Capacitor) and prim.ic is not None and GROUND in ab:
+                node, value = (ab[0], prim.ic) if ab[1] == GROUND else (ab[1], -prim.ic)
+                if node != GROUND:
+                    key = f"V({node.lower()})"
+                    old = out.initial.setdefault(key, float(value))
+                    if old != value:
+                        out.diagnostics.append(
+                            NetworkDiagnostic(
+                                block,
+                                WARNING,
+                                f"start value {value:g} V of {name} differs from {old:g} V "
+                                f"of another capacitor on node {node}",
+                                prim.name,
+                            )
+                        )
             return Element(name, kind, ab, _num(prim.value), params)
         if isinstance(prim, Resistor):
             return Element(name, kind, ab, _num(prim.value))

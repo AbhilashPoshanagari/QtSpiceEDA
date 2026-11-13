@@ -158,13 +158,15 @@ class SyncHandlers:
     """Exceptions raised by the callbacks (they never unwind into ngspice)."""
 
 
-def tran_card(ts: float, t_stop: float, max_step: float | None = None) -> str:
+def tran_card(ts: float, t_stop: float, max_step: float | None = None, *, uic: bool = False) -> str:
     """The ``.tran`` card for a ticked run that ``NgspiceAdapter.run_ticks`` ends.
 
-    The largest internal step is Ts, or ``max_step`` when that is smaller.
+    The largest internal step is Ts, or ``max_step`` when that is smaller. ``uic``
+    (M6): start from the elements' ``ic=`` values instead of an operating point;
+    ngspice then sends no point at t = 0, its first point is the first step.
     """
     tmax = ts if not max_step or max_step >= ts else float(max_step)
-    return f".tran {ts!r} {t_stop + 2 * ts!r} 0 {tmax!r}"
+    return f".tran {ts!r} {t_stop + 2 * ts!r} 0 {tmax!r}" + (" uic" if uic else "")
 
 
 def library_candidates() -> list[Path | str]:

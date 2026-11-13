@@ -132,6 +132,8 @@ def _thermal_network(ctl: DiagramController) -> None:
         assert ctl.connectPhysical(f"{ids[ka]}.{pa}", f"{ids[kb]}.{pb}"), (a, b)
     assert ctl.connectPorts(f"{ids['ts']}.T", f"{ids['scope']}.u")
     ctl.setSetting(ids["heat"], "Q", "50")
+    # M6: start from the operating point, so the run is in steady state at once
+    assert ctl.setSetting(ids["solver"], "steady_state", "true")
     assert ctl.setSetting(ids["scope"], "label", "T")
 
 

@@ -16,6 +16,9 @@ one-port element on the reference) and the viscous friction b between A and B.
 The cross-domain gains come from the Domain registry (``coupling_gain``), never from a
 hard-coded "E = k*w" in volts (rule 12). Unloaded, the speed settles at
 w = k V / (k^2 + R b); the two time constants are close to L / R and J R / k^2.
+
+Start values (M6): ``w0`` is the rotor's speed w(A) at the start (the inertia sits on
+the reference) and ``i0`` the armature current.
 """
 
 from __future__ import annotations
@@ -63,6 +66,8 @@ class DCMotor(PhysicalComponent):
         Parameter("k", 0.05, "N*m/A", "motor constant (also V*s/rad)"),
         Parameter("J", 1e-4, "kg*m^2", "rotor inertia"),
         Parameter("b", 1e-5, "N*m*s/rad", "viscous friction"),
+        Parameter("w0", 0.0, "rad/s", "initial speed"),
+        Parameter("i0", 0.0, "A", "initial armature current"),
     )
     internal = {"m": ELECTRICAL, "e": ELECTRICAL, "f": ELECTRICAL}
 
@@ -72,12 +77,19 @@ class DCMotor(PhysicalComponent):
         torque = coupling_gain(ROT.to_current, ELE.from_current, k)
         return [
             *compose(ResistorPart, "Ra", {"p": ports.p, "n": ports.m}, {"R": real(params, "R")}),
-            *compose(InductorPart, "La", {"p": ports.m, "n": ports.e}, {"L": real(params, "L")}),
+            *compose(
+                InductorPart,
+                "La",
+                {"p": ports.m, "n": ports.e},
+                {"L": real(params, "L"), "i0": real(params, "i0")},
+            ),
             VoltageSource("Vi", ports.e, ports.f, 0.0),
             VCVS("Emf", ports.f, ports.n, ports.A, ports.B, emf),
             # k*i flows from B through the source into A: torque into the shaft.
             CCCS("Tq", ports.B, ports.A, "Vi", torque),
-            *compose(Inertia, "Jr", {"A": ports.A}, {"J": real(params, "J")}),
+            *compose(
+                Inertia, "Jr", {"A": ports.A}, {"J": real(params, "J"), "w0": real(params, "w0")}
+            ),
             *compose(
                 RotationalDamper, "Br", {"A": ports.A, "B": ports.B}, {"b": real(params, "b")}
             ),

@@ -287,7 +287,9 @@ def _heated_diagram() -> dict:
     assert users.add_source(TC_RESISTOR, "doc1").ok
     d, _ = new_diagram(users.registry)  # the registry with the spec only
     d.add_block("ThermalReference", block_id="tref")
-    d.add_block("SolverConfiguration", block_id="solver", settings={"Ts": 1e-3})
+    d.add_block(
+        "SolverConfiguration", block_id="solver", settings={"Ts": 1e-3, "steady_state": True}
+    )
     d.add_block("TemperatureSource", block_id="amb", settings={"T": T_AMB})
     d.add_block("TCThermalResistor", block_id="rth", settings={"R0": R0, "alpha": ALPHA})
     d.add_block("HeatFlowSource", block_id="heat", settings={"Q": Q})
@@ -324,8 +326,8 @@ def _run_heated() -> list[float]:
 def test_user_thermal_resistor_with_temperature_coefficient_in_a_network() -> None:
     temps = in_fresh_process(_run_heated, timeout=300)
     expected = _steady_state()
-    # the run starts from the operating point, where the thermal mass carries no
-    # heat: the steady state from the first tick on (initial conditions are M6)
+    # steady_state (M6): the run starts from the operating point, where the thermal
+    # mass carries no heat: the steady state from the first tick on
     assert temps[0] == pytest.approx(expected, abs=1e-3)
     assert temps[-1] == pytest.approx(expected, abs=1e-3)
     # a constant R0 would settle 5.6 K lower: the temperature coefficient is in effect
