@@ -35,5 +35,4 @@ the tests check are the ones written in the file itself; no reference results.
 profile and regulator taps read from the report by
 `scratch/phase4/make_published_reference.py` (antiword; the report's SHA-256 is in its
 `about` block). The G5 benchmark (`tests/core/grid/test_benchmarks.py`) reads it; never
-edit by hand. The two `*_BusXY.csv` files in `ieee13/reference/` and
-`ieee34/reference/` are byte-identical copies of the ones a folder up.
+edit by hand.
