@@ -12,6 +12,7 @@ Needs the grid extra: `pip install -e ".[dev,grid]"` (dss-python 0.15.x).
 | `make_reference.py` | Writes `tests/fixtures/grid/<feeder>/opendss_reference.json`: the OpenDSS result of the original files. Re-run only on purpose |
 | `spike1_install.py` | S1: versions; IEEE 13 converged, iterations, total power, V at bus 671 |
 | `spike2_contexts.py` | S2: two contexts (IEEE 13 + IEEE 34) do not affect each other; `compile` moves the process cwd unless `AllowChangeDir=False`; IEEE 13 in a spawn + Pipe + daemon child (BlockRunner pattern); a child terminated during IEEE 123 solves |
+| `spike3_pyinstaller/` | S3: `app.py` (10 lines: compile IEEE 13, print 671.1), `build.py` (one-file builds: plain, `--collect-binaries`, `--hidden-import _cffi_backend`, our hook; runs each exe and lists the bundled native libraries), `hooks/hook-dss_python_backend.py` |
 
 Run from the repository root:
 
@@ -19,6 +20,7 @@ Run from the repository root:
 pytest -q -rs -s scratch/phase4
 python scratch/phase4/spike1_install.py
 python scratch/phase4/spike2_contexts.py
+python scratch/phase4/spike3_pyinstaller/build.py          # all variants, ~1 min each
 ```
 
 The CI job `spikes-grid` runs all of the above on Windows, macOS and Linux.

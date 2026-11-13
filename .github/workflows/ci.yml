@@ -128,6 +128,7 @@ jobs:
         run: |
           python scratch/phase4/spike1_install.py
           python scratch/phase4/spike2_contexts.py
+          python scratch/phase4/spike3_pyinstaller/build.py
 
   # Build the installable apps (PyInstaller one-folder builds) and upload them.
   package:
