@@ -108,7 +108,7 @@ core/schematic/   model.py connectivity.py netlister.py
 core/hierarchy/   symbolgen.py
 core/waveform/    layout.py expr.py plotdefs.py
 + core/physical/  domains.py component.py network.py mapper.py cosim.py
-+                 circuit_block.py registry.py library/{electrical,rotational,
++                 circuit_block.py registry.py user.py library/{electrical,rotational,
 +                 translational,thermal,converters,composite}/
 bridge/           (v0.2 files; diagram_controller.py extended)
 ui/qml/           (v0.2 files) + ComponentEditor.qml; Port/Wire/BlockLibrary/

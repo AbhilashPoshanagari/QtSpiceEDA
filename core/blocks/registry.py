@@ -14,7 +14,7 @@ caller can see which ports disappeared; blocks no longer in the code are removed
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 
 from core.blocks.spec import (
@@ -92,7 +92,13 @@ class SourceResult:
 class BlockRegistry:
     """Built-in blocks plus the blocks defined in user source documents."""
 
-    def __init__(self, builtins: Iterable[BlockSpec] = ()) -> None:
+    def __init__(
+        self,
+        builtins: Iterable[BlockSpec] = (),
+        taken: Callable[[str], bool] | None = None,
+    ) -> None:
+        """``taken(name)``: the name is used elsewhere (e.g. a physical component)."""
+        self._taken: Callable[[str], bool] = taken or (lambda _name: False)
         self._specs: dict[str, BlockSpec] = {}
         self._builtin: set[str] = set()
         self._owner: dict[str, str] = {}  # block name -> document
@@ -155,6 +161,12 @@ class BlockRegistry:
                 result.diagnostics.append(
                     Diagnostic(
                         line, 1, ERROR, f"another function already defines block {spec.name!r}"
+                    )
+                )
+            elif self._taken(spec.name):
+                result.diagnostics.append(
+                    Diagnostic(
+                        line, 1, ERROR, f"a physical component is already named {spec.name!r}"
                     )
                 )
             elif owner is not None:

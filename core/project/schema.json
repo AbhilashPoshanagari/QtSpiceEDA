@@ -7,7 +7,7 @@
   "required": ["format", "version", "netlists", "diagrams", "block_sources", "analysis", "results"],
   "additionalProperties": false,
   "if": { "properties": { "version": { "const": 1 } } },
-  "then": { "not": { "anyOf": [{ "required": ["simulation"] }, { "required": ["schematic"] }, { "required": ["symbols"] }, { "required": ["plots"] }, { "required": ["plot_defs"] }] } },
+  "then": { "not": { "anyOf": [{ "required": ["simulation"] }, { "required": ["schematic"] }, { "required": ["symbols"] }, { "required": ["plots"] }, { "required": ["plot_defs"] }, { "required": ["physical_sources"] }] } },
   "else": { "required": ["simulation"] },
   "properties": {
     "format": { "const": "qtspice-project" },
@@ -71,6 +71,19 @@
           "type": "string",
           "pattern": "^[a-z]{0,16}$",
           "description": "Sent as 'set ngbehavior=<mode>' before each circuit load; empty = off. Default 'ltpsa'."
+        }
+      }
+    },
+    "physical_sources": {
+      "description": "Format version 2, optional (M5; part of format version 3 with O1): the code of each user-defined physical component document, like block_sources. Left out when there is none.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["document", "code"],
+        "additionalProperties": false,
+        "properties": {
+          "document": { "type": "string", "minLength": 1 },
+          "code": { "type": "string" }
         }
       }
     },

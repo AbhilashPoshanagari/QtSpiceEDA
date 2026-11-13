@@ -48,6 +48,7 @@ ApplicationWindow {
     // Save, asking for a file name if the project has none; then run `then`.
     function saveProject(then) {
         functionEditor.apply()  // a pending edit of the function editor
+        componentEditor.apply()  // ... and of the component editor
         if (ProjectManager.save()) {
             if (then)
                 then()
@@ -57,6 +58,7 @@ ApplicationWindow {
     }
     function saveAs(then) {
         functionEditor.apply()
+        componentEditor.apply()
         saveDialog.then = then || null
         saveDialog.open()
     }
@@ -497,12 +499,31 @@ ApplicationWindow {
                         BlockLibrary {
                             SplitView.preferredHeight: 300
                             SplitView.minimumHeight: 120
-                            onEditBlock: name => functionEditor.openBlock(name)
+                            onEditBlock: name => {
+                                if (componentEditor.openComponent(name))
+                                    editorTabs.currentIndex = 1
+                                else if (functionEditor.openBlock(name))
+                                    editorTabs.currentIndex = 0
+                            }
                         }
-                        FunctionEditor {
-                            id: functionEditor
+                        ColumnLayout {
                             SplitView.fillHeight: true
                             SplitView.minimumHeight: 120
+                            spacing: 0
+                            TabBar {
+                                id: editorTabs
+                                objectName: "editorTabs"
+                                Layout.fillWidth: true
+                                TabButton { text: qsTr("Functions") }
+                                TabButton { text: qsTr("Components") }
+                            }
+                            StackLayout {
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                currentIndex: editorTabs.currentIndex
+                                FunctionEditor { id: functionEditor }
+                                ComponentEditor { id: componentEditor }
+                            }
                         }
                     }
                     SplitView {

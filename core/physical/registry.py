@@ -32,6 +32,19 @@ class PhysicalRegistry:
         self._specs[spec.name] = spec
         return spec
 
+    def add_spec(self, spec: PhysicalSpec) -> PhysicalSpec:
+        """Register a spec without a class (M5: a user component read from its source
+        in the UI process). ``get`` returns None for it. Raises ValueError on a clash."""
+        if spec.name in self._specs:
+            raise ValueError(f"a physical component named {spec.name!r} already exists")
+        self._specs[spec.name] = spec
+        return spec
+
+    def remove(self, name: str) -> None:
+        """Forget component ``name`` (no error if unknown)."""
+        self._specs.pop(name, None)
+        self._classes.pop(name, None)
+
     def add_module(self, module: ModuleType) -> list[PhysicalSpec]:
         """Register every component class defined in ``module`` (not imported ones)."""
         added = []
@@ -44,6 +57,7 @@ class PhysicalRegistry:
         return added
 
     def get(self, name: str) -> type | None:
+        """The class of ``name``; None if unknown or registered by ``add_spec``."""
         return self._classes.get(name)
 
     def spec(self, name: str) -> PhysicalSpec | None:

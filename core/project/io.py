@@ -44,7 +44,9 @@ DEFAULT_DT = 0.001
 _NAME = re.compile(r"^[A-Za-z0-9_-]+$")
 _KEYS_V1 = ("format", "version", "netlists", "diagrams", "block_sources", "analysis", "results")
 _KEYS = (*_KEYS_V1, "simulation")  # version 2
-_OPTIONAL_KEYS = ("schematic", "symbols", "plots", "plot_defs")  # version 2, may be left out
+_OPTIONAL_KEYS = ("schematic", "symbols", "plots", "plot_defs", "physical_sources")
+"""Version 2 fields that may be left out (``physical_sources``: M5; O1 makes it
+part of format version 3)."""
 
 
 class ProjectError(Exception):
@@ -109,6 +111,8 @@ class Project:
     # W9: the plot definitions text (.func/.param lines). None = the shipped default,
     # left out of the file.
     plot_defs: str | None = None
+    # M5: the code of each user physical component document. Left out when empty.
+    physical_sources: list[BlockSource] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """The JSON content of the .qsp file (results only by file name). ``schematic``
@@ -135,6 +139,10 @@ class Project:
             data["plots"] = layouts_to_dict(self.plots)
         if self.plot_defs is not None:
             data["plot_defs"] = self.plot_defs
+        if self.physical_sources:
+            data["physical_sources"] = [
+                {"document": s.document, "code": s.code} for s in self.physical_sources
+            ]
         return data
 
     def to_json(self) -> str:
@@ -267,6 +275,9 @@ def load_project(path: str | Path) -> LoadResult:
     )
     if "simulation" in data:
         project.simulation = SimulationSettings(data["simulation"]["compat_mode"])
+    project.physical_sources = [
+        BlockSource(s["document"], s["code"]) for s in data.get("physical_sources", [])
+    ]
     warnings: list[str] = []
     if data.get("schematic") is not None:
         schematic, found = Schematic.from_dict(data["schematic"])
@@ -320,7 +331,7 @@ def _check_body(data: dict[str, Any]) -> list[str]:
         return errors
 
     def items(key: str, fields: dict[str, type | tuple[type, ...]]) -> None:
-        value = data[key]
+        value = data.get(key, [])
         if not isinstance(value, list):
             errors.append(f"{key!r} must be a list")
             return
@@ -341,6 +352,7 @@ def _check_body(data: dict[str, Any]) -> list[str]:
     items("netlists", {"name": str, "text": str})
     items("diagrams", {"name": str, "diagram": dict})
     items("block_sources", {"document": str, "code": str})
+    items("physical_sources", {"document": str, "code": str})
     items("results", {"name": str, "file": str})
     if errors:
         return errors
@@ -355,9 +367,10 @@ def _check_body(data: dict[str, Any]) -> list[str]:
     for i, item in enumerate(data["results"]):
         if item["file"] != f"{item['name']}.npz":
             errors.append(f"results[{i}].file must be {item['name']}.npz")
-    documents = [s["document"] for s in data["block_sources"]]
-    if any(not d for d in documents) or len(set(documents)) != len(documents):
-        errors.append("block_sources need distinct, non-empty document names")
+    for key in ("block_sources", "physical_sources"):
+        documents = [s["document"] for s in data.get(key, [])]
+        if any(not d for d in documents) or len(set(documents)) != len(documents):
+            errors.append(f"{key} need distinct, non-empty document names")
     for i, entry in enumerate(data["diagrams"]):
         errors += _check_diagram(entry["diagram"], f"diagrams[{i}].diagram")
 

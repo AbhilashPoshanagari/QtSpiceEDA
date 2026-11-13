@@ -17,7 +17,10 @@ which loads its own sync-mode NgspiceAdapter in this child process: ngspice and 
 user's block code never run in the UI process. The diagram's time step is the
 controller tick Ts. The result is the merged SimulationResult (C5).
 Circuit blocks (M2) arrive as ``circuits``, plain ``CircuitDefinition.to_dict()``
-data, and the child rebuilds their component classes.
+data, and the child rebuilds their component classes. User-defined physical
+components (M5) arrive as ``components``, their source text by document; the child
+checks and runs that code (``core.physical.user.load_components``), so it too never
+runs in the UI process.
 
 Console lines (U3). ``RunOutcome.console`` holds what the run printed for the user:
 for a combined run, ngspice's console output and the CoSimulator's warnings (ticks
@@ -46,6 +49,7 @@ from core.blocks.library import builtin_blocks
 from core.blocks.spec import BlockSpec
 from core.physical.cosim import CoSimulator
 from core.physical.library import physical_registry
+from core.physical.user import load_components
 from core.sim.result import SimulationResult
 
 DEFAULT_TIMEOUT = 10.0
@@ -86,10 +90,20 @@ class BlockRunner:
         timeout: float = DEFAULT_TIMEOUT,
         physical_modules: list[str] | None = None,
         circuits: list[dict[str, Any]] | None = None,
+        components: dict[str, str] | None = None,
     ) -> None:
         modules = None if physical_modules is None else list(physical_modules)
         circuit_data = [dict(c) for c in circuits or []]
-        self._args = (diagram, dict(sources), float(t_end), float(dt), modules, circuit_data)
+        component_code = dict(components or {})
+        self._args = (
+            diagram,
+            dict(sources),
+            float(t_end),
+            float(dt),
+            modules,
+            circuit_data,
+            component_code,
+        )
         self.timeout = float(timeout)
         self._lock = threading.Lock()
         self._cancelled = threading.Event()
@@ -211,6 +225,7 @@ def run_diagram(
     physical_modules: list[str] | None = None,
     console: list[str] | None = None,
     circuits: list[dict[str, Any]] | None = None,
+    components: dict[str, str] | None = None,
 ) -> SimulationResult:
     """Load the blocks, then compile and run the diagram (in the current process).
 
@@ -220,7 +235,9 @@ def run_diagram(
     when the run fails).
     """
     blocks = load_blocks(sources)
-    physical = physical_registry(physical_modules, circuits or [])
+    # M5: user component code runs here, in the runner process, never in the UI
+    user_classes = load_components(components or {})
+    physical = physical_registry(physical_modules, circuits or [], user_classes)
     specs: dict[str, BlockSpec | None] = {name: spec_of(obj) for name, obj in blocks.items()}
 
     def lookup(name: str) -> BlockSpec | None:
@@ -250,10 +267,13 @@ def _child_main(
     dt: float,
     physical_modules: list[str] | None,
     circuits: list[dict[str, Any]],
+    components: dict[str, str],
 ) -> None:
     console: list[str] = []
     try:
-        result = run_diagram(diagram, sources, t_end, dt, physical_modules, console, circuits)
+        result = run_diagram(
+            diagram, sources, t_end, dt, physical_modules, console, circuits, components
+        )
         conn.send((OK, result, console))
     except BaseException as err:  # everything goes back to the parent
         message = "".join(traceback.format_exception_only(err)).strip()

@@ -101,6 +101,7 @@ from core.physical.cosim import MIN_TS, CoSimulator
 from core.physical.domains import ANY_DOMAIN, DOMAINS
 from core.physical.library import physical_registry
 from core.physical.registry import PhysicalRegistry
+from core.physical.user import ComponentSourceResult, UserComponents
 from core.sim.ngspice_adapter import NgspiceAdapter
 
 QML_IMPORT_NAME = "QtSpice"
@@ -117,6 +118,8 @@ WIRE_STUB = 10.0  # a physical wire leaves its port straight for this long
 USER_GROUP = "User"
 SIGNAL_GROUP = "Signal"
 OTHER_PHYSICAL_GROUP = "Physical/Other"
+USER_PHYSICAL_GROUP = "Physical/User"
+"""Library group of the user-defined physical components (M5)."""
 PHYSICAL_GROUPS = {
     "core.physical.library.electrical": "Physical/Electrical",
     "core.physical.library.rotational": "Physical/Rotational",
@@ -126,7 +129,13 @@ PHYSICAL_GROUPS = {
     "core.physical.library.composite": "Physical/Composite",
 }
 """Library group of a physical component, by the package its class lives in."""
-GROUP_ORDER = (USER_GROUP, SIGNAL_GROUP, *PHYSICAL_GROUPS.values(), OTHER_PHYSICAL_GROUP)
+GROUP_ORDER = (
+    USER_GROUP,
+    SIGNAL_GROUP,
+    *PHYSICAL_GROUPS.values(),
+    USER_PHYSICAL_GROUP,
+    OTHER_PHYSICAL_GROUP,
+)
 
 
 def physical_group(module: str) -> str:
@@ -169,6 +178,8 @@ class DiagramState:
     diagram: dict = field(default_factory=lambda: {"blocks": [], "wires": []})
     t_end: float = DEFAULT_T_END
     dt: float = DEFAULT_DT
+    physical_sources: list[tuple[str, str]] = field(default_factory=list)
+    """M5: (document, code) of each user physical component document."""
 
 
 MAX_CONSOLE_LINES = 5000
@@ -697,12 +708,28 @@ class DiagramController(QObject):
     consoleTextChanged = Signal()
     diagramEdited = Signal()  # an undo-stack step was done, undone or redone
     documentReplaced = Signal(str)  # code of the current document after load_state
+    componentDiagnosticsChanged = Signal()
+    componentStatusTextChanged = Signal()
+    componentDocumentChanged = Signal()
+    componentDocumentReplaced = Signal(str)  # code of the current component document
     _runDone = Signal(object)  # RunOutcome, emitted from the run thread
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        self._registry = BlockRegistry(builtin_specs())
-        self._physical = physical_registry()
+        physical = self._physical = physical_registry()
+        # The ``taken`` checks close over the two registries only, never over this
+        # QObject (no reference cycle): block and component names must not clash.
+        registry = self._registry = BlockRegistry(
+            builtin_specs(), taken=lambda name: name in physical
+        )
+        # M5: user components, read (never run) in this process.
+        self._components = UserComponents(
+            self._physical, taken=lambda name: registry.get(name) is not None
+        )
+        self._component_diagnostics: list[dict[str, object]] = []
+        self._component_status = ""
+        self._next_component = 1
+        self._component_document = self._new_component_id()
         # Not a bound method: the Diagram would then hold the controller in a reference
         # cycle, and the garbage collector freeing a QObject tree in any order at exit
         # corrupts the heap.
@@ -777,7 +804,25 @@ class DiagramController(QObject):
     def _get_document(self) -> str:
         return self._document
 
+    def _get_component_diagnostics(self) -> list[dict[str, object]]:
+        return self._component_diagnostics
+
+    def _get_component_status(self) -> str:
+        return self._component_status
+
+    def _get_component_document(self) -> str:
+        return self._component_document
+
     library = Property("QVariantList", _get_library, notify=libraryChanged)
+    componentDiagnostics = Property(  # noqa: N815
+        "QVariantList", _get_component_diagnostics, notify=componentDiagnosticsChanged
+    )
+    componentStatusText = Property(  # noqa: N815
+        str, _get_component_status, notify=componentStatusTextChanged
+    )
+    componentDocument = Property(  # noqa: N815
+        str, _get_component_document, notify=componentDocumentChanged
+    )
     diagnostics = Property("QVariantList", _get_diagnostics, notify=diagnosticsChanged)
     removedPorts = Property(  # noqa: N815
         "QStringList", _get_removed_ports, notify=removedPortsChanged
@@ -1014,6 +1059,92 @@ class DiagramController(QObject):
     @Slot(str, result=bool)
     def isBuiltin(self, name: str) -> bool:  # noqa: N802
         return self._registry.is_builtin(name)
+
+    # ---- user physical components (M5)
+
+    @Slot(str, result=bool)
+    def isUserComponent(self, name: str) -> bool:  # noqa: N802
+        return self._components.document_of(name) is not None
+
+    @Slot(str, result=bool)
+    def checkComponent(self, code: str) -> bool:  # noqa: N802
+        """Report problems in component ``code`` without changing the library."""
+        result = self._components.check_source(code, self._component_document)
+        self._set_component_diagnostics(result)
+        return result.ok
+
+    @Slot(str, result=bool)
+    def applyComponent(self, code: str) -> bool:  # noqa: N802
+        """Make ``code`` the current component document's code if it has no errors.
+
+        The code is read with ast only; it runs in the block runner, never here.
+        """
+        document = self._component_document
+        had_document = document in self._components.documents()
+        before = self._components.source(document)
+        result = self._components.add_source(code, document)
+        self._set_component_diagnostics(result)
+        if not result.ok:
+            self._set_component_status(
+                "library not updated: it keeps the last version without errors"
+            )
+            return False
+        self._refresh_library()
+        names = [s.name for s in result.specs]
+        parts = ["Components: " + ", ".join(names)] if names else []
+        if result.removed:
+            parts.append("removed: " + ", ".join(result.removed))
+        self._set_component_status(" — ".join(parts) if parts else "No components defined")
+        self._sync_with_library()
+        if code != before or not had_document:
+            self.sourcesChanged.emit()
+        return True
+
+    @Slot(result=str)
+    def newComponentDocument(self) -> str:  # noqa: N802
+        """Start a new, empty component document."""
+        self._set_component_document(self._new_component_id())
+        self._clear_component_feedback()
+        return self._component_document
+
+    @Slot(str, result=str)
+    def openComponent(self, name: str) -> str:  # noqa: N802
+        """Make the document defining user component ``name`` current; return its code
+        ("" and no change for built-in or unknown components)."""
+        document = self._components.document_of(name)
+        if document is None:
+            return ""
+        self._set_component_document(document)
+        self._clear_component_feedback()
+        return self._components.source(document)
+
+    def _new_component_id(self) -> str:
+        used = set(self._components.documents())
+        while f"component{self._next_component}" in used:
+            self._next_component += 1
+        document = f"component{self._next_component}"
+        self._next_component += 1
+        return document
+
+    def _set_component_diagnostics(self, result: ComponentSourceResult) -> None:
+        diagnostics = [d.to_dict() for d in result.diagnostics]
+        if diagnostics != self._component_diagnostics:
+            self._component_diagnostics = diagnostics
+            self.componentDiagnosticsChanged.emit()
+
+    def _set_component_status(self, text: str) -> None:
+        if text != self._component_status:
+            self._component_status = text
+            self.componentStatusTextChanged.emit()
+
+    def _set_component_document(self, document: str) -> None:
+        if document != self._component_document:
+            self._component_document = document
+            self.componentDocumentChanged.emit()
+
+    def _clear_component_feedback(self) -> None:
+        self._set_component_diagnostics(ComponentSourceResult())
+        self._set_component_status("")
 
     # ---- diagram edits (all undoable)
 
@@ -1306,6 +1437,7 @@ class DiagramController(QObject):
             diagram=self._diagram.to_dict(),
             t_end=self._t_end,
             dt=self._dt,
+            physical_sources=list(self._components.sources().items()),
         )
 
     def load_state(self, state: DiagramState) -> list[str]:
@@ -1340,12 +1472,26 @@ class DiagramController(QObject):
                 warnings.append(
                     f"block code {document!r} was not loaded (line {first.line}: {first.message})"
                 )
+        for document in self._components.documents():
+            self._components.remove_document(document)
+        for document, code in state.physical_sources:
+            component = self._components.add_source(code, document)
+            if not component.ok:
+                first = component.diagnostics[0]
+                warnings.append(
+                    f"component code {document!r} was not loaded "
+                    f"(line {first.line}: {first.message})"
+                )
         self._refresh_library()
         documents = self._registry.documents()
         numbers = [int(m.group(1)) for d in documents if (m := _DOCUMENT_ID.match(d))]
         self._next_document = max(numbers, default=0) + 1
         self._set_document(documents[0] if documents else self._new_document_id())
         self._clear_feedback()
+        components = self._components.documents()
+        self._next_component = 1
+        self._set_component_document(components[0] if components else self._new_component_id())
+        self._clear_component_feedback()
 
         for item in state.diagram.get("blocks", []):
             block_id = item.get("id")
@@ -1391,6 +1537,7 @@ class DiagramController(QObject):
         self._run_details = ""
         self._set_run_status("")
         self.documentReplaced.emit(self._registry.source(self._document))
+        self.componentDocumentReplaced.emit(self._components.source(self._component_document))
         self.sourcesChanged.emit()
         return warnings
 
@@ -1445,7 +1592,12 @@ class DiagramController(QObject):
             engine.compile(self._diagram)
             if engine.networks:
                 self._log([f"Warning: {d.block}: {d.message}" for d in engine.warnings])
-                CoSimulator(engine, self._physical).map(t_end, dt)
+                user = set(self._components.names())
+                if any(b.spec_name in user for b in self._diagram.blocks):
+                    # their network() is user code: the runner maps and checks it
+                    self._log(["User components are checked when the run starts"])
+                else:
+                    CoSimulator(engine, self._physical).map(t_end, dt)
         except NetworkError as err:
             return self._network_failed(err.diagnostics)
         except AlgebraicLoopError as err:
@@ -1459,7 +1611,14 @@ class DiagramController(QObject):
                 "ngspice shared library"
             )
         sources = {doc: self._registry.source(doc) for doc in self._registry.documents()}
-        runner = BlockRunner(self._diagram.to_dict(), sources, t_end, dt, timeout=self.timeout)
+        runner = BlockRunner(
+            self._diagram.to_dict(),
+            sources,
+            t_end,
+            dt,
+            timeout=self.timeout,
+            components=self._components.sources(),
+        )
         self._runner = runner
         self._set_running(True)
         if engine.networks:
@@ -1897,6 +2056,9 @@ class DiagramController(QObject):
             spec_to_dict(s, self._registry.is_builtin(s.name)) for s in self._registry.specs()
         ]
         for p in self._physical.specs():
+            if self._components.document_of(p.name) is not None:
+                library.append(spec_to_dict(p.block, False, USER_PHYSICAL_GROUP))
+                continue
             cls = self._physical.get(p.name)
             group = physical_group(cls.__module__ if cls is not None else "")
             library.append(spec_to_dict(p.block, True, group))

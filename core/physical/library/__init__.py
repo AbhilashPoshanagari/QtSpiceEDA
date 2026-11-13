@@ -32,10 +32,13 @@ BUILTIN_MODULES: tuple[str, ...] = (
 
 
 def physical_registry(
-    modules: Iterable[str] | None = None, circuits: Iterable[Mapping[str, Any]] = ()
+    modules: Iterable[str] | None = None,
+    circuits: Iterable[Mapping[str, Any]] = (),
+    components: Iterable[type] = (),
 ) -> PhysicalRegistry:
     """A registry of the components of ``modules`` (default: the built-in library)
-    plus the Circuit blocks (M2) of ``circuits`` (``CircuitDefinition.to_dict()``).
+    plus the Circuit blocks (M2) of ``circuits`` (``CircuitDefinition.to_dict()``)
+    plus user component classes (M5, ``core.physical.user.load_components``).
 
     Raises ImportError for a module that cannot be imported and ValueError for two
     components with the same name or a circuit block that cannot be rebuilt.
@@ -50,4 +53,6 @@ def physical_registry(
         if not block.ok or block.component is None:
             raise ValueError("; ".join(d.message for d in block.diagnostics))
         registry.add(block.component)
+    for cls in components:
+        registry.add(cls)
     return registry

@@ -11,6 +11,7 @@ from core.physical.component import (
     Port,
     Resistor,
     physical_component,
+    physical_spec_of,
 )
 from core.physical.domains import THERMAL
 from core.physical.registry import PhysicalRegistry
@@ -63,3 +64,17 @@ def test_registries_are_independent() -> None:
     first = PhysicalRegistry([_make("A")])
     second = PhysicalRegistry()
     assert "A" in first and "A" not in second
+
+
+def test_spec_only_entries() -> None:
+    """M5: a user component read from its source has a spec but no class here."""
+    spec = physical_spec_of(_make("Rth"))
+    assert spec is not None
+    reg = PhysicalRegistry()
+    reg.add_spec(spec)
+    assert "Rth" in reg and reg.spec("Rth") is spec and reg.get("Rth") is None
+    with pytest.raises(ValueError, match="already exists"):
+        reg.add_spec(spec)
+    reg.remove("Rth")
+    reg.remove("Rth")  # unknown: no error
+    assert "Rth" not in reg and len(reg) == 0

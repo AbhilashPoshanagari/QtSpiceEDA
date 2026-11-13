@@ -517,12 +517,33 @@ def component_spec(cls: type, name: str | None = None) -> PhysicalSpec:
         raise PhysicalComponentError("@physical_component must decorate a PhysicalComponent")
     if cls.network is PhysicalComponent.network:
         raise PhysicalComponentError(f"{cls.__name__} must implement network(ports, params)")
-    comp_name = name or cls.__name__
+    raw_doc = cls.__doc__
+    return spec_from_declarations(
+        name or cls.__name__,
+        cls.ports,
+        cls.parameters,
+        cls.internal,
+        getattr(cls, "role", COMPONENT),
+        inspect.cleandoc(raw_doc) if isinstance(raw_doc, str) else "",
+    )
+
+
+def spec_from_declarations(
+    comp_name: str,
+    ports_decl: Sequence[object],
+    parameters_decl: Sequence[object],
+    internal_decl: Mapping[str, str],
+    role: object = COMPONENT,
+    doc: str = "",
+) -> PhysicalSpec:
+    """Check a component's declarations and build its spec. Raises
+    PhysicalComponentError. ``component_spec`` uses it for a class; the M5 source
+    reader uses it for declarations read from the syntax tree, so both agree."""
     _check_name(comp_name, "component")
 
-    ports = tuple(cls.ports)
-    parameters = tuple(cls.parameters)
-    internal = dict(cls.internal)
+    ports = tuple(ports_decl)  # type: ignore[arg-type]
+    parameters = tuple(parameters_decl)  # type: ignore[arg-type]
+    internal = dict(internal_decl)
     seen: set[str] = set()
 
     def claim(n: str, what: str) -> None:
@@ -536,7 +557,7 @@ def component_spec(cls: type, name: str | None = None) -> PhysicalSpec:
             raise PhysicalComponentError(f"{comp_name}: {port!r} is not a port declaration")
         claim(port.name, "port")
         if isinstance(port, Port) and port.domain == ANY_DOMAIN:
-            if getattr(cls, "role", COMPONENT) != SOLVER:
+            if role != SOLVER:
                 raise PhysicalComponentError(
                     f"{comp_name}: only a role='solver' component may have a port of "
                     f"domain {ANY_DOMAIN!r}"
@@ -547,7 +568,6 @@ def component_spec(cls: type, name: str | None = None) -> PhysicalSpec:
             )
     if not any(isinstance(p, Port) for p in ports):
         raise PhysicalComponentError(f"{comp_name} needs at least one conserving Port")
-    role = getattr(cls, "role", COMPONENT)
     if role not in COMPONENT_ROLES:
         raise PhysicalComponentError(
             f"{comp_name}: role must be one of {', '.join(COMPONENT_ROLES)}, not {role!r}"
@@ -578,8 +598,6 @@ def component_spec(cls: type, name: str | None = None) -> PhysicalSpec:
     conserving = [PortSpec(p.name, CONSERVING, p.domain) for p in ports if isinstance(p, Port)]
     first = conserving[0].domain or ""
     color = DOMAINS[first].color if first in DOMAINS else _ANY_COLOR
-    raw_doc = cls.__doc__
-    doc = inspect.cleandoc(raw_doc) if isinstance(raw_doc, str) else ""
     block = BlockSpec(
         name=comp_name,
         inputs=[p.name for p in ports if isinstance(p, SignalInput)],
@@ -591,7 +609,7 @@ def component_spec(cls: type, name: str | None = None) -> PhysicalSpec:
         doc=doc,
         conserving=conserving,
     )
-    return PhysicalSpec(comp_name, ports, parameters, internal, doc, block, role)
+    return PhysicalSpec(comp_name, ports, parameters, internal, doc, block, str(role))
 
 
 def physical_component(cls: type | None = None, *, name: str | None = None) -> Any:

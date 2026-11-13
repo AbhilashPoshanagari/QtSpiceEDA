@@ -88,6 +88,15 @@ def has_code(sources: list[BlockSource]) -> bool:
     return any(s.code.strip() for s in sources)
 
 
+def user_code(project: Project) -> list[BlockSource]:
+    """All code of a project the user must trust: block code, then user physical
+    component code (M5). Without component code the list, and so the fingerprint of
+    projects trusted before M5, is unchanged."""
+    return project.block_sources + [
+        BlockSource(f"component:{s.document}", s.code) for s in project.physical_sources
+    ]
+
+
 @QmlElement
 @QmlSingleton
 class ProjectManager(QObject):
@@ -228,6 +237,7 @@ class ProjectManager(QObject):
             + self._extra_netlists,
             diagrams=[DiagramEntry(self._diagram_name, state.diagram)] + self._extra_diagrams,
             block_sources=[BlockSource(d, c) for d, c in state.sources],
+            physical_sources=[BlockSource(d, c) for d, c in state.physical_sources],
             analysis=AnalysisSettings(sim.property("analysisCard"), state.t_end, state.dt),
             simulation=SimulationSettings(sim.property("compatMode")),
             results=results,
@@ -297,9 +307,9 @@ class ProjectManager(QObject):
                 self._remove_recent(str(path))
             return False
         project = loaded.project
-        if has_code(project.block_sources) and not self._is_trusted(path, project):
+        if has_code(user_code(project)) and not self._is_trusted(path, project):
             self._pending = (path, project, loaded.warnings)
-            count = sum(1 for s in project.block_sources if s.code.strip())
+            count = sum(1 for s in user_code(project) if s.code.strip())
             self.trustRequested.emit(path.name, count)
             return True
         self._finish_open(path, project, loaded.warnings, trusted=True)
@@ -359,8 +369,8 @@ class ProjectManager(QObject):
         self._diagram_name = project.diagrams[0].name if project.diagrams else "main"
         warnings = warnings + self._apply(project, str(path), trusted)
         if trusted:
-            if has_code(project.block_sources):  # the user said yes: don't ask again
-                self._trust(path, project.block_sources)
+            if has_code(user_code(project)):  # the user said yes: don't ask again
+                self._trust(path, user_code(project))
             self._add_recent(str(path))
             text = f"Opened {path.name}"
         else:
@@ -403,10 +413,15 @@ class ProjectManager(QObject):
             self._schematic_ctl.set_project_symbols(self._symbols)  # type: ignore[attr-defined]
             self._schematic_ctl.load_schematic(project.schematic)  # type: ignore[attr-defined]
         sources = [(s.document, s.code) for s in project.block_sources] if trusted else []
+        components = [(s.document, s.code) for s in project.physical_sources] if trusted else []
         first = project.diagrams[0].diagram if project.diagrams else {"blocks": [], "wires": []}
         warnings = diagram.load_state(
             DiagramState(
-                sources, first, project.analysis.diagram_t_end, project.analysis.diagram_dt
+                sources,
+                first,
+                project.analysis.diagram_t_end,
+                project.analysis.diagram_dt,
+                components,
             )
         )
         sim.set_file_path(path)
@@ -440,8 +455,8 @@ class ProjectManager(QObject):
         except (ProjectError, OSError) as exc:
             self._set_error(f"Cannot save {path.name}: {exc}")
             return False
-        if has_code(project.block_sources):
-            self._trust(path, project.block_sources)
+        if has_code(user_code(project)):
+            self._trust(path, user_code(project))
         self._set_file_path(str(path))
         self._add_recent(str(path))
         self._mark_saved()
@@ -539,7 +554,7 @@ class ProjectManager(QObject):
     # ---- settings
 
     def _is_trusted(self, path: Path, project: Project) -> bool:
-        return self._read_dict(_TRUSTED_KEY).get(str(path)) == code_digest(project.block_sources)
+        return self._read_dict(_TRUSTED_KEY).get(str(path)) == code_digest(user_code(project))
 
     def _trust(self, path: Path, sources: list[BlockSource]) -> None:
         trusted = self._read_dict(_TRUSTED_KEY)

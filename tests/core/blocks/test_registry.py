@@ -243,3 +243,12 @@ def test_match_ports() -> None:
     assert m.removed_inputs == ["a"]
     assert m.added_outputs == ["z"]
     assert m.removed == ["input a"]
+
+
+def test_taken_names_are_refused() -> None:
+    """M5: a function block may not take a name used elsewhere (a physical component)."""
+    reg = BlockRegistry(taken=lambda name: name == "Rth")
+    result = reg.check_source("x = 1\n\n@block\ndef Rth(u):\n    return u\n")
+    assert not result.ok
+    (diag,) = result.diagnostics
+    assert diag.line == 4 and "physical component is already named 'Rth'" in diag.message
