@@ -26,3 +26,6 @@ third_party/ngspice/bin/
 
 # Personal projects (machine-specific paths, saved results): never shipped
 /local/
+
+# ngspice BSIM3 model check log, rewritten by every run
+b3v3*check.log
