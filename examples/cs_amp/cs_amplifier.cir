@@ -1,0 +1,19 @@
+Common-source NMOS amplifier, Id = 1 mA, Av = -gm*(RD||RL||ro) = about -6.5
+* Bias: VG = 12*R2/(R1+R2) = 3 V, VGS = 2 V, VS = Id*RS = 1 V, VD = 12 - Id*RD = 7 V.
+* gm = 2*Id/Vov = 2 mA/V.  Gain = -2m * (5k || 10k || 100k) = -6.45 (16.2 dB).
+VDD vdd 0 DC 12
+VIN in 0 DC 0 AC 1 SIN(0 50m 1k)
+CIN in g 1u
+R1 vdd g 300k
+R2 g 0 100k
+RD vdd d 5k
+M1 d g s s NM
+RS s 0 1k
+CS s 0 100u
+COUT d out 10u
+RL out 0 10k
+.model NM NMOS(VTO=1 KP=2m LAMBDA=0.01)
+.op
+.tran 10u 5m
+.ac dec 50 1 10Meg
+.end

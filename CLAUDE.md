@@ -198,3 +198,6 @@ Python 3.12; the CI `spikes` job repeats them on Windows (ngspice 44.2), macOS a
   shares the process libc: see the CI `spikes` job log for the result without the fix.
   Note: core/sim/ngspice_adapter.py does not call setlocale(LC_NUMERIC, "C") today,
   although rule 4 requires it.
+
+Note : wheh you do the commit add 
+Authored by and Co-Authored-By: Abhilash Poshanagari <abhi.sree762@gmail.com>

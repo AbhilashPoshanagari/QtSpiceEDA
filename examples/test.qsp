@@ -1,0 +1,58 @@
+{
+  "format": "qtspice-project",
+  "version": 2,
+  "netlists": [
+    {
+      "name": "main",
+      "text": ""
+    }
+  ],
+  "diagrams": [
+    {
+      "name": "main",
+      "diagram": {
+        "blocks": [
+          {
+            "id": "Constant1",
+            "spec": "Constant",
+            "x": 0.0,
+            "y": 80.0,
+            "settings": {}
+          },
+          {
+            "id": "Sum1",
+            "spec": "Sum",
+            "x": 160.0,
+            "y": 80.0,
+            "settings": {}
+          }
+        ],
+        "wires": [
+          {
+            "src": "Constant1.y",
+            "dst": "Sum1.a"
+          },
+          {
+            "src": "Constant1.y",
+            "dst": "Sum1.b"
+          }
+        ]
+      }
+    }
+  ],
+  "block_sources": [
+    {
+      "document": "function1",
+      "code": ""
+    }
+  ],
+  "analysis": {
+    "card": "",
+    "diagram_t_end": 1.0,
+    "diagram_dt": 0.001
+  },
+  "results": [],
+  "simulation": {
+    "compat_mode": "ltpsa"
+  }
+}

@@ -1,0 +1,403 @@
+{
+  "format": "qtspice-project",
+  "version": 2,
+  "netlists": [
+    {
+      "name": "main",
+      "text": "QtSpice schematic\n.include C:\\Users\\PAbhilash\\Documents\\bits\\AnalogIC\\lab\\tsmc_180_nm\\tsmc018.lib\nM1 N001 N002 N003 N003 CMOSN L=180n W=0.36u\nR1 N004 N002 300k\nR2 N002 0 100k\nR3 N004 N001 5k\nC1 N005 N002 1uF\nC2 N003 0 100uF\nV1 N005 0 AC 1 SIN(0 50m 1k)\nV2 N004 0 12V\nR4 N003 0 1k\nR5 N001 0 10k\n.tran 10u 5m\n.ac dec 50 1 10Meg\n.include C:\\Users\\PAbhilash\\Documents\\bits\\AnalogIC\\lab\\tsmc_180_nm\\tsmc018.lib\n.end\n"
+    }
+  ],
+  "diagrams": [
+    {
+      "name": "main",
+      "diagram": {
+        "blocks": [],
+        "wires": []
+      }
+    }
+  ],
+  "block_sources": [
+    {
+      "document": "function1",
+      "code": ""
+    }
+  ],
+  "analysis": {
+    "card": "",
+    "diagram_t_end": 1.0,
+    "diagram_dt": 0.001
+  },
+  "results": [
+    {
+      "name": "netlist",
+      "file": "netlist.npz"
+    }
+  ],
+  "simulation": {
+    "compat_mode": "ltpsa"
+  },
+  "schematic": {
+    "title": "",
+    "instances": [
+      {
+        "symbol": "cmosn",
+        "name": "M1",
+        "x": -112,
+        "y": -64,
+        "rotation": 0,
+        "mirror": false,
+        "attrs": {
+          "SpiceLine": "L=180n W=0.36u"
+        }
+      },
+      {
+        "symbol": "res",
+        "name": "R1",
+        "x": -208,
+        "y": -128,
+        "rotation": 0,
+        "mirror": false,
+        "attrs": {
+          "Value": "300k"
+        }
+      },
+      {
+        "symbol": "res",
+        "name": "R2",
+        "x": -208,
+        "y": 48,
+        "rotation": 0,
+        "mirror": false,
+        "attrs": {
+          "Value": "100k"
+        }
+      },
+      {
+        "symbol": "res",
+        "name": "R3",
+        "x": -80,
+        "y": -176,
+        "rotation": 0,
+        "mirror": false,
+        "attrs": {
+          "Value": "5k"
+        }
+      },
+      {
+        "symbol": "cap",
+        "name": "C1",
+        "x": -304,
+        "y": 16,
+        "rotation": 270,
+        "mirror": false,
+        "attrs": {
+          "Value": "1uF"
+        }
+      },
+      {
+        "symbol": "cap",
+        "name": "C2",
+        "x": -16,
+        "y": 48,
+        "rotation": 0,
+        "mirror": false,
+        "attrs": {
+          "Value": "100uF"
+        }
+      },
+      {
+        "symbol": "voltage",
+        "name": "V1",
+        "x": -336,
+        "y": 16,
+        "rotation": 0,
+        "mirror": false,
+        "attrs": {
+          "Value": "AC 1 SIN(0 50m 1k)"
+        }
+      },
+      {
+        "symbol": "voltage",
+        "name": "V2",
+        "x": 48,
+        "y": -176,
+        "rotation": 0,
+        "mirror": false,
+        "attrs": {
+          "Value": "12V"
+        }
+      },
+      {
+        "symbol": "res",
+        "name": "R4",
+        "x": -80,
+        "y": 48,
+        "rotation": 0,
+        "mirror": false,
+        "attrs": {
+          "Value": "1k"
+        }
+      },
+      {
+        "symbol": "res",
+        "name": "R5",
+        "x": 64,
+        "y": 0,
+        "rotation": 0,
+        "mirror": false,
+        "attrs": {
+          "Value": "10k"
+        }
+      }
+    ],
+    "wires": [
+      [
+        -192,
+        -128,
+        -192,
+        -176
+      ],
+      [
+        -192,
+        -176,
+        -64,
+        -176
+      ],
+      [
+        -192,
+        -32,
+        -192,
+        48
+      ],
+      [
+        -240,
+        0,
+        -192,
+        0
+      ],
+      [
+        -112,
+        16,
+        -192,
+        16
+      ],
+      [
+        -64,
+        -80,
+        -64,
+        -64
+      ],
+      [
+        -64,
+        160,
+        -192,
+        160
+      ],
+      [
+        -336,
+        144,
+        -192,
+        144
+      ],
+      [
+        0,
+        160,
+        -64,
+        160
+      ],
+      [
+        -336,
+        32,
+        -336,
+        0
+      ],
+      [
+        -336,
+        0,
+        -304,
+        0
+      ],
+      [
+        -336,
+        112,
+        -336,
+        144
+      ],
+      [
+        -64,
+        -176,
+        48,
+        -176
+      ],
+      [
+        48,
+        -176,
+        48,
+        -160
+      ],
+      [
+        -192,
+        144,
+        -192,
+        160
+      ],
+      [
+        48,
+        -80,
+        48,
+        -64
+      ],
+      [
+        -64,
+        -16,
+        -48,
+        -16
+      ],
+      [
+        -48,
+        -16,
+        -48,
+        48
+      ],
+      [
+        -48,
+        48,
+        -64,
+        48
+      ],
+      [
+        -64,
+        48,
+        -64,
+        32
+      ],
+      [
+        -64,
+        144,
+        -64,
+        160
+      ],
+      [
+        0,
+        112,
+        0,
+        160
+      ],
+      [
+        0,
+        48,
+        -48,
+        48
+      ],
+      [
+        -64,
+        -64,
+        -16,
+        -64
+      ],
+      [
+        -16,
+        -64,
+        -16,
+        0
+      ],
+      [
+        -16,
+        0,
+        48,
+        0
+      ],
+      [
+        48,
+        0,
+        80,
+        0
+      ],
+      [
+        80,
+        96,
+        80,
+        128
+      ]
+    ],
+    "labels": [],
+    "grounds": [
+      {
+        "x": -192,
+        "y": 160
+      },
+      {
+        "x": 48,
+        "y": -64
+      },
+      {
+        "x": 80,
+        "y": 128
+      }
+    ],
+    "ports": [],
+    "texts": [
+      {
+        "x": -128,
+        "y": 176,
+        "text": ".tran 10u 5m\n.ac dec 50 1 10Meg\n.include C:\\Users\\PAbhilash\\Documents\\bits\\AnalogIC\\lab\\tsmc_180_nm\\tsmc018.lib",
+        "directive": true
+      }
+    ]
+  },
+  "plots": {
+    "tran": {
+      "x": {
+        "auto": true,
+        "lo": 0.0,
+        "hi": 1.0,
+        "log": false
+      },
+      "panes": [
+        {
+          "title": "",
+          "traces": [
+            "V(n001)"
+          ],
+          "y": {
+            "auto": true,
+            "lo": -1.0,
+            "hi": 1.0,
+            "log": false,
+            "abs": false
+          },
+          "phase": {
+            "auto": true,
+            "lo": -1.0,
+            "hi": 1.0,
+            "log": false,
+            "abs": false
+          },
+          "grid": true
+        },
+        {
+          "title": "",
+          "traces": [
+            "V(vout)",
+            "V(n005)"
+          ],
+          "y": {
+            "auto": true,
+            "lo": -1.0,
+            "hi": 1.0,
+            "log": false,
+            "abs": false
+          },
+          "phase": {
+            "auto": true,
+            "lo": -1.0,
+            "hi": 1.0,
+            "log": false,
+            "abs": false
+          },
+          "grid": true
+        }
+      ]
+    }
+  }
+}
