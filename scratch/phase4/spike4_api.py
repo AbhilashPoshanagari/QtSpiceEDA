@@ -352,6 +352,24 @@ def coverage(feeder: str = "ieee13") -> Coverage:
     )
 
 
+def line_units_after(order: str) -> tuple[int, float, float]:
+    """(Lines.Units, Length, R1) of a line defined with the given property order.
+
+    Found here: setting R1/X1 (or the matrices) after Units resets Units to 0 (none);
+    length and impedance then share that unknown unit, so the total is unchanged.
+    """
+    ctx = common.new_context()
+    for cmd in (
+        "clear",
+        "new circuit.order basekv=12.47 bus1=src",
+        f"new line.l1 bus1=src bus2=b {order}",
+    ):
+        common.command(ctx, cmd)
+    ln = ctx.ActiveCircuit.Lines
+    ln.Name = "l1"
+    return int(ln.Units), float(ln.Length), float(ln.R1)
+
+
 def main() -> None:
     feeder = sys.argv[1] if len(sys.argv) > 1 else "ieee13"
     cov = coverage(feeder)
@@ -385,6 +403,9 @@ def main() -> None:
     print("regulator taps before -> after the solve:")
     for name in cov.taps_after:
         print(f"  {name}: {cov.taps_before[name]:.5f} -> {cov.taps_after[name]:.5f}")
+    for order in ("length=1.5 units=km r1=0.25 x1=0.5", "r1=0.25 x1=0.5 length=1.5 units=km"):
+        units, length, r1 = line_units_after(order)
+        print(f"line '{order}': Units {units} ({UNIT_CODES[units]}), Length {length}, R1 {r1}")
 
 
 if __name__ == "__main__":

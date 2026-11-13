@@ -86,3 +86,8 @@ def test_other_feeders_read_completely(feeder: str) -> None:
     assert cov.taps_after == pytest.approx(common.load_reference(feeder)["taps"])
     missing_xy = sorted(b for b, p in cov.bus_xy.items() if p is None)
     assert missing_xy == ([] if feeder == "ieee34" else ["300_open", "94_open"])
+
+
+def test_impedance_after_units_resets_units() -> None:
+    assert spike4_api.line_units_after("length=1.5 units=km r1=0.25 x1=0.5") == (0, 1.5, 0.25)
+    assert spike4_api.line_units_after("r1=0.25 x1=0.5 length=1.5 units=km") == (3, 1.5, 0.25)
