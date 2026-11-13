@@ -27,3 +27,13 @@ no reference values.
 `small/` is ours as well: tiny hand-written circuits for the G2 extractor tests
 (`fuse_pv.dss`: a Fuse, which the model does not support, and a PVSystem). The values
 the tests check are the ones written in the file itself; no reference results.
+
+`<feeder>/reference/` holds the published IEEE PES test feeder package of that feeder
+(report `.doc`, data `.xls`, `.tcw`), copied unchanged from `feeder13.zip`,
+`feeder34.zip` and `feeder123.zip` at https://cmte.ieee.org/pes-testfeeders/resources/
+(IEEE PES Test Feeder Working Group). `reference/published.json` is ours: the voltage
+profile and regulator taps read from the report by
+`scratch/phase4/make_published_reference.py` (antiword; the report's SHA-256 is in its
+`about` block). The G5 benchmark (`tests/core/grid/test_benchmarks.py`) reads it; never
+edit by hand. The two `*_BusXY.csv` files in `ieee13/reference/` and
+`ieee34/reference/` are byte-identical copies of the ones a folder up.

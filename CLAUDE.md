@@ -224,6 +224,31 @@ ruff check . && ruff format --check .
   block-runner child starts. Tests pass; the app does not enable faulthandler.
   Do not try to "fix" this.
 
+## G5 benchmarks (v0.4)
+tests/core/grid/test_benchmarks.py compares every node with the published IEEE PES
+solution: tests/fixtures/grid/<feeder>/reference/published.json, made from the report
+(.doc, from feederNN.zip at cmte.ieee.org/pes-testfeeders/resources) by
+scratch/phase4/make_published_reference.py with antiword (Git for Windows ships it).
+Never edit published.json by hand. Tolerance 0.5 % on |V| pu, 0.5 deg on angle.
+- Engine used: dss-python 0.15.7, dss-python-backend 0.14.5, "DSS C-API Library
+  version 0.14.5 revision 87d85c2622c8281b92255335bc7c09b11191b21d based on OpenDSS SVN
+  3723 [FPC 3.2.2] (64-bit build) MVMULT INCREMENTAL_Y CONTEXT_API PM 20240329033747";
+  Python 3.12.2, Windows 11.
+- Result: IEEE 13 35 nodes, max 0.135 % / 0.06 deg; IEEE 34 92 nodes, 0.141 % /
+  0.06 deg; IEEE 123 271 values, 0.136 % / 0.10 deg. All within tolerance.
+- Regulator taps: OpenDSS RegControl settles 1-2 steps away from the published taps
+  on all three feeders (e.g. IEEE 13 RG60 +9/+6/+9 against +10/+8/+11), which puts
+  up to 2.2 % between the two solutions. The benchmark therefore sets the published
+  taps (from published.json) and solves with ControlMode OFF. OpenDSS's own
+  controlled solution stays tested against opendss_reference.json.
+- Published transformer pseudo-nodes XFXFM1 (13), XF10 (34), XF1 (123) have no
+  OpenDSS bus; they are skipped by name. Any other unmatched node fails.
+- IEEE 123 bus 610 (secondary of the delta-delta XFM1, ungrounded) has no defined
+  line-to-neutral voltage; the report repeats bus 61's values there. Such buses
+  (only delta windings, no other element) are compared line-to-line.
+- Published regulator output nodes map to OpenDSS by the regulator transformer:
+  RG10 -> 814r, RG11 -> 852r, RG1 -> 150r, RG2 -> 9r, RG3 -> 25r, RG4 -> 160r.
+
 ## Spike results (v0.4)
 Week-1 spikes S1-S6 in scratch/phase4/ (code, tests, README). Measured on Windows 11,
 Python 3.12.2; the CI `spikes-grid` job repeats them on Windows, macOS and Linux (job

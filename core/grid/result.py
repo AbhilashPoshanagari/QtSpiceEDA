@@ -7,19 +7,27 @@ Conventions (CLAUDE.md "Grid model"):
   terminal 1;
 - total power is positive when supplied to the grid by the source(s).
 
-The waveform window never reads GridResult (rule 7): ``to_simulation_result()``
-comes in G5.
+The waveform window never reads GridResult (rule 7): it gets the voltage profile
+through ``to_simulation_result()``.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from core.netlist.model import ERROR
 from core.physical.component import NetworkDiagnostic
+from core.sim.result import SimulationResult
+
+if TYPE_CHECKING:
+    from core.grid.analysis import VoltageProfile
+
+PROFILE_AXIS = "distance"
+PROFILE_ANALYSIS = "profile"
+PROFILE_PHASES = ("a", "b", "c")
 
 
 @dataclass
@@ -81,6 +89,29 @@ class GridResult:
             return self.node_names.index(node.lower())
         except ValueError:
             raise KeyError(node) from None
+
+    def to_simulation_result(self, profile: VoltageProfile) -> SimulationResult:
+        """The voltage profile for the waveform window (rule 7).
+
+        One row per bus, sorted by distance (km, the axis "distance"), then bus name;
+        vectors ``v_pu.a``, ``v_pu.b``, ``v_pu.c`` in pu, NaN where the bus has no
+        node of that phase. Make ``profile`` with core.grid.analysis.voltage_profile.
+        """
+        rows: dict[str, tuple[float, dict[str, float]]] = {}
+        for p in profile.points:
+            rows.setdefault(p.bus, (p.distance_km, {}))[1][p.phase] = p.v_pu
+        order = sorted(rows, key=lambda bus: (rows[bus][0], bus))
+        vectors: dict[str, np.ndarray] = {
+            PROFILE_AXIS: np.array([rows[b][0] for b in order], dtype=float)
+        }
+        units = {PROFILE_AXIS: "km"}
+        for ph in PROFILE_PHASES:
+            name = f"v_pu.{ph}"
+            vectors[name] = np.array([rows[b][1].get(ph, np.nan) for b in order], dtype=float)
+            units[name] = "pu"
+        return SimulationResult(
+            axis=PROFILE_AXIS, vectors=vectors, units=units, analysis=PROFILE_ANALYSIS
+        )
 
     @classmethod
     def failed(cls, diagnostics: list[NetworkDiagnostic], **metadata: Any) -> GridResult:

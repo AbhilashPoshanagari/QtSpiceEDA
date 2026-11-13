@@ -90,3 +90,23 @@ def solve_directly(path: Path) -> Direct:
         total_kvar=float(q),
         branch_powers=powers,
     )
+
+
+def solve_feeder(feeder: str) -> tuple[Any, Any]:
+    """(GridModel, GridResult) of one feeder through OpenDSSEngine, in the same state
+    as its reference file (AFTER_COMPILE commands, then one run)."""
+    from core.grid.config import PowerFlowConfig
+    from core.grid.engines.opendss.engine import OpenDSSEngine
+
+    engine = OpenDSSEngine()
+    try:
+        assert engine.load_native(FEEDER_FILES[feeder]) == []
+        assert engine.context is not None
+        for command in AFTER_COMPILE[feeder]:
+            engine.context.Text.Command = command
+        result = engine.run(PowerFlowConfig())
+        model, _ = engine.extract_model()
+    finally:
+        engine.close()
+    assert result.converged and model is not None
+    return model, result
