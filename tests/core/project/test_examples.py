@@ -1,7 +1,8 @@
 """The sample projects in examples/: they load, check clean and give the expected
 answers (v0.1: RC low-pass, diode rectifier, first-order feedback loop; v0.2: RC
 low-pass schematic, op-amp amplifier with its own .lib, circuit symbol used twice;
-v0.3: the physical samples, checked in test_examples_physical.py)."""
+v0.3: the physical samples, checked in test_examples_physical.py; v0.4: the IEEE 13
+power flow, checked in test_examples_grid.py)."""
 
 from __future__ import annotations
 
@@ -40,6 +41,8 @@ SAMPLES = [
     "dc_motor_speed.qsp",
     "heatsink_warmup.qsp",
     "battery_discharge.qsp",
+    # v0.4 grid sample (G7): tests in test_examples_grid.py
+    "ieee13_powerflow.qsp",
 ]
 SCHEMATIC_SAMPLES = [
     "rlc_bandpass.qsp",

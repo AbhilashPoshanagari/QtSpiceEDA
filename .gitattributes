@@ -6,3 +6,5 @@ examples/hierarchy/*.sub -text
 examples/opamp_amp/*.asy -text
 examples/opamp_amp/*.lib -text
 examples/buck_cpm/*.asy -text
+# Grid feeder files are byte-exact copies of tests/fixtures/grid (CR+LF): never convert.
+examples/grid/** -text

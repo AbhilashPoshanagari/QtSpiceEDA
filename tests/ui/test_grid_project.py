@@ -158,3 +158,17 @@ def test_feeder_outside_the_project_folder_is_stored_absolute(parts: Parts, tmp_
     assert parts.projects.save()
     stored = json.loads(path.read_text("utf-8"))["grid"]["dss_file"]
     assert Path(stored) == outside.resolve()
+
+
+@pytest.mark.opendss
+def test_ieee13_sample_opens_in_the_grid_tab_and_runs(qtbot, parts: Parts) -> None:
+    sample = Path(__file__).resolve().parents[2] / "examples" / "ieee13_powerflow.qsp"
+    assert parts.projects.open(str(sample)), parts.projects.property("errorString")
+    grid = parts.grid
+    assert grid.filePath.endswith("IEEE13Nodeckt.dss")
+    wait_idle(qtbot, grid)
+    assert grid.canRun and grid.geometry["hasCoordinates"], grid.consoleText
+    assert grid.run()
+    wait_idle(qtbot, grid)
+    assert grid.hasResult, grid.consoleText
+    assert not parts.projects.property("modified")

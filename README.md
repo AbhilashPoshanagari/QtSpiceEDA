@@ -71,6 +71,15 @@ ngspice bundled) are made with `pyinstaller packaging/qtspice-<windows|macos|lin
 
 `examples/` holds these projects. Open them with **File → Open…**:
 
+- **`ieee13_powerflow.qsp`** (new in 0.4, needs the `grid` extra): the IEEE 13 bus
+  test feeder (files in `examples/grid/`, BSD-3). Opening the project opens the feeder
+  in the **Grid** tab and draws its single-line view. **Run** solves a snapshot power
+  flow in about half a second: 3567 kW and 1736 kvar from the source, 112.4 kW of
+  losses, node 671.1 at 0.9828 pu. With the default limits (0.95–1.05 pu, 100 %
+  loading) the Violations table lists the regulator outputs rg60.1 and rg60.3 at
+  1.056 pu and four overloads: three lines (650632 at 148 %) and transformer xfm1
+  (107 %). The voltage profile
+  opens in the waveform window.
 - **`dc_motor_speed.qsp`** (new in 0.3): speed control of a DC motor. Open the
   **Blocks** tab. A DiscretePI controller (Ts = 100 µs, output limits ±1, clamping
   anti-windup) sets the duty cycle of an averaged H-bridge on a 24 V supply, which
