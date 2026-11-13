@@ -219,7 +219,7 @@ def test_compat_mode_round_trip(tmp_path: Path) -> None:
     path = tmp_path / "p.qsp"
     save_project(path, Project(simulation=SimulationSettings("")))
     data = json.loads(path.read_text("utf-8"))
-    assert data["version"] == 2
+    assert data["version"] == FORMAT_VERSION
     assert data["simulation"] == {"compat_mode": ""}
     loaded = load_project(path)
     assert loaded.ok and loaded.project is not None
@@ -271,7 +271,7 @@ def test_schematic_round_trip(tmp_path: Path) -> None:
     project = Project(schematic=rc_schematic())
     save_project(path, project)
     data = json.loads(path.read_text("utf-8"))
-    assert data["version"] == FORMAT_VERSION == 2
+    assert data["version"] == FORMAT_VERSION == 3
     jsonschema.validate(data, SCHEMA)
     loaded = load_project(path)
     assert loaded.ok and loaded.warnings == []

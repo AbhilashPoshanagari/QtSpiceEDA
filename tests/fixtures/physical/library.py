@@ -3,6 +3,9 @@ deck and run in plain ngspice."""
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any
+
 import numpy as np
 
 from core.blocks.diagram import Diagram
@@ -20,16 +23,26 @@ def library_registry() -> PhysicalRegistry:
     return physical_registry()
 
 
-def new_diagram(reg: PhysicalRegistry | None = None) -> tuple[Diagram, PhysicalRegistry]:
-    """An empty diagram that knows the signal blocks and the built-in library."""
-    reg = reg or library_registry()
+def spec_lookup(reg: PhysicalRegistry) -> Callable[[str], BlockSpec | None]:
+    """Block spec by name: the components of ``reg``, then the signal blocks."""
     signal = {s.name: s for s in builtin_specs()}
 
     def lookup(name: str) -> BlockSpec | None:
         spec = reg.spec(name)
         return spec.block if spec is not None else signal.get(name)
 
-    return Diagram(lookup), reg
+    return lookup
+
+
+def new_diagram(reg: PhysicalRegistry | None = None) -> tuple[Diagram, PhysicalRegistry]:
+    """An empty diagram that knows the signal blocks and the built-in library."""
+    reg = reg or library_registry()
+    return Diagram(spec_lookup(reg)), reg
+
+
+def load_diagram(data: dict[str, Any]) -> Diagram:
+    """Rebuild a saved diagram dict with the built-in library."""
+    return Diagram.from_dict(data, spec_lookup(library_registry()))
 
 
 def wire(d: Diagram, a: str, b: str) -> None:

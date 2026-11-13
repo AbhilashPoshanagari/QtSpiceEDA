@@ -17,6 +17,13 @@ say what is wrong (then ``project`` is None) and whose ``warnings`` list what wa
 skipped, such as a missing result file.
 
 The .qsp text is deterministic: saving the same Project twice gives the same bytes.
+
+Format versions (O1): version 3 adds the physical side of v0.3 - physical wires in a
+diagram (``physical_wires``), checked Solver Configuration settings, the code of user
+physical components (``physical_sources``), the parameter sweep (``sweep``) and the
+rpm/degC display-unit setting (``display_units``). Versions 1 and 2 still open and are
+saved as version 3. Version 2 files written by v0.3 development builds may already
+hold physical wires, user components and a sweep; they open as well.
 """
 
 from __future__ import annotations
@@ -30,13 +37,14 @@ from pathlib import Path
 from typing import Any
 
 from core.netlist.model import ERROR
+from core.physical.mapper import SOLVER_SETTINGS
 from core.schematic.model import Schematic
 from core.sim.backend import DEFAULT_COMPAT_MODE, valid_compat_mode
 from core.sim.result import SimulationResult
 from core.waveform.layout import PlotLayout, layouts_from_dict, layouts_to_dict
 
 FORMAT = "qtspice-project"
-FORMAT_VERSION = 2
+FORMAT_VERSION = 3
 SUFFIX = ".qsp"
 DEFAULT_T_END = 1.0
 DEFAULT_DT = 0.001
@@ -44,9 +52,14 @@ DEFAULT_DT = 0.001
 _NAME = re.compile(r"^[A-Za-z0-9_-]+$")
 _KEYS_V1 = ("format", "version", "netlists", "diagrams", "block_sources", "analysis", "results")
 _KEYS = (*_KEYS_V1, "simulation")  # version 2
-_OPTIONAL_KEYS = ("schematic", "symbols", "plots", "plot_defs", "physical_sources", "sweep")
-"""Version 2 fields that may be left out (``physical_sources``: M5, ``sweep``: M7;
-O1 makes them part of format version 3)."""
+_OPTIONAL_KEYS_V2 = ("schematic", "symbols", "plots", "plot_defs", "physical_sources", "sweep")
+"""Version 2 fields that may be left out (``physical_sources``: M5, ``sweep``: M7, both
+written as version 2 by v0.3 development builds before O1)."""
+_OPTIONAL_KEYS = (*_OPTIONAL_KEYS_V2, "display_units")
+"""Version 3 fields that may be left out."""
+SOLVER_SPEC = "SolverConfiguration"
+"""The block spec whose settings O1 checks (the B5 Solver Configuration)."""
+_PORT_REF = re.compile(r"^[^.\s]+\.[^.\s]+$")  # "block.port"
 _SWEEP_FIELDS = ("block", "parameter", "values")
 
 
@@ -117,6 +130,8 @@ class Project:
     # M7: the diagram's parameter sweep {"block", "parameter", "values"} (values as
     # typed, e.g. "1m 2m 5m"). None = no sweep, left out of the file.
     sweep: dict[str, str] | None = None
+    # O1: the waveform window shows rad/s and K as rpm and degC. False (SI) is left out.
+    display_units: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         """The JSON content of the .qsp file (results only by file name). ``schematic``
@@ -149,6 +164,8 @@ class Project:
             ]
         if self.sweep is not None:
             data["sweep"] = {k: str(self.sweep.get(k, "")) for k in _SWEEP_FIELDS}
+        if self.display_units:
+            data["display_units"] = True
         return data
 
     def to_json(self) -> str:
@@ -286,6 +303,7 @@ def load_project(path: str | Path) -> LoadResult:
     ]
     if "sweep" in data:
         project.sweep = {k: data["sweep"][k] for k in _SWEEP_FIELDS}
+    project.display_units = data.get("display_units", False) is True
     warnings: list[str] = []
     if data.get("schematic") is not None:
         schematic, found = Schematic.from_dict(data["schematic"])
@@ -327,11 +345,13 @@ def _check_header(data: object) -> list[str]:
 
 def _check_body(data: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    keys = _KEYS_V1 if data["version"] == 1 else _KEYS
+    version = data["version"]
+    keys = _KEYS_V1 if version == 1 else _KEYS
     for key in keys:
         if key not in data:
             errors.append(f"missing field {key!r}")
-    allowed = keys if data["version"] == 1 else (*keys, *_OPTIONAL_KEYS)
+    optional = {1: (), 2: _OPTIONAL_KEYS_V2}.get(version, _OPTIONAL_KEYS)
+    allowed = (*keys, *optional)
     for key in data:
         if key not in allowed:
             errors.append(f"unknown field {key!r}")
@@ -370,6 +390,8 @@ def _check_body(data: dict[str, Any]) -> list[str]:
             or not all(isinstance(v, str) for v in sweep.values())
         ):
             errors.append("sweep must have exactly the strings block, parameter and values")
+    if "display_units" in data and not isinstance(data["display_units"], bool):
+        errors.append("'display_units' must be true or false")
     if errors:
         return errors
 
@@ -388,7 +410,7 @@ def _check_body(data: dict[str, Any]) -> list[str]:
         if any(not d for d in documents) or len(set(documents)) != len(documents):
             errors.append(f"{key} need distinct, non-empty document names")
     for i, entry in enumerate(data["diagrams"]):
-        errors += _check_diagram(entry["diagram"], f"diagrams[{i}].diagram")
+        errors += _check_diagram(entry["diagram"], f"diagrams[{i}].diagram", version)
 
     symbols = data.get("symbols", [])
     if not isinstance(symbols, list) or not all(
@@ -423,13 +445,18 @@ def _check_body(data: dict[str, Any]) -> list[str]:
     return errors
 
 
-def _check_diagram(diagram: dict[str, Any], where: str) -> list[str]:
-    """Shape checks only; the block rules are checked when the diagram is rebuilt."""
+def _check_diagram(diagram: dict[str, Any], where: str, version: int) -> list[str]:
+    """Shape checks only; the block rules are checked when the diagram is rebuilt.
+    From version 2 a diagram may also hold ``physical_wires`` (O1)."""
     errors: list[str] = []
-    if set(diagram) != {"blocks", "wires"}:
-        return [f"{where} must have exactly the fields 'blocks' and 'wires'"]
-    if not isinstance(diagram["blocks"], list) or not isinstance(diagram["wires"], list):
-        return [f"{where}.blocks and {where}.wires must be lists"]
+    if version == 1:
+        if set(diagram) != {"blocks", "wires"}:
+            return [f"{where} must have exactly the fields 'blocks' and 'wires'"]
+    elif not {"blocks", "wires"} <= set(diagram) <= {"blocks", "wires", "physical_wires"}:
+        return [f"{where} must have the fields 'blocks' and 'wires' and may have 'physical_wires'"]
+    physical = diagram.get("physical_wires", [])
+    if not all(isinstance(v, list) for v in (diagram["blocks"], diagram["wires"], physical)):
+        return [f"{where}.blocks, {where}.wires and {where}.physical_wires must be lists"]
     for i, block in enumerate(diagram["blocks"]):
         ok = (
             isinstance(block, dict)
@@ -442,6 +469,8 @@ def _check_diagram(diagram: dict[str, Any], where: str) -> list[str]:
         )
         if not ok:
             errors.append(f"{where}.blocks[{i}] needs id, spec (strings), x, y and settings")
+        elif block["spec"] == SOLVER_SPEC:
+            errors += _check_solver(block["settings"], f"{where}.blocks[{i}].settings")
     for i, wire in enumerate(diagram["wires"]):
         ok = (
             isinstance(wire, dict)
@@ -451,6 +480,31 @@ def _check_diagram(diagram: dict[str, Any], where: str) -> list[str]:
         )
         if not ok:
             errors.append(f"{where}.wires[{i}] needs src and dst strings")
+    for i, wire in enumerate(physical):
+        ok = (
+            isinstance(wire, dict)
+            and set(wire) == {"a", "b"}
+            and all(isinstance(wire[k], str) and _PORT_REF.match(wire[k]) for k in "ab")
+        )
+        if not ok:
+            errors.append(f"{where}.physical_wires[{i}] needs a and b strings 'block.port'")
+    return errors
+
+
+def _check_solver(settings: dict[str, Any], where: str) -> list[str]:
+    """The stored Solver Configuration settings (missing ones keep the default): Ts,
+    reltol and abstol positive numbers, max_step a number from 0, steady_state true or
+    false."""
+    errors: list[str] = []
+    for name, value in settings.items():
+        if name not in SOLVER_SETTINGS:
+            errors.append(f"{where}: unknown Solver Configuration setting {name!r}")
+        elif name == "steady_state":
+            if not isinstance(value, bool):
+                errors.append(f"{where}.steady_state must be true or false")
+        elif not _is_number(value) or value < 0 or (value == 0 and name != "max_step"):
+            low = "0 or more" if name == "max_step" else "positive"
+            errors.append(f"{where}.{name} must be a {low} number")
     return errors
 
 

@@ -3,7 +3,7 @@
 tests/fixtures/v01/ holds the three sample projects exactly as released in v0.1.0
 (``git show v0.1.0:examples/<name>.qsp``). They are format version 1: no simulation
 settings, schematic, symbols or plots. They must open without errors or warnings, get
-the v0.2 defaults, and survive a save (now format version 2) and reopen unchanged."""
+the v0.2 defaults, and survive a save (now format version 3) and reopen unchanged."""
 
 from __future__ import annotations
 
@@ -59,7 +59,7 @@ def test_v01_project_opens_with_v02_defaults(name: str) -> None:
 
 
 @pytest.mark.parametrize("name", NAMES)
-def test_v01_project_saves_as_v2_and_reopens_unchanged(name: str, tmp_path: Path) -> None:
+def test_v01_project_saves_as_v3_and_reopens_unchanged(name: str, tmp_path: Path) -> None:
     copy = tmp_path / name
     shutil.copyfile(V01 / name, copy)
     before = open_v01(copy)

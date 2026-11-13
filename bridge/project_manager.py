@@ -133,6 +133,7 @@ class ProjectManager(QObject):
         # Plot layouts (W1): kept as loaded while no WaveformController is attached.
         self._plots: dict[str, PlotLayout] = {}
         self._plot_defs: str | None = None  # W9: None = the shipped default
+        self._display_units = False  # O1: the rpm/degC toggle of the waveform window
         self._plots_ctl: QObject | None = None
         self._saved_json = ""
         self._saved_results: tuple[object, object] = (None, None)
@@ -217,7 +218,9 @@ class ProjectManager(QObject):
         self._plots_ctl = controller
         controller.load_plot_defs(self._plot_defs)  # type: ignore[attr-defined]
         controller.load_layouts(self._plots)  # type: ignore[attr-defined]
+        controller.setProperty("displayUnits", self._display_units)
         controller.layoutEdited.connect(self._update_modified)  # type: ignore[attr-defined]
+        controller.displayUnitsChanged.connect(self._update_modified)  # type: ignore[attr-defined]
         if self._simulator is not None and self._diagram is not None:
             self._mark_saved()
 
@@ -258,6 +261,11 @@ class ProjectManager(QObject):
                 self._plots_ctl.plot_defs_text()  # type: ignore[attr-defined]
                 if self._plots_ctl is not None
                 else self._plot_defs
+            ),
+            display_units=(
+                bool(self._plots_ctl.property("displayUnits"))
+                if self._plots_ctl is not None
+                else self._display_units
             ),
         )
 
@@ -405,9 +413,11 @@ class ProjectManager(QObject):
         self._schematic = project.schematic
         self._plots = {a: layout.copy() for a, layout in project.plots.items()}
         self._plot_defs = project.plot_defs
+        self._display_units = project.display_units
         if self._plots_ctl is not None:
             self._plots_ctl.load_plot_defs(self._plot_defs)  # type: ignore[attr-defined]
             self._plots_ctl.load_layouts(self._plots)  # type: ignore[attr-defined]
+            self._plots_ctl.setProperty("displayUnits", self._display_units)
         folder = Path(path).parent if path else Path.cwd()
         self._symbols = [(folder / s).resolve() for s in project.symbols]
         skipped = [f"circuit symbol {s} is missing" for s in self._symbols if not s.is_file()]

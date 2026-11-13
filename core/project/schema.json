@@ -1,17 +1,25 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://qtspice.invalid/schema/project-2.json",
-  "title": "QtSpice project (.qsp), format version 2 (version 1 files are also valid)",
+  "$id": "https://qtspice.invalid/schema/project-3.json",
+  "title": "QtSpice project (.qsp), format version 3 (version 1 and 2 files are also valid)",
   "description": "Results are not stored here: each entry of 'results' names an .npz file in the '<project stem>_results' folder next to the .qsp file.",
   "type": "object",
   "required": ["format", "version", "netlists", "diagrams", "block_sources", "analysis", "results"],
   "additionalProperties": false,
-  "if": { "properties": { "version": { "const": 1 } } },
-  "then": { "not": { "anyOf": [{ "required": ["simulation"] }, { "required": ["schematic"] }, { "required": ["symbols"] }, { "required": ["plots"] }, { "required": ["plot_defs"] }, { "required": ["physical_sources"] }, { "required": ["sweep"] }] } },
-  "else": { "required": ["simulation"] },
+  "allOf": [
+    {
+      "if": { "properties": { "version": { "const": 1 } } },
+      "then": { "not": { "anyOf": [{ "required": ["simulation"] }, { "required": ["schematic"] }, { "required": ["symbols"] }, { "required": ["plots"] }, { "required": ["plot_defs"] }, { "required": ["physical_sources"] }, { "required": ["sweep"] }, { "required": ["display_units"] }] } },
+      "else": { "required": ["simulation"] }
+    },
+    {
+      "if": { "properties": { "version": { "const": 2 } } },
+      "then": { "not": { "required": ["display_units"] } }
+    }
+  ],
   "properties": {
     "format": { "const": "qtspice-project" },
-    "version": { "enum": [1, 2] },
+    "version": { "enum": [1, 2, 3] },
     "netlists": {
       "type": "array",
       "items": {
@@ -75,7 +83,7 @@
       }
     },
     "physical_sources": {
-      "description": "Format version 2, optional (M5; part of format version 3 with O1): the code of each user-defined physical component document, like block_sources. Left out when there is none.",
+      "description": "Format version 3, optional (M5; also read from version 2 files of v0.3 development builds): the code of each user-defined physical component document, like block_sources. Left out when there is none.",
       "type": "array",
       "items": {
         "type": "object",
@@ -103,7 +111,7 @@
       }
     },
     "sweep": {
-      "description": "Format version 2, optional (M7; part of format version 3 with O1): the block diagram's parameter sweep, one block parameter and its values as the user typed them (e.g. \"1m 2m 5m\"). Left out when there is none.",
+      "description": "Format version 3, optional (M7; also read from version 2 files of v0.3 development builds): the block diagram's parameter sweep, one block parameter and its values as the user typed them (e.g. \"1m 2m 5m\"). Left out when there is none.",
       "type": "object",
       "required": ["block", "parameter", "values"],
       "additionalProperties": false,
@@ -112,6 +120,10 @@
         "parameter": { "type": "string" },
         "values": { "type": "string" }
       }
+    },
+    "display_units": {
+      "description": "Format version 3, optional: true when the waveform window shows rad/s as rpm and K as degC (display only; results stay in SI). Left out when false.",
+      "const": true
     },
     "plot_defs": {
       "description": "Format version 2, optional: the waveform plot definitions text, .func and .param lines in SPICE syntax (core/waveform/plotdefs.py). Left out when it is the shipped default.",
@@ -275,7 +287,9 @@
               "x": { "type": "number" },
               "y": { "type": "number" },
               "settings": { "type": "object" }
-            }
+            },
+            "if": { "properties": { "spec": { "const": "SolverConfiguration" } } },
+            "then": { "properties": { "settings": { "$ref": "#/$defs/solverSettings" } } }
           }
         },
         "wires": {
@@ -289,7 +303,33 @@
               "dst": { "type": "string" }
             }
           }
+        },
+        "physical_wires": {
+          "description": "Format version 3 (also read from version 2 files of v0.3 development builds): undirected wires between two conserving ports, 'block.port' each. Left out when there are none.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["a", "b"],
+            "additionalProperties": false,
+            "properties": {
+              "a": { "$ref": "#/$defs/portRef" },
+              "b": { "$ref": "#/$defs/portRef" }
+            }
+          }
         }
+      }
+    },
+    "portRef": { "type": "string", "pattern": "^[^.\\s]+\\.[^.\\s]+$" },
+    "solverSettings": {
+      "description": "Settings of a 'SolverConfiguration' block (B5, M6). Missing ones keep the default: Ts 1e-3 s, reltol 1e-3, abstol 1e-12, max_step 0 (= Ts), steady_state false.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "Ts": { "type": "number", "exclusiveMinimum": 0 },
+        "reltol": { "type": "number", "exclusiveMinimum": 0 },
+        "abstol": { "type": "number", "exclusiveMinimum": 0 },
+        "max_step": { "type": "number", "minimum": 0 },
+        "steady_state": { "type": "boolean" }
       }
     }
   }
