@@ -1,0 +1,8 @@
+! G1 test: a Redirect names a file that does not exist (misspelled).
+Clear
+New Circuit.badredirect basekv=12.47 pu=1.0 bus1=sourcebus
+Redirect "IEEELineCodez.dss"
+New Line.l1 bus1=sourcebus bus2=b2 r1=0.1 x1=0.2 length=1 units=km
+New Load.ld1 bus1=b2 kv=12.47 kw=100 kvar=50
+Set VoltageBases=[12.47]
+CalcVoltageBases

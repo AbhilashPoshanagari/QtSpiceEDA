@@ -35,8 +35,6 @@ from __future__ import annotations
 
 import linecache
 import multiprocessing as mp
-import threading
-import time
 import traceback
 from dataclasses import dataclass, field
 from multiprocessing.connection import Connection
@@ -46,6 +44,7 @@ from core.blocks.decorator import block, spec_of
 from core.blocks.diagram import Diagram
 from core.blocks.engine import ExecutionEngine
 from core.blocks.library import builtin_blocks
+from core.blocks.process import CANCELLED, ERROR, OK, TIMEOUT, ChildOutcome, ChildProcess
 from core.blocks.spec import BlockSpec
 from core.physical.cosim import CoSimulator
 from core.physical.library import physical_registry
@@ -53,12 +52,18 @@ from core.physical.user import load_components
 from core.sim.result import SimulationResult
 
 DEFAULT_TIMEOUT = 10.0
-_POLL = 0.05
 
-OK = "ok"
-ERROR = "error"
-TIMEOUT = "timeout"
-CANCELLED = "cancelled"
+__all__ = [
+    "CANCELLED",
+    "DEFAULT_TIMEOUT",
+    "ERROR",
+    "OK",
+    "TIMEOUT",
+    "BlockRunner",
+    "RunOutcome",
+    "load_blocks",
+    "run_diagram",
+]
 
 
 @dataclass
@@ -79,7 +84,10 @@ class RunOutcome:
 
 
 class BlockRunner:
-    """One run of a diagram in a child process. Create a new runner for each run."""
+    """One run of a diagram in a child process. Create a new runner for each run.
+
+    The process itself (spawn, Pipe, timeout, cancel) is a ChildProcess.
+    """
 
     def __init__(
         self,
@@ -95,7 +103,7 @@ class BlockRunner:
         modules = None if physical_modules is None else list(physical_modules)
         circuit_data = [dict(c) for c in circuits or []]
         component_code = dict(components or {})
-        self._args = (
+        args = (
             diagram,
             dict(sources),
             float(t_end),
@@ -104,95 +112,44 @@ class BlockRunner:
             circuit_data,
             component_code,
         )
-        self.timeout = float(timeout)
-        self._lock = threading.Lock()
-        self._cancelled = threading.Event()
-        self._process: mp.process.BaseProcess | None = None
-        self._conn: Connection | None = None
-        self._started_at = 0.0
+        self._child = ChildProcess(_child_main, args, timeout, name="block runner")
         self._outcome: RunOutcome | None = None
+
+    @property
+    def timeout(self) -> float:
+        return self._child.timeout
+
+    @property
+    def _process(self) -> mp.process.BaseProcess | None:
+        return self._child.process
 
     def start(self) -> None:
         """Start the child process (returns at once)."""
-        with self._lock:
-            if self._process is not None:
-                raise RuntimeError("a BlockRunner runs only once")
-            ctx = mp.get_context("spawn")
-            parent, child = ctx.Pipe(duplex=False)
-            self._process = ctx.Process(target=_child_main, args=(child, *self._args), daemon=True)
-            self._started_at = time.monotonic()
-            self._process.start()
-            child.close()
-            self._conn = parent
+        self._child.start()
 
     def cancel(self) -> None:
         """Stop the run. Safe to call from any thread, before or after it ends."""
-        self._cancelled.set()
-        with self._lock:
-            if self._process is not None and self._process.is_alive():
-                self._process.terminate()
+        self._child.cancel()
 
     def wait(self) -> RunOutcome:
         """Block until the run ends, times out or is cancelled."""
-        if self._outcome is not None:
-            return self._outcome
-        if self._process is None:
-            self.start()
-        assert self._process is not None and self._conn is not None
-        deadline = self._started_at + self.timeout
-        outcome: RunOutcome | None = None
-        while outcome is None:
-            if self._cancelled.is_set():
-                outcome = RunOutcome(CANCELLED, message="run cancelled")
-                break
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                outcome = RunOutcome(
-                    TIMEOUT, message=f"run stopped after the {self.timeout:g} s timeout"
-                )
-                break
-            try:
-                ready = self._conn.poll(min(_POLL, remaining))
-            except (EOFError, OSError):
-                ready = True  # the pipe closed: recv() below reports it
-            if ready:
-                outcome = self._receive()
-            elif not self._process.is_alive():
-                outcome = RunOutcome(
-                    ERROR,
-                    message=f"block runner process exited with code {self._process.exitcode}",
-                )
-            # A cancel kills the process, which closes the pipe: that is not an error.
-            if outcome is not None and not outcome.ok and self._cancelled.is_set():
-                outcome = RunOutcome(CANCELLED, message="run cancelled")
-        self._finish()
-        self._outcome = outcome
-        return outcome
+        if self._outcome is None:
+            self._outcome = self._to_outcome(self._child.wait())
+        return self._outcome
 
     def run(self) -> RunOutcome:
         """``start()`` then ``wait()``."""
         self.start()
         return self.wait()
 
-    def _receive(self) -> RunOutcome:
-        assert self._conn is not None
-        try:
-            msg = self._conn.recv()
-        except (EOFError, OSError) as err:
-            return RunOutcome(ERROR, message=f"lost contact with the block runner: {err}")
+    @staticmethod
+    def _to_outcome(child: ChildOutcome) -> RunOutcome:
+        if not child.ok:
+            return RunOutcome(child.status, message=child.error)
+        msg = child.message
         if msg[0] == OK:
             return RunOutcome(OK, result=msg[1], console=list(msg[2]))
         return RunOutcome(ERROR, message=msg[1], traceback=msg[2], console=list(msg[3]))
-
-    def _finish(self) -> None:
-        with self._lock:
-            proc = self._process
-            if proc is not None:
-                if proc.is_alive():
-                    proc.terminate()
-                proc.join(timeout=5)
-            if self._conn is not None:
-                self._conn.close()
 
 
 # ---- child process

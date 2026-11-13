@@ -19,3 +19,7 @@ commands used are in its `about` block). Tests compare against it; never edit by
 How each feeder is run is in `scratch/phase4/common.py` (`CASES`): IEEE 13 is
 `compile`d as is; IEEE 34 is `compile ieee34Mod1.dss` + `solve`; IEEE 123 is the first
 script of `Run_IEEE123Bus.DSS` without the meter, show and plot commands.
+
+`bad/` is ours too: small hand-written files with one deliberate mistake each
+(a misspelled redirect, an unknown linecode), for the G1 error tests. They contain
+no reference values.
