@@ -114,7 +114,7 @@ bridge/           (v0.2 files; diagram_controller.py extended)
 ui/qml/           (v0.2 files) + ComponentEditor.qml; Port/Wire/BlockLibrary/
                   PropertiesPanel extended
 tests/core/physical/  tests/fixtures/physical/
-samples/          + dc_motor_speed.qsp heatsink_warmup.qsp battery_discharge.qsp
+examples/         + dc_motor_speed.qsp heatsink_warmup.qsp battery_discharge.qsp
 third_party/ngspice/
 
 ## Project file

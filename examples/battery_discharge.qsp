@@ -1,0 +1,179 @@
+{
+  "format": "qtspice-project",
+  "version": 3,
+  "netlists": [
+    {
+      "name": "main",
+      "text": ""
+    }
+  ],
+  "diagrams": [
+    {
+      "name": "main",
+      "diagram": {
+        "blocks": [
+          {
+            "id": "solver",
+            "spec": "SolverConfiguration",
+            "x": 60.0,
+            "y": 520.0,
+            "settings": {
+              "Ts": 0.1
+            }
+          },
+          {
+            "id": "eref",
+            "spec": "ElectricalReference",
+            "x": 220.0,
+            "y": 520.0,
+            "settings": {}
+          },
+          {
+            "id": "battery",
+            "spec": "Battery",
+            "x": 220.0,
+            "y": 360.0,
+            "settings": {
+              "ocv": "0:3.0 0.1:3.45 0.2:3.55 0.5:3.7 0.8:3.9 0.9:4.0 1:4.2",
+              "R_int": 0.05,
+              "capacity": 0.1,
+              "soc0": 1.0
+            }
+          },
+          {
+            "id": "ammeter",
+            "spec": "CurrentSensor",
+            "x": 420.0,
+            "y": 240.0,
+            "settings": {}
+          },
+          {
+            "id": "load",
+            "spec": "DCCurrentSource",
+            "x": 600.0,
+            "y": 360.0,
+            "settings": {
+              "I": 2.0
+            }
+          },
+          {
+            "id": "voltmeter",
+            "spec": "VoltageSensor",
+            "x": 420.0,
+            "y": 440.0,
+            "settings": {}
+          },
+          {
+            "id": "power",
+            "spec": "Product",
+            "x": 640.0,
+            "y": 100.0,
+            "settings": {}
+          },
+          {
+            "id": "energy",
+            "spec": "Integrator",
+            "x": 780.0,
+            "y": 100.0,
+            "settings": {
+              "initial": 0.0
+            }
+          },
+          {
+            "id": "scope_e",
+            "spec": "Scope",
+            "x": 920.0,
+            "y": 100.0,
+            "settings": {
+              "label": "E"
+            }
+          },
+          {
+            "id": "scope_v",
+            "spec": "Scope",
+            "x": 640.0,
+            "y": 520.0,
+            "settings": {
+              "label": "V"
+            }
+          },
+          {
+            "id": "scope_soc",
+            "spec": "Scope",
+            "x": 780.0,
+            "y": 520.0,
+            "settings": {
+              "label": "soc"
+            }
+          }
+        ],
+        "wires": [
+          {
+            "src": "voltmeter.V",
+            "dst": "power.a"
+          },
+          {
+            "src": "ammeter.I",
+            "dst": "power.b"
+          },
+          {
+            "src": "power.y",
+            "dst": "energy.u"
+          },
+          {
+            "src": "energy.y",
+            "dst": "scope_e.u"
+          },
+          {
+            "src": "voltmeter.V",
+            "dst": "scope_v.u"
+          },
+          {
+            "src": "battery.soc",
+            "dst": "scope_soc.u"
+          }
+        ],
+        "physical_wires": [
+          {
+            "a": "eref.G",
+            "b": "solver.port"
+          },
+          {
+            "a": "battery.n",
+            "b": "eref.G"
+          },
+          {
+            "a": "ammeter.p",
+            "b": "battery.p"
+          },
+          {
+            "a": "ammeter.n",
+            "b": "load.p"
+          },
+          {
+            "a": "eref.G",
+            "b": "load.n"
+          },
+          {
+            "a": "battery.p",
+            "b": "voltmeter.p"
+          },
+          {
+            "a": "eref.G",
+            "b": "voltmeter.n"
+          }
+        ]
+      }
+    }
+  ],
+  "block_sources": [],
+  "analysis": {
+    "card": "",
+    "diagram_t_end": 150.0,
+    "diagram_dt": 0.1
+  },
+  "results": [],
+  "simulation": {
+    "compat_mode": "ltpsa"
+  }
+}

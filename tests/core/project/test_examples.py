@@ -1,6 +1,7 @@
 """The sample projects in examples/: they load, check clean and give the expected
 answers (v0.1: RC low-pass, diode rectifier, first-order feedback loop; v0.2: RC
-low-pass schematic, op-amp amplifier with its own .lib, circuit symbol used twice)."""
+low-pass schematic, op-amp amplifier with its own .lib, circuit symbol used twice;
+v0.3: the physical samples, checked in test_examples_physical.py)."""
 
 from __future__ import annotations
 
@@ -35,6 +36,10 @@ SAMPLES = [
     "hierarchy/rclp_cell.qsp",
     "opamp_amp/opamp_amp.qsp",
     "buck_cpm/buck_cpm.qsp",
+    # v0.3 physical samples (O2): tests in test_examples_physical.py
+    "dc_motor_speed.qsp",
+    "heatsink_warmup.qsp",
+    "battery_discharge.qsp",
 ]
 SCHEMATIC_SAMPLES = [
     "rlc_bandpass.qsp",

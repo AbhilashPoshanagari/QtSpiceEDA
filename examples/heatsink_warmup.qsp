@@ -1,0 +1,190 @@
+{
+  "format": "qtspice-project",
+  "version": 3,
+  "netlists": [
+    {
+      "name": "main",
+      "text": ""
+    }
+  ],
+  "diagrams": [
+    {
+      "name": "main",
+      "diagram": {
+        "blocks": [
+          {
+            "id": "solver",
+            "spec": "SolverConfiguration",
+            "x": 60.0,
+            "y": 520.0,
+            "settings": {
+              "Ts": 0.1
+            }
+          },
+          {
+            "id": "eref",
+            "spec": "ElectricalReference",
+            "x": 220.0,
+            "y": 520.0,
+            "settings": {}
+          },
+          {
+            "id": "supply",
+            "spec": "DCVoltageSource",
+            "x": 220.0,
+            "y": 360.0,
+            "settings": {
+              "V": 12.0
+            }
+          },
+          {
+            "id": "load",
+            "spec": "Resistor",
+            "x": 400.0,
+            "y": 240.0,
+            "settings": {
+              "R": 1.0
+            }
+          },
+          {
+            "id": "mosfet",
+            "spec": "ThermalMOSFET",
+            "x": 400.0,
+            "y": 400.0,
+            "settings": {
+              "R_on": 0.05
+            }
+          },
+          {
+            "id": "heatsink",
+            "spec": "ThermalMass",
+            "x": 600.0,
+            "y": 520.0,
+            "settings": {
+              "C": 50.0,
+              "T0": 298.15
+            }
+          },
+          {
+            "id": "air",
+            "spec": "Convection",
+            "x": 760.0,
+            "y": 400.0,
+            "settings": {
+              "h": 10.0,
+              "area": 0.05
+            }
+          },
+          {
+            "id": "ambient",
+            "spec": "TemperatureSource",
+            "x": 920.0,
+            "y": 400.0,
+            "settings": {
+              "T": 298.15
+            }
+          },
+          {
+            "id": "tref",
+            "spec": "ThermalReference",
+            "x": 920.0,
+            "y": 520.0,
+            "settings": {}
+          },
+          {
+            "id": "temp",
+            "spec": "TemperatureSensor",
+            "x": 600.0,
+            "y": 260.0,
+            "settings": {}
+          },
+          {
+            "id": "gate_on",
+            "spec": "Constant",
+            "x": 200.0,
+            "y": 100.0,
+            "settings": {
+              "value": 1.0
+            }
+          },
+          {
+            "id": "scope_t",
+            "spec": "Scope",
+            "x": 800.0,
+            "y": 260.0,
+            "settings": {
+              "label": "T_heatsink"
+            }
+          }
+        ],
+        "wires": [
+          {
+            "src": "gate_on.y",
+            "dst": "mosfet.gate"
+          },
+          {
+            "src": "temp.T",
+            "dst": "scope_t.u"
+          }
+        ],
+        "physical_wires": [
+          {
+            "a": "eref.G",
+            "b": "solver.port"
+          },
+          {
+            "a": "load.p",
+            "b": "supply.p"
+          },
+          {
+            "a": "load.n",
+            "b": "mosfet.d"
+          },
+          {
+            "a": "eref.G",
+            "b": "mosfet.s"
+          },
+          {
+            "a": "eref.G",
+            "b": "supply.n"
+          },
+          {
+            "a": "heatsink.A",
+            "b": "mosfet.H"
+          },
+          {
+            "a": "air.A",
+            "b": "heatsink.A"
+          },
+          {
+            "a": "air.B",
+            "b": "ambient.A"
+          },
+          {
+            "a": "ambient.B",
+            "b": "tref.R"
+          },
+          {
+            "a": "heatsink.A",
+            "b": "temp.A"
+          },
+          {
+            "a": "temp.B",
+            "b": "tref.R"
+          }
+        ]
+      }
+    }
+  ],
+  "block_sources": [],
+  "analysis": {
+    "card": "",
+    "diagram_t_end": 600.0,
+    "diagram_dt": 0.1
+  },
+  "results": [],
+  "simulation": {
+    "compat_mode": "ltpsa"
+  },
+  "display_units": true
+}

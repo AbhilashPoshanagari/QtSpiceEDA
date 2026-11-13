@@ -1,0 +1,274 @@
+{
+  "format": "qtspice-project",
+  "version": 3,
+  "netlists": [
+    {
+      "name": "main",
+      "text": ""
+    }
+  ],
+  "diagrams": [
+    {
+      "name": "main",
+      "diagram": {
+        "blocks": [
+          {
+            "id": "solver",
+            "spec": "SolverConfiguration",
+            "x": 60.0,
+            "y": 520.0,
+            "settings": {
+              "Ts": 0.0001
+            }
+          },
+          {
+            "id": "eref",
+            "spec": "ElectricalReference",
+            "x": 220.0,
+            "y": 520.0,
+            "settings": {}
+          },
+          {
+            "id": "supply",
+            "spec": "DCVoltageSource",
+            "x": 220.0,
+            "y": 380.0,
+            "settings": {
+              "V": 24.0
+            }
+          },
+          {
+            "id": "bridge",
+            "spec": "HBridge",
+            "x": 400.0,
+            "y": 380.0,
+            "settings": {
+              "model": "averaged",
+              "R_on": 0.01
+            }
+          },
+          {
+            "id": "motor",
+            "spec": "DCMotor",
+            "x": 580.0,
+            "y": 380.0,
+            "settings": {
+              "R": 1.0,
+              "L": 0.001,
+              "k": 0.05,
+              "J": 0.0001,
+              "b": 1e-05
+            }
+          },
+          {
+            "id": "rref",
+            "spec": "MechanicalRotationalReference",
+            "x": 760.0,
+            "y": 520.0,
+            "settings": {}
+          },
+          {
+            "id": "speed",
+            "spec": "AngularVelocitySensor",
+            "x": 760.0,
+            "y": 380.0,
+            "settings": {}
+          },
+          {
+            "id": "load",
+            "spec": "ControlledTorqueSource",
+            "x": 760.0,
+            "y": 240.0,
+            "settings": {}
+          },
+          {
+            "id": "w_ref",
+            "spec": "Constant",
+            "x": 40.0,
+            "y": 100.0,
+            "settings": {
+              "value": 150.0
+            }
+          },
+          {
+            "id": "error",
+            "spec": "Sum",
+            "x": 200.0,
+            "y": 100.0,
+            "settings": {
+              "signs": "+-"
+            }
+          },
+          {
+            "id": "pi",
+            "spec": "DiscretePI",
+            "x": 340.0,
+            "y": 100.0,
+            "settings": {
+              "kp": 0.008333333333333333,
+              "ki": 0.20833333333333337,
+              "u_min": -1.0,
+              "u_max": 1.0,
+              "anti_windup": "clamping"
+            }
+          },
+          {
+            "id": "half",
+            "spec": "Gain",
+            "x": 480.0,
+            "y": 100.0,
+            "settings": {
+              "k": 0.5
+            }
+          },
+          {
+            "id": "mid",
+            "spec": "Constant",
+            "x": 480.0,
+            "y": 220.0,
+            "settings": {
+              "value": 0.5
+            }
+          },
+          {
+            "id": "duty",
+            "spec": "Sum",
+            "x": 620.0,
+            "y": 100.0,
+            "settings": {
+              "signs": "++"
+            }
+          },
+          {
+            "id": "tau_load",
+            "spec": "Step",
+            "x": 620.0,
+            "y": 240.0,
+            "settings": {
+              "step_time": 0.15,
+              "initial": 0.0,
+              "final": -0.01
+            }
+          },
+          {
+            "id": "scope_w",
+            "spec": "Scope",
+            "x": 900.0,
+            "y": 380.0,
+            "settings": {
+              "label": "w"
+            }
+          },
+          {
+            "id": "scope_duty",
+            "spec": "Scope",
+            "x": 900.0,
+            "y": 100.0,
+            "settings": {
+              "label": "duty"
+            }
+          }
+        ],
+        "wires": [
+          {
+            "src": "w_ref.y",
+            "dst": "error.a"
+          },
+          {
+            "src": "speed.w",
+            "dst": "error.b"
+          },
+          {
+            "src": "error.y",
+            "dst": "pi.e"
+          },
+          {
+            "src": "pi.y",
+            "dst": "half.u"
+          },
+          {
+            "src": "half.y",
+            "dst": "duty.a"
+          },
+          {
+            "src": "mid.y",
+            "dst": "duty.b"
+          },
+          {
+            "src": "duty.y",
+            "dst": "bridge.u"
+          },
+          {
+            "src": "tau_load.y",
+            "dst": "load.tau"
+          },
+          {
+            "src": "speed.w",
+            "dst": "scope_w.u"
+          },
+          {
+            "src": "duty.y",
+            "dst": "scope_duty.u"
+          }
+        ],
+        "physical_wires": [
+          {
+            "a": "eref.G",
+            "b": "solver.port"
+          },
+          {
+            "a": "bridge.p",
+            "b": "supply.p"
+          },
+          {
+            "a": "eref.G",
+            "b": "supply.n"
+          },
+          {
+            "a": "bridge.n",
+            "b": "eref.G"
+          },
+          {
+            "a": "bridge.a",
+            "b": "motor.p"
+          },
+          {
+            "a": "bridge.b",
+            "b": "motor.n"
+          },
+          {
+            "a": "motor.B",
+            "b": "rref.R"
+          },
+          {
+            "a": "motor.A",
+            "b": "speed.A"
+          },
+          {
+            "a": "rref.R",
+            "b": "speed.B"
+          },
+          {
+            "a": "load.A",
+            "b": "motor.A"
+          },
+          {
+            "a": "load.B",
+            "b": "rref.R"
+          }
+        ]
+      }
+    }
+  ],
+  "block_sources": [],
+  "analysis": {
+    "card": "",
+    "diagram_t_end": 0.3,
+    "diagram_dt": 0.0001
+  },
+  "results": [],
+  "simulation": {
+    "compat_mode": "ltpsa"
+  },
+  "display_units": true
+}

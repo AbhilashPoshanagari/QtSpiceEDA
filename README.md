@@ -67,6 +67,24 @@ ngspice bundled) are made with `pyinstaller packaging/qtspice-<windows|macos|lin
 
 `examples/` holds these projects. Open them with **File → Open…**:
 
+- **`dc_motor_speed.qsp`** (new in 0.3): speed control of a DC motor. Open the
+  **Blocks** tab. A DiscretePI controller (Ts = 100 µs, output limits ±1, clamping
+  anti-windup) sets the duty cycle of an averaged H-bridge on a 24 V supply, which
+  drives the DC motor (R = 1 Ω, k = 0.05, J = 1e-4 kg·m²). The set speed is
+  150 rad/s (1432 rpm). At 0.15 s a load torque of 0.01 N·m comes on. **Run** for
+  0.3 s: the speed rises without overshoot. In steady state the duty cycle is 0.6569
+  before the load step and 0.6611 after it, from V(a, b) = k·w + (R + 2·R_on)·i. The
+  waveform window shows the speed in rpm (the rpm/°C toggle is saved on).
+- **`heatsink_warmup.qsp`** (new in 0.3): a MOSFET with a thermal port switches a 1 Ω
+  load on a 12 V supply. Its conduction loss, I²·R_on = 6.53 W, heats a 50 J/K
+  heatsink, which loses heat by convection (R_th = 1/(h·A) = 2 K/W) to a 25 °C
+  ambient. **Run** for 600 s: the temperature rises as a first-order step with
+  τ = R_th·C_th = 100 s, to 25 + 13.06 = 38.06 °C.
+- **`battery_discharge.qsp`** (new in 0.3): a 0.1 A·h battery with an OCV table and
+  R_int = 50 mΩ, discharged at a constant 2 A for 150 s. The state of charge falls
+  linearly from 1 to 0.167, and the terminal voltage follows the table minus
+  I·R_int = 0.1 V. On the signal side a Product and an Integrator add up the energy
+  delivered (`E`, in J).
 - **`rc_filter_schematic.qsp`** (new in 0.2): an RC low-pass drawn as a schematic,
   R2 = 10k and C1 = 100n, with an `.ac` directive. Press **Run** on the Schematic tab,
   then click the `OUT` wire: the Bode pane shows −3 dB at 159 Hz.
