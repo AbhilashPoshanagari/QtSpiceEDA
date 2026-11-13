@@ -5,72 +5,129 @@
   blocks, block diagrams, .qsp projects.
 - v0.2.0 released: LTspice-style improvements only (.lib/.asy reading, schematic editor,
   circuit symbols, multi-pane waveform window with LTspice expressions).
-- We are now building v0.3 on the `phase-3` branch: Simscape-style physical modelling.
-  Every v0.1 and v0.2 test must keep passing.
+- v0.3.0 released: Simscape-style physical modelling (F, C, B, U, M, O tasks).
+- We are now building v0.4 on the `phase-4` branch: distribution-grid power-flow analysis
+  with OpenDSS. Every v0.1, v0.2 and v0.3 test must keep passing.
 
-## What v0.3 adds (only these - nothing else)
-Basic level:
-- F1-F6 Foundation: four physical domains, typed conserving ports, PhysicalComponent API,
-  physical wires, network extraction and checks, network -> Circuit mapping.
-- C1-C5 Combined run: ngspice external sources + sync, CoSimulator with a fixed
-  controller tick Ts, physical network as one stateful block, runs in BlockRunner,
-  merged results.
-- B1-B5 Library: electrical, rotational, translational, thermal basics; references;
-  signal-controlled sources; sensors; Solver Configuration block.
-- U1-U4 UI: domain ports and wires, library groups and unit fields, one Run button,
-  unit labels in the waveform window.
-Mid level:
-- M1 cross-domain parts (DC motor, gearbox, transformer, battery, half/H-bridge,
-  parts with a thermal port), M2 Circuit block (v0.2 symbol as physical block),
-  M3 averaged vs switching bridges, M4 PWM on the physical side + discrete PI/PID,
-  M5 user-defined physical components, M6 initial conditions / start from steady
-  state, M7 parameter sweep.
-Project: O1 .qsp format version 3, O2 samples.
+## What v0.4 adds (only these - nothing else)
+- S1-S6 Spikes (week 1, scratch/phase4/ only): DSS-Python on all three OSes, engine
+  contexts and child process, PyInstaller bundling, API coverage for extraction, locale,
+  timing on large feeders.
+- G1 Engine: OpenDSSEngine loads a hand-written .dss file, runs a snapshot power flow,
+  returns a GridResult. Runs in the GridRunner child process.
+- G2 Grid model: engine-independent dataclasses (Source, Bus, LineCode, Line, Switch,
+  Transformer + Winding, Regulator, Load, Capacitor, PVSystem, GridModel) and the
+  extractor that builds a GridModel from a loaded OpenDSS circuit.
+- G3 Writer: GridModel -> DSS script, and the round-trip test.
+- G4 Validation: topology and electrical checks on a GridModel, reported as Diagnostics.
+- G5 Benchmarks and analysis: IEEE 13/34/123 against reference results; violations,
+  losses and voltage profile computed outside the engine.
+- G6 UI: open a .dss file, Run, results table, voltage-profile plot in the waveform
+  window, read-only single-line view from bus coordinates, diagnostics in the Console.
+- G7 Project and release: .qsp format version 4, sample project, docs, v0.4.0.
 
-OUT OF SCOPE for v0.3 - do not build, even if it looks easy:
-our own DAE/equation solver or a Simscape-like equation language; hydraulic, gas,
-thermal-liquid or magnetic domains; 3D multibody; real-time runs, hardware-in-the-loop,
-code generation; linearization or frequency analysis of mixed models; controllers with a
-variable step or several sample rates; physical blocks inside the v0.2 schematic editor;
-Ts below 10 us. Everything that was out of scope in v0.2 stays out.
+OUT OF SCOPE for v0.4 - do not build, even if it looks easy:
+our own power-flow / load-flow solver or a DSS-language parser; GIS or ArcGIS import,
+data normalisation, electrical enrichment, conductor/transformer catalogs (v0.5);
+QSTS / load shapes / yearly runs, fault studies, hosting capacity, EV impact, harmonics,
+dynamics (later phases); drawing or editing feeders in the UI (the grid view is
+read-only); coupling grid models with ngspice, physical networks or Python controllers;
+a second grid engine (pandapower, COM OpenDSS, OpenDSSDirect.py); writing results back
+to GIS. Everything that was out of scope in v0.2 and v0.3 stays out.
 If a task seems to need one of these, stop and ask.
 
 ## Stack
 Python 3.12, PySide6 6.8 (Qt Quick / QML, QtGraphs), NumPy, ngspice shared library
 via ctypes, graphlib, multiprocessing, pytest, pytest-qt, ruff, PyInstaller.
+NEW: DSS-Python (package `dss-python`, pin 0.15.x, BSD-3) as the optional extra
+`pip install -e ".[grid]"`. The app must start and all non-grid features must work
+without it.
 Do not add PySpice as a dependency (GPLv3). Reading its source for reference is fine;
-never copy code from it.
+never copy code from it. Do not add OpenDSSDirect.py, the Windows COM OpenDSS or
+pandapower.
 
 ## Architecture rules (always follow)
 1. Four layers: ui/qml -> bridge -> core -> external. A layer only calls the one below.
 2. core/ never imports PySide6 or any Qt module.
 3. QML binds only to bridge objects registered with @QmlElement / @QmlSingleton:
    Simulator, WaveformModel, DiagramController, ProjectManager, SchematicController,
-   WaveformController. Never setContextProperty.
+   WaveformController, and NEW in v0.4: GridController. Never setContextProperty.
 4. Only core/sim/ngspice_adapter.py knows the ngspice API. Load libngspice lazily with
    ctypes; if missing, available() returns False and the app still starts.
    Call setlocale(LC_NUMERIC, "C") before loading any circuit.
 5. Plain netlist and schematic runs: ngspice on a QThread (SimulationWorker).
    Block diagrams, including combined physical runs: in the BlockRunner child process,
    which loads NgspiceAdapter itself. User code never runs in the UI process.
+   NEW: grid runs: in the GridRunner child process (same spawn + Pipe + daemon pattern
+   as BlockRunner; reuse its process helper, don't copy it), which creates its own
+   OpenDSSEngine. OpenDSS never runs in the UI process.
 6. Parsers and checkers never raise on bad input; they return results plus
-   Diagnostic(line or block, severity, message).
-7. All results use the same SimulationResult class.
+   Diagnostic(line or block, severity, message). Grid code uses the same Diagnostic
+   class, with the element id ("line.650632", "bus.671") as the location. If a stable
+   diagnostic code is needed, add an optional field to the existing class - never a
+   second Diagnostic class.
+7. All time-domain and sweep results use the same SimulationResult class.
+   NEW: grid power flow returns GridResult (node voltages, branch results, totals).
+   Anything shown in the waveform window is converted to a SimulationResult first
+   (GridResult.to_simulation_result()); the waveform window never reads GridResult.
 8. A schematic is only another way to make a Circuit (v0.2 rule, unchanged).
 9. Waveform expressions: Python ast + whitelist, never eval/exec (v0.2 rule, unchanged).
 10. Every user edit goes through that editor's own QUndoStack.
-11. NEW: Physical networks are ALWAYS solved by mapping them to a Circuit with
+11. Physical networks are ALWAYS solved by mapping them to a Circuit with
     NetworkMapper and running ngspice. Never write a second solver, and never integrate
-    physical equations in Python.
-12. NEW: The across/through -> voltage/current mapping lives ONLY in
+    physical equations in Python. (v0.3 rule, unchanged. OpenDSS is not a solver for
+    physical networks: never map a physical network to OpenDSS or a grid to ngspice.)
+12. The across/through -> voltage/current mapping lives ONLY in
     core/physical/domains.py. Other files ask the Domain registry; they never hard-code
     "C = J" or similar.
-13. NEW: Built-in physical components are written with the same PhysicalComponent API
+13. Built-in physical components are written with the same PhysicalComponent API
     that users get in M5. No private shortcuts.
-14. NEW: A physical network is one stateful block in the v0.1 engine: its outputs are
+14. A physical network is one stateful block in the v0.1 engine: its outputs are
     the sensor values from the previous tick. Do not change the algebraic-loop rule.
+15. NEW: Grid models are solved ONLY by OpenDSS. Only core/grid/engines/opendss/ imports
+    `dss`; everything else uses the GridEngine protocol in core/grid/engines/base.py.
+    Load `dss` lazily; if missing, OpenDSSEngine.available() returns False. Never write
+    power-flow equations or iterations in Python.
+16. NEW: OpenDSS is the .dss parser. Never parse DSS text ourselves (redirect, ~, like=,
+    RPN values, linecodes). Compile the file in OpenDSS, then read elements back through
+    the API in extract.py. Writing DSS text (writer.py) is allowed.
+17. NEW: GridModel uses the canonical units below. Unit conversion happens ONLY in
+    core/grid/engines/opendss/units.py. Other files never multiply by 0.3048 or 1609.344.
+18. NEW: Each OpenDSSEngine owns its own DSS context (DSS.NewContext()). Never use the
+    global DSS instance (no global mutable state, rule "Conventions").
+19. NEW: Violations (voltage limits, overloads) are computed in core/grid/analysis.py
+    from PowerFlowConfig limits, never by the engine and never in QML.
 
-## Physical domains (follow exactly)
+## Grid model (follow exactly)
+| Quantity            | Canonical unit in GridModel                         |
+| length              | m                                                   |
+| series impedance    | ohm/km, full phase matrices, row-major              |
+| shunt capacitance   | nF/km, full phase matrices                          |
+| voltage             | kV (LL for 3-phase and delta; as given for 1-ph wye)|
+| power               | kW, kvar, kVA                                       |
+| transformer R, X    | % on the winding / element base                     |
+| node voltage result | complex V, line-to-neutral; pu = abs(V) / LN base   |
+- Names are lower case. Element ids are "<class>.<name>" (line.650632); node names are
+  "<bus>.<node>" (671.1). A Terminal is a bus plus explicit node numbers.
+- Model classes: Source (OpenDSS Vsource), Bus, LineCode, Line, Switch, Transformer
+  with Winding list, Regulator, Load, Capacitor, PVSystem, GridModel. All in
+  core/grid/model.py for v0.4.
+- Switch is its own class. The writer emits it as `Line ... Switch=yes` and keeps its
+  impedance (IEEE 13 uses r1 = 1e-4); open state is written with `Open`.
+- Regulator is a control that names a Transformer and winding (OpenDSS RegControl),
+  never a standalone branch.
+- Regulator taps are stored in the model after the solve, so a round trip with controls
+  on converges to the same state.
+- Base frequency and voltage bases always come from the .dss file. Never assume 60 Hz.
+- Elements the model does not support yet are reported as a warning Diagnostic
+  ("unsupported element ...") by the extractor - never dropped silently.
+- Branch currents are per phase at terminal 1; branch power is positive into terminal 1;
+  source power is reported as positive when supplied to the grid.
+- Round trip: .dss -> GridModel -> DSS script -> solve must match the original solve
+  within 1e-6 pu on every node and 0.1 % on total losses. This is the test that proves
+  the model is complete.
+
+## Physical domains (v0.3, follow exactly)
 | Domain        | Across -> V  | Through -> A | C from         | R from   | L from   | Reference |
 | electrical    | V            | A            | capacitor      | resistor | inductor | 0 V       |
 | rotational    | w [rad/s]    | tau [N*m]    | inertia J      | 1/b      | 1/k      | 0 rad/s   |
@@ -86,7 +143,7 @@ never copy code from it.
 - Each physical network needs exactly one Solver Configuration block and a reference
   block for every domain it uses (F5 checks this).
 
-## Combined run (follow exactly)
+## Combined run (v0.3, follow exactly)
 - Converter inputs become ngspice sources declared `external`; values come from the
   GetVSRCData / GetISRCData callbacks registered with ngSpice_Init_Sync.
 - A breakpoint is set at every tick k*Ts (ngSpice_SetBkpt). At each accepted tick:
@@ -97,7 +154,7 @@ never copy code from it.
 - Physical vectors are named <component>.<port>.<quantity>, e.g. motor.shaft.w, in SI.
 - PWM edges are generated inside ngspice (M4), not by the Python controller.
 
-## Folder layout (v0.3 additions marked +)
+## Folder layout (v0.4 additions marked +)
 app/__main__.py
 core/netlist/     parser.py model.py validate.py builder.py libindex.py
 core/sim/         backend.py ngspice_adapter.py result.py
@@ -107,26 +164,34 @@ core/symbols/     asy.py library.py builtin/
 core/schematic/   model.py connectivity.py netlister.py
 core/hierarchy/   symbolgen.py
 core/waveform/    layout.py expr.py plotdefs.py
-+ core/physical/  domains.py component.py network.py mapper.py cosim.py
-+                 circuit_block.py registry.py user.py library/{electrical,rotational,
-+                 translational,thermal,converters,composite}/
-bridge/           (v0.2 files; diagram_controller.py extended)
-ui/qml/           (v0.2 files) + ComponentEditor.qml; Port/Wire/BlockLibrary/
-                  PropertiesPanel extended
+core/physical/    domains.py component.py network.py mapper.py cosim.py
+                  circuit_block.py registry.py user.py library/{electrical,rotational,
+                  translational,thermal,converters,composite}/
++ core/grid/      model.py validate.py config.py result.py analysis.py runner.py
++                 engines/base.py
++                 engines/opendss/{engine.py,extract.py,writer.py,units.py}
+bridge/           (v0.3 files) + grid_controller.py
+ui/qml/           (v0.3 files) + grid/{GridView.qml,GridResultsTable.qml}
 tests/core/physical/  tests/fixtures/physical/
-examples/         + dc_motor_speed.qsp heatsink_warmup.qsp battery_discharge.qsp
++ tests/core/grid/    tests/fixtures/grid/{ieee13,ieee34,ieee123}/ + LICENSE file
+examples/         dc_motor_speed.qsp heatsink_warmup.qsp battery_discharge.qsp
++                 ieee13_powerflow.qsp (+ its .dss files)
 third_party/ngspice/
 
 ## Project file
-- `.qsp` format version 3 adds physical blocks, physical wires, Solver Configuration
-  settings and the display-unit setting. Versions 1 and 2 must still open.
-- Results stay in `name_results/`; only the project's own listed files are deleted.
+- `.qsp` format version 4 adds a grid section: path of the .dss file (relative to the
+  project), PowerFlowConfig settings and voltage-limit settings. Versions 1-3 must
+  still open.
+- Results stay in `name_results/` (grid results under `name_results/grid/`); only the
+  project's own listed files are deleted.
 
 ## Commands
 pip install -e ".[dev]"
+pip install -e ".[dev,grid]"    # with OpenDSS
 python -m app
 pytest -q
 pytest -q -m "ngspice"          # tests that need libngspice
+pytest -q -m "opendss"          # tests that need dss-python
 ruff check . && ruff format --check .
 
 ## Conventions
@@ -134,10 +199,20 @@ ruff check . && ruff format --check .
 - Every core module has tests under tests/core/ mirroring its path.
 - Physical components need a test against an analytic answer (time constant,
   natural frequency, steady state), not just "it runs".
+- NEW: grid code needs a test against a reference result (IEEE feeder report or the
+  OpenDSS result of the original .dss), not just "it converges". Reference values come
+  from files in tests/fixtures/grid/; never type them from memory.
 - Tests that need ngspice are marked @pytest.mark.ngspice and skip if it is missing.
-- One task ID (e.g. F3, C2, M1) per commit; message "<ID> <area>: <what>".
+- NEW: tests that need dss-python are marked @pytest.mark.opendss and skip if it is
+  missing.
+- One task ID (e.g. G1, G3) per commit; message "<ID> <area>: <what>".
+- Commit attribution: every commit names Abhilash Poshanagari
+  <abhi.sree762@gmail.com> as author and adds the trailer
+  "Co-Authored-By: Abhilash Poshanagari <abhi.sree762@gmail.com>".
 - Before saying a task is done: ruff and pytest must both pass.
 - For ngspice API details read third_party/ngspice/sharedspice.h; do not guess.
+- For OpenDSS API details read the installed dss-python package (dss/I*.py docstrings)
+  and the spike notes below; do not guess property names.
 - If a requirement is unclear, ask instead of inventing behaviour.
 
 ## Kept from earlier versions (do not change unless a task says so)
@@ -149,7 +224,104 @@ ruff check . && ruff format --check .
   block-runner child starts. Tests pass; the app does not enable faulthandler.
   Do not try to "fix" this.
 
-## Spike results
+## Spike results (v0.4)
+Week-1 spikes S1-S6 in scratch/phase4/ (code, tests, README). Measured on Windows 11,
+Python 3.12.2; the CI `spikes-grid` job repeats them on Windows, macOS and Linux (job
+log). Feeders: tests/fixtures/grid/ (electricdss-tst commit 3b20839, BSD-3). Reference
+results: tests/fixtures/grid/<feeder>/opendss_reference.json, the OpenDSS result of the
+original files (scratch/phase4/make_reference.py; never edit by hand).
+- Versions (S1): dss-python 0.15.7 pulls dss-python-backend 0.14.5 and cffi. Engine
+  string: "DSS C-API Library version 0.14.5 revision 87d85c2... based on OpenDSS SVN
+  3723 [FPC 3.2.2] (64-bit build) MVMULT INCREMENTAL_Y CONTEXT_API ...". pip wheels on
+  all three OSes; no compiler needed.
+- IEEE 13 (S1): `compile` of IEEE13Nodeckt.dss solves itself (the file ends in Solve):
+  converged in 11 iterations, 3 control iterations; voltage bases [115, 4.16, 0.48];
+  base frequency 60 Hz read from the file (`get DefaultBaseFrequency`). Total power
+  -3567.2 kW / -1736.6 kvar (OpenDSS sign: negative = supplied by the source; our
+  GridResult must flip it); losses 112.4 kW. 671.1 = 0.98280 pu. IEEE 34 and 123 need an
+  explicit Solve (34: 25 iterations, 6 control; 123 with its Run-file RegControl
+  settings and MaxControlIter=30: 45 iterations, 15 control).
+- Contexts (S2): two DSS.NewContext() engines (13 + 34) solved interleaved do not
+  affect each other: changing a load in one leaves the other bit-identical.
+- `compile` CHANGES THE PROCESS WORKING DIRECTORY to the folder of the compiled file
+  unless the context has AllowChangeDir = False. Redirects and BusCoords still resolve
+  relative to the compiled file with it off. OpenDSSEngine must set AllowChangeDir =
+  False (and AllowForms = False) on every new context, and pass absolute paths.
+- A second Solve of an already solved circuit moves it by up to 5e-6 pu (IEEE 34;
+  default Solution.Tolerance 1e-4). The G3 round trip (1e-6 pu) must compare
+  solutions made the same way (same number of solves), or tighten the tolerance.
+- Child process (S2): spawn + one-way Pipe + daemon Process (BlockRunner pattern) works;
+  results are bit-identical to in-process. Start-up about 0.55 s until the child has
+  imported dss and made a context (of that, `import dss` about 0.29 s); the IEEE 13 work
+  is then about 10 ms. A child terminated during IEEE 123 solves exits with -15 within
+  about 10 ms; the parent never hung, and a new child works afterwards.
+  core/blocks/runner.py has no separate process helper today (spawn/Pipe/terminate is
+  inside BlockRunner): G1 has to factor one out to "reuse, don't copy".
+- pytest on Windows prints "Windows fatal exception: code 0xe0465043" when `dss` is first
+  imported. It is a Free Pascal exception ("FPC") that the engine raises and handles
+  itself while loading; only faulthandler prints it. Tests pass, exit code 0. Same
+  rule as the ngspice message: do not try to "fix" it.
+- PyInstaller (S3, 6.22, --onefile): no hook exists in pyinstaller-hooks-contrib.
+  Without options the build succeeds and the DLLs are found, but the exe fails with
+  "No module named '_cffi_backend'" (the compiled _dss_capi module imports it from C).
+  `--collect-binaries dss_python_backend` alone fails the same way.
+  `--hidden-import _cffi_backend` alone works (38.9 MB, also bundles the debug engine
+  _dss_capid / dss_capid). Chosen: our hook scratch/phase4/spike3_pyinstaller/hooks/
+  hook-dss_python_backend.py (collect_dynamic_libs minus the debug build, hidden imports
+  _dss_capi and _cffi_backend, excludes _dss_capid): 30.2 MB, prints the reference
+  671.1 voltage. Windows bundle: _cffi_backend.pyd, dss_python_backend/_dss_capi.pyd,
+  dss_capi.dll, libklusolvex.dll, libwinpthread-1.dll. macOS/Linux file lists: CI
+  `spikes-grid` job log. G7 adds the hook to packaging/.
+- API coverage (S4): every element of IEEE 13, 34 and 123 is read back through the API
+  (no unsupported classes in these feeders). Typed interfaces give buses
+  (ActiveCktElement.BusNames), phases, enabled, open state (IsOpen(terminal, 0)),
+  linecode/line matrices, units, lengths, IsSwitch, transformer windings (Wdg = i, then
+  kV, kVA, R (= %r), IsDelta, Tap, Min/MaxTap, NumTaps, Rneut, Xneut), Xhl/Xht/Xlt,
+  all RegControl settings, load kV/kW/kvar/PF/Model/IsDelta/Vminpu/Vmaxpu/Status/ZIPV,
+  capacitor kV/kvar/IsDelta/NumSteps/States, bus x/y/Coorddefined, kVBase and
+  Settings.VoltageBases.
+  Values that need ActiveDSSElement.Properties("<name>").Val (scalar strings, read with
+  float()): Vsource R1, X1, R0, X0, MVAsc3, MVAsc1, Isc3, Isc1, BaseFreq;
+  LineCode BaseFreq, Kron; Line BaseFreq; Transformer %NoLoadLoss, %IMag, %LoadLoss,
+  Bank, BaseFreq; RegControl PTPhase; Load VLowpu.
+  Correction to the pre-spike notes: transformer taps (Transformers.Tap per winding) and
+  load Vminpu/Vmaxpu ARE typed in 0.15.7.
+- Units (S4): unit codes 0 none, 1 mi, 2 kft, 3 km, 4 m, 5 ft, 6 in, 7 cm, 8 mm. IEEE 13
+  local linecodes mtx601-607 are mi (1); the shared IEEELineCodes.DSS ones are kft (2)
+  or none (0); all IEEE 13 lines are in ft (5). Lines.Rmatrix/Xmatrix/Cmatrix are
+  reported per LINE unit, already converted from the linecode (650632: 0.3465 ohm/mi ->
+  6.5625e-05 ohm/ft). units.py must convert from the line's own Units code.
+- Property order matters: a line given `length=1.5 units=km r1=0.25` ends with Units 0
+  (none), because R1/X1/matrices set after Units reset it; `r1=0.25 length=1.5
+  units=km` keeps 3 (km). The total impedance is the same. writer.py must emit Units=
+  after the impedances (or write everything in one consistent unit).
+- Switch (S4): line.671692 has IsSwitch true, linecode "", Units 0 (none), Length 0.001
+  (the OpenDSS default) and r1 = r0 = 1e-4: the writer must keep length, units and
+  impedance.
+- Vsource bus2 reads back as "sourcebus.0.0.0" (grounded) through BusNames.
+- Regulator taps (S4): before the solve all taps are 1.0 (no feeder sets them). After:
+  IEEE 13 reg1 = 1.05625, reg2 = 1.0375, reg3 = 1.05625 (winding 2); IEEE 34 and 123 in
+  their reference files. IEEE 13 solves inside `compile`, so its "before" state was
+  rebuilt with ControlMode=OFF and Taps=[1 1].
+- Bus coordinates (S4): all buses of IEEE 13 and 34 have them; IEEE 123 has two buses
+  without (300_open, 94_open, the open-switch buses). The single-line view (G6) must
+  handle buses with no coordinates.
+- save circuit (S5) writes one file per class with quoted names (New "Load.l1" ...).
+- Locale (S5, Windows): with de_DE (decimal comma), with or without
+  setlocale(LC_NUMERIC, "C"), DSS-Python reads "1.5" correctly (typed, Properties(),
+  `?`), `save circuit` writes "kW=1.5" with no decimal commas, and IEEE 13 matches its
+  reference exactly. The engine (Free Pascal) does its own number formatting.
+  macOS/Linux: CI `spikes-grid` job log. Keep setlocale(LC_NUMERIC, "C") before
+  compiling anyway (rule 4 style, cheap).
+- Timing (S6, Windows, median of 10, new context each run; IEEE 13 solves in compile):
+  IEEE 13 (41 nodes) compile 7.5 ms; IEEE 34 (95) compile 7.8 + solve 1.5 ms;
+  IEEE 123 (278) compile 8.9 + solve 6.4 ms. Reading all node voltages < 0.5 ms;
+  reading every element back (S4) 2.6 / 4.8 / 7.3 ms. In the child process: start-up
+  0.49-0.55 s, then 11 / 12 / 19 ms of work; total about 0.5-0.56 s. The child's
+  start-up, not OpenDSS, is what the UI waits for: a busy indicator is enough, no
+  progress reporting needed for these feeders.
+
+## Spike results (v0.3, kept)
 Week-1 spikes in scratch/phase3/ (code, tests, README). Measured on Windows 11, ngspice 46,
 Python 3.12; the CI `spikes` job repeats them on Windows (ngspice 44.2), macOS and Linux.
 - Timing, 1 s simulated, RC with an external source, one breakpoint set per tick from the
@@ -207,6 +379,3 @@ Python 3.12; the CI `spikes` job repeats them on Windows (ngspice 44.2), macOS a
   breakpoints at edge +- 1e-4*Ts from each tick (one on the edge alone is not enough:
   the comparator is undecided there and ngspice's next step is long). Edges then land
   within 20 ns. The edge is still made by the comparator inside ngspice.
-
-Note : wheh you do the commit add 
-Authored by and Co-Authored-By: Abhilash Poshanagari <abhi.sree762@gmail.com>
