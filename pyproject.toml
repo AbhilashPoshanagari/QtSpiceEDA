@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qtspice"
-version = "0.2.0"
+version = "0.3.0"
 description = "QtSpice: a small desktop EDA app (schematics, netlists, ngspice, waveforms, function blocks)"
 readme = "README.md"
 requires-python = ">=3.12"

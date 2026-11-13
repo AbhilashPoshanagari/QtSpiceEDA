@@ -1,5 +1,95 @@
 # Changelog
 
+## 0.3.0 (unreleased)
+
+QtSpice 0.3 adds Simscape-style physical modelling to block diagrams. You can wire
+electrical, rotational, translational and thermal parts together and drive them from
+signal blocks in one combined run. Every physical network is turned into a circuit
+and solved by ngspice; QtSpice has no equation solver of its own. Projects from 0.1
+and 0.2 still open, and they are saved as format version 3. See
+[README.md](README.md) for the conventions and the library.
+
+### Foundation (F1-F6)
+- Domain registry for electrical, rotational, translational and thermal: across and
+  through quantities, SI units and display units, and the only place where they map
+  to voltage and current (F1).
+- Signal and conserving port kinds in `BlockSpec` (F2).
+- `PhysicalComponent` API with SPICE primitives and `@physical_component` (F3).
+- Undirected physical wires between conserving ports of the same domain. Wires
+  between different domains are refused, with the reason (F4).
+- `NetworkExtractor` finds the physical networks of a diagram. It checks that each
+  has exactly one Solver Configuration and a reference for every domain it uses
+  (F5).
+- `NetworkMapper` turns a network into a `Circuit` and an ngspice deck (F6).
+
+### Combined run (C1-C5)
+- ngspice sync mode: `external` sources fed from `GetVSRCData` / `GetISRCData`, a
+  breakpoint at every tick, halt and resume (C1).
+- `CoSimulator` with a fixed controller tick Ts. It ticks only on accepted ngspice
+  points, so rejected steps never reach the controller. Source values are held
+  between ticks, with exactly the held value even when the initial value is nonzero
+  (C2).
+- Each physical network is one stateful engine block whose outputs are the sensor
+  values of the previous tick (C3).
+- Combined runs take place in the BlockRunner child process, with Stop and a
+  timeout (C4).
+- A combined run gives one `SimulationResult`. Physical vectors are named
+  `<component>.<port>.<quantity>` in SI (C5).
+
+### Library (B1-B5)
+- Electrical: R, C, L, DC/sine/pulse voltage and current sources, diode, controlled
+  switch and reference (B1).
+- Rotational: inertia, damper, spring, torque and speed sources and reference (B2).
+- Translational: mass, damper, spring, force and velocity sources and reference (B3).
+- Thermal: thermal mass, conduction, convection, heat flow and temperature sources
+  and reference (absolute zero) (B4).
+- Signal-controlled sources, sensors and the Solver Configuration block (B5).
+
+### UI (U1-U4)
+- Round, domain-coloured conserving ports. Physical wires are undirected and drawn
+  with junction dots, and a refused drop shows the reason (U1).
+- Library groups Physical > Electrical, Rotational, Translational, Thermal, Sensors
+  and sources. Settings have unit captions and take SPICE numbers such as `10m` and
+  `2.2u` (U2).
+- One Run button for mixed diagrams. The Ts, network and mapping checks name the
+  failing blocks first. The canvas step is the Solver Configuration's Ts (U3).
+- Unit labels on the Y axis, an rpm/°C display toggle, and physical vectors grouped
+  by component in Add Trace (U4).
+
+### Mid level (M1-M7)
+- Cross-domain parts: DC motor, gearbox, ideal transformer, battery with a
+  state-of-charge table, half-bridge and H-bridge, and a resistor and MOSFET with a
+  thermal port (M1).
+- Circuit block: a v0.2 schematic or netlist with port flags becomes a physical block
+  with electrical ports (core API) (M2).
+- Bridges are `averaged` or `switching`, chosen by the `model` parameter (M3).
+- PWM Generator whose edges are made inside ngspice and land within 20 ns. New
+  DiscretePI and DiscretePID blocks with output limits and anti-windup (M4).
+- User-defined physical components, written with the library's own API in a
+  Components editor. The code is read without being run, and it runs only in the
+  block-runner process (M5).
+- Start values of storage parts become ngspice initial conditions. The Solver
+  Configuration has a start-from-steady-state option (M6).
+- Parameter sweep: one block parameter over a list of values, with the runs overlaid
+  and labelled in the waveform window (M7).
+
+### Projects and samples (O1, O2)
+- `.qsp` format version 3: physical wires, checked Solver Configuration settings, user
+  component code, the sweep and the rpm/°C setting. Versions 1 and 2 still open (O1).
+- Fixed: a project with physical wires could not be reopened. Version 2 files saved by
+  0.3 development builds open again (O1).
+- New samples: `dc_motor_speed.qsp` (PI, H-bridge and DC motor),
+  `heatsink_warmup.qsp` (MOSFET with a thermal port on a heatsink) and
+  `battery_discharge.qsp`. Each is tested against its analytic answer (O2).
+
+### Known limitations
+See *Known limitations (v0.3)* in the README. In short: there is no equation language
+or solver of QtSpice's own, and no hydraulic, gas, thermal-liquid or magnetic
+domains. There is no 3D multibody, no real-time or hardware-in-the-loop, no code
+generation, and no linearization of mixed models. Controllers have one fixed rate,
+and Ts can't go below 10 µs. Physical blocks can't be placed in the schematic
+editor.
+
 ## 0.2.0 (unreleased)
 
 QtSpice 0.2 adds a schematic editor, vendor model libraries and LTspice-format

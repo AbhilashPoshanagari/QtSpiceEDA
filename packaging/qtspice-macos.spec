@@ -33,7 +33,7 @@ app = BUNDLE(  # noqa: F821
     name=f"{APP_NAME}.app",
     bundle_identifier="org.qtspice.QtSpice",
     info_plist={
-        "CFBundleShortVersionString": "0.2.0",
+        "CFBundleShortVersionString": "0.3.0",
         "NSHighResolutionCapable": True,
         "CFBundleDocumentTypes": [
             {
