@@ -1,5 +1,88 @@
 # Changelog
 
+## 0.4.0 (unreleased)
+
+QtSpice 0.4 adds distribution-grid analysis. You can open a feeder written for OpenDSS
+(`.dss`), run a snapshot power flow, and see node voltages, branch flows, losses,
+voltage and loading violations, a voltage profile and a read-only single-line view.
+OpenDSS, through DSS-Python, compiles and solves the feeder; QtSpice has no
+power-flow solver or DSS parser of its own. The grid features are an optional extra
+(`pip install -e ".[grid]"`): without it the app starts and everything else works.
+Projects from 0.1, 0.2 and 0.3 still open; they are saved as format version 4. See
+[README.md](README.md) for the units, the sign conventions and the benchmarks.
+
+### Spikes (S1-S6)
+- DSS-Python 0.15.7 (OpenDSS engine 0.14.5) installs from pip wheels on Windows,
+  macOS and Linux. IEEE 13, 34 and 123 test feeders (electricdss-tst, BSD-3) with the
+  OpenDSS reference result of each, and a CI job that repeats the spikes on all three
+  OSes (S1).
+- Independent DSS contexts; `compile` changes the working directory unless
+  AllowChangeDir is off; OpenDSS in a spawned child process, and a terminated child
+  (S2).
+- PyInstaller: the engine needs the `_cffi_backend` hidden import; a hook bundles it
+  without the debug build (S3).
+- Every element of the three feeders can be read back through the API: unit codes,
+  switches, transformer windings, regulator taps, bus coordinates (S4).
+- A German locale doesn't change how OpenDSS reads or writes numbers (S5).
+- Timing: under 20 ms of OpenDSS work for IEEE 123; the child's start-up (about
+  0.5 s) is what the UI waits for (S6).
+
+### Engine and model (G1-G3)
+- `OpenDSSEngine`: loads a `.dss` file in its own DSS context and runs a snapshot
+  power flow, returning a `GridResult` (node voltages, branch results, totals; source
+  power positive when supplied). Grid runs take place in the GridRunner child process,
+  which shares a process helper with the BlockRunner (G1).
+- Engine-independent grid model: Source, Bus, LineCode, Line, Switch, Transformer with
+  windings, Regulator, Load, Capacitor, PVSystem. The extractor builds it from the
+  compiled circuit in canonical units (m, ohm/km, nF/km, kV, kW). Unsupported
+  elements are reported as warnings, never dropped (G2).
+- Writer: grid model to DSS script. The round trip `.dss` -> model -> script -> solve
+  matches the original solve within 1e-6 pu on every node and 0.1 % on losses, for
+  IEEE 13, 34 and 123 (G3).
+
+### Checks and analysis (G4, G5)
+- Topology and electrical checks on a grid model, reported as diagnostics with stable
+  codes: unknown or unreachable buses, buses cut off by an open switch, phase and
+  line-code mismatches, winding and element kV against the bus base, missing voltage
+  bases, no source (G4).
+- Violations (under-voltage, over-voltage, overloads), the voltage profile along the
+  feeder and losses by element class, computed outside the engine from the limits
+  (G5).
+- Benchmarks against the published IEEE PES results: IEEE 13 (35 nodes), 34 (92) and
+  123 (271 values) are within 0.141 % on |V| and 0.10 degrees, against a tolerance of
+  0.5 % and 0.5 degrees (G5).
+
+### UI (G6)
+- **File → Open Grid (.dss)…** and a **Grid** tab: Run and Stop, a summary of totals
+  and losses, sortable Node voltages, Branches and Violations tables with
+  violations highlighted.
+- The voltage profile in the waveform window, with the limits as flat traces.
+- A read-only single-line view drawn from the bus coordinates and coloured by voltage;
+  click a bus for its phase voltages.
+- OpenDSS messages and the feeder checks in the Console.
+
+### Projects, sample and release (G7)
+- `.qsp` format version 4: an optional grid section with the `.dss` file (relative to
+  the project when inside its folder), the power-flow settings and the voltage and
+  loading limits. Versions 1-3 still open. Grid results are not saved.
+- Opening a project opens its feeder in the Grid tab. The feeder is kept when it
+  can't be opened (no DSS-Python, a missing file), so saving doesn't drop it.
+- New sample `ieee13_powerflow.qsp`, with the IEEE 13 files and their license in
+  `examples/grid/`, tested against the OpenDSS reference result.
+- The packaged apps bundle OpenDSS (the hook from S3), and `--smoke-test` also solves
+  the bundled IEEE 13 feeder.
+- Fixed: the voltage limits shown in the UI didn't follow a change of settings.
+- Fixed: packaged builds were missing the physical component library (since 0.3), so
+  the block diagram didn't start in the packaged app.
+
+### Known limitations
+See *Known limitations (v0.4)* in the README. In short: snapshot power flow only (no
+QSTS, load shapes, fault studies, hosting capacity, EV impact, harmonics or
+dynamics). Feeders are solved only by OpenDSS. There is no GIS import, and no
+conductor or transformer catalogs. The grid view is read-only, and grid models can't
+be coupled with circuits, physical networks or Python controllers. There is no
+settings dialog for the power-flow settings and limits in 0.4.
+
 ## 0.3.0 (unreleased)
 
 QtSpice 0.3 adds Simscape-style physical modelling to block diagrams. You can wire
