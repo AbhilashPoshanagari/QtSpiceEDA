@@ -10,6 +10,7 @@ from PySide6.QtCore import QObject, QUrl
 from PySide6.QtQml import QQmlApplicationEngine
 
 import bridge.diagram_controller  # noqa: F401  registers the QtSpice QML types
+import bridge.grid_controller  # noqa: F401
 import bridge.project_manager  # noqa: F401
 import bridge.schematic_controller  # noqa: F401
 import bridge.simulator  # noqa: F401
@@ -40,6 +41,7 @@ def qml_scene(
 import QtQuick.Controls
 import QtQuick.Layouts
 import "{QML_DIR.as_uri()}"
+import "{(QML_DIR / "grid").as_uri()}"
 ApplicationWindow {{
     width: {width}; height: {height}; visible: true
     {body}
@@ -56,7 +58,7 @@ ApplicationWindow {{
     try:
         yield engine, window
     finally:
-        for name in ("Simulator", "DiagramController"):
+        for name in ("Simulator", "DiagramController", "GridController"):
             singleton = engine.singletonInstance("QtSpice", name)
             if singleton is not None:
                 singleton.shutdown()

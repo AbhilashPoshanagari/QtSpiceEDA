@@ -104,3 +104,34 @@ def test_without_dss_python() -> None:
     )
     assert out.returncode == 0, out.stderr
     assert out.stdout.strip().endswith("ok")
+
+
+@pytest.mark.opendss
+def test_run_sends_back_the_solved_model() -> None:
+    """G6: the UI needs the model (lengths, coordinates, switches) with the result."""
+    outcome = GridRunner(IEEE13).run()
+    assert outcome.ok and outcome.model is not None
+    model = outcome.model
+    assert len(model.buses) == 16 and all(b.x is not None for b in model.buses.values())
+    taps = outcome.result.metadata["regulator_taps"]
+    for name, reg in model.regulators.items():
+        wdg = model.transformers[reg.transformer].windings[reg.winding - 1]
+        assert wdg.tap == pytest.approx(taps[name])  # the solved taps
+
+
+@pytest.mark.opendss
+def test_load_only_checks_and_reads_back_without_solving() -> None:
+    runner = GridRunner(IEEE123, solve=False)
+    outcome = runner.run()
+    assert outcome.status == OK and outcome.result is None and not outcome.ok
+    assert outcome.model is not None and len(outcome.model.buses) > 100
+    assert not any(d.severity == ERROR for d in outcome.diagnostics)
+    assert not any("not solved" in d.message for d in outcome.diagnostics)
+
+
+@pytest.mark.opendss
+def test_load_only_reports_errors() -> None:
+    outcome = GridRunner(BAD_REDIRECT, solve=False).run()
+    assert outcome.status == OK and outcome.model is None
+    assert [d.severity for d in outcome.diagnostics] == [ERROR]
+    assert "IEEELineCodez.dss" in outcome.diagnostics[0].message

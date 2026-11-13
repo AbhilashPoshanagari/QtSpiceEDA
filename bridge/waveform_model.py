@@ -40,10 +40,19 @@ _PREFIXES = [
 ]
 
 
+NO_PREFIX_UNITS = frozenset({"pu", "km", "%"})
+"""Units that are shown without an SI prefix (0.98 pu, not 980 mpu)."""
+
+
 def si(value: float, unit: str = "", digits: int = 4) -> str:
-    """Format with an SI prefix: si(0.00159, "s") == "1.59 ms"."""
+    """Format with an SI prefix: si(0.00159, "s") == "1.59 ms".
+
+    Units in NO_PREFIX_UNITS keep the plain number: si(0.98234, "pu") == "0.9823 pu".
+    """
     if not math.isfinite(value):
         return "—"
+    if unit in NO_PREFIX_UNITS:
+        return f"{value:.{digits}g} {unit}"
     if value == 0:
         return f"0 {unit}".rstrip()
     magnitude = abs(value)

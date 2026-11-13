@@ -161,3 +161,12 @@ def test_vectors_of_the_wrong_length_are_skipped(qapp: object) -> None:
     )
     model.set_result(result)
     assert model.property("traceNames") == ["V(out)"]
+
+
+def test_si_keeps_pu_and_km_without_prefix() -> None:
+    """G6: 0.98 pu, not 980 mpu; 0.5 km, not 500 mkm."""
+    assert si(0.98234, "pu") == "0.9823 pu"
+    assert si(0.5, "km") == "0.5 km"
+    assert si(107.3, "%") == "107.3 %"
+    assert si(float("nan"), "pu") == "—"
+    assert si(5e-3, "V") == "5 mV"

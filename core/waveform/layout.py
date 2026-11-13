@@ -24,7 +24,8 @@ from typing import Any
 
 from core.netlist.model import ERROR, WARNING, Diagnostic
 
-ANALYSES: tuple[str, ...] = ("tran", "ac", "dc")
+ANALYSES: tuple[str, ...] = ("tran", "ac", "dc", "profile")
+"""``profile`` is the voltage profile of a grid power flow (G6): pu against km."""
 MAX_PANES = 12
 MAX_HISTORY = 50
 

@@ -16,6 +16,7 @@ from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
 
 import bridge.diagram_controller  # noqa: F401  registers the QtSpice QML types
+import bridge.grid_controller  # noqa: F401
 import bridge.project_manager  # noqa: F401
 import bridge.schematic_controller  # noqa: F401
 import bridge.simulator  # noqa: F401

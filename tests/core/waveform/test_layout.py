@@ -148,3 +148,14 @@ def test_rename_trace_keeps_its_place() -> None:
     assert not layout.rename_trace(0, "V(a)", "V(a)")
     assert not layout.rename_trace(3, "V(a)", "x")
     assert not layout.rename_trace(0, "V(a)", "")
+
+
+def test_profile_layout_round_trip() -> None:
+    """G6: the grid voltage profile has its own layout, saved like the others."""
+    profile = PlotLayout.default("profile")
+    assert not profile.x.log and not profile.is_ac
+    profile.panes = [Pane(["v_pu.a", "v_pu.b", "v_pu.c", "v_min", "v_max"])]
+    data = json.loads(json.dumps(layouts_to_dict({"profile": profile})))
+    back, found = layouts_from_dict(data)
+    assert found == []
+    assert back["profile"].panes[0].traces == profile.panes[0].traces

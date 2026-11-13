@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Dialogs
 import QtQuick.Layouts
 import QtSpice
+import "grid"
 
 ApplicationWindow {
     id: window
@@ -25,6 +26,7 @@ ApplicationWindow {
         WaveformController.attach(WaveformModel)
         WaveformController.attachProbes(SchematicController)
         ProjectManager.attachPlots(WaveformController)
+        GridController.attachWaveforms(WaveformModel)
     }
 
     onClosing: close => {
@@ -168,6 +170,14 @@ ApplicationWindow {
                       qsTr("QtSpice projects (*.qsp)"), qsTr("Netlists (*.cir *.net *.sp)"),
                       qsTr("All files (*)")]
         onAccepted: window.openFile(selectedFile)
+    }
+
+    FileDialog {
+        id: gridOpenDialog
+        objectName: "gridOpenDialog"
+        title: qsTr("Open OpenDSS feeder")
+        nameFilters: [qsTr("OpenDSS files (*.dss *.DSS)"), qsTr("All files (*)")]
+        onAccepted: window.openGrid(selectedFile)
     }
 
     FileDialog {
@@ -319,6 +329,14 @@ ApplicationWindow {
             title: qsTr("&File")
             MenuItem { text: qsTr("&New Project"); onTriggered: window.newProject() }
             MenuItem { text: qsTr("&Open…"); onTriggered: openDialog.open() }
+            // G6: hidden without dss-python (height 0 so the menu leaves no gap)
+            MenuItem {
+                objectName: "openGridMenu"
+                text: qsTr("Open &Grid (.dss)…")
+                visible: GridController.available
+                height: GridController.available ? implicitHeight : 0
+                onTriggered: gridOpenDialog.open()
+            }
             Menu {
                 id: recentMenu
                 title: qsTr("Open &Recent")
@@ -376,8 +394,22 @@ ApplicationWindow {
 
     // Run and Check follow the left tab: the schematic when it is shown, else the netlist.
     readonly property bool schematicShown: leftTabs.currentIndex === 2
+    // G6: the Grid tab runs the open .dss feeder (GridController) instead.
+    readonly property bool gridShown: leftTabs.currentIndex === 3
+
+    function openGrid(url) {
+        if (GridController.openFile(url))
+            leftTabs.currentIndex = 3
+        else
+            bottomTabs.currentIndex = 2  // the reason is in the Console
+    }
 
     function runSimulation() {
+        if (gridShown) {
+            GridController.run()
+            bottomTabs.currentIndex = 2  // Console while it runs, or why it did not start
+            return
+        }
         const started = schematicShown ? SchematicController.run() : Simulator.run(netlistEditor.text)
         if (started)
             bottomTabs.currentIndex = 2  // Console while it runs
@@ -393,6 +425,12 @@ ApplicationWindow {
     Connections {
         target: SchematicController
         function onProbed(name) { bottomTabs.currentIndex = 0 }  // Waveforms
+    }
+
+    Connections {
+        target: GridController
+        function onResultReady() { bottomTabs.currentIndex = 0 }  // the voltage profile
+        function onLoadFailed() { bottomTabs.currentIndex = 2 }  // the Diagnostics
     }
 
     Connections {
@@ -431,38 +469,40 @@ ApplicationWindow {
             ToolButton {
                 objectName: "checkButton"
                 text: qsTr("Check")
+                enabled: !window.gridShown
                 onClicked: window.schematicShown ? SchematicController.check() : netlistEditor.check()
             }
             ToolButton {
                 objectName: "runButton"
                 text: qsTr("Run")
-                enabled: !Simulator.running
+                enabled: window.gridShown ? GridController.canRun : !Simulator.running
                 onClicked: window.runSimulation()
             }
             ToolButton {
                 objectName: "stopButton"
                 text: qsTr("Stop")
-                enabled: Simulator.running
-                onClicked: Simulator.stop()
+                enabled: window.gridShown ? GridController.running : Simulator.running
+                onClicked: window.gridShown ? GridController.stop() : Simulator.stop()
             }
             ProgressBar {
                 objectName: "runProgress"
                 Layout.preferredWidth: 120
-                visible: Simulator.running
+                visible: window.gridShown ? GridController.running : Simulator.running
                 from: 0
                 to: 100
-                value: Simulator.progress
-                indeterminate: Simulator.progress <= 0
+                value: window.gridShown ? 0 : Simulator.progress
+                indeterminate: window.gridShown || Simulator.progress <= 0
             }
             Label {
                 objectName: "runStatus"
                 Layout.fillWidth: true
                 leftPadding: 8
                 elide: Text.ElideRight
-                text: Simulator.statusText
-                color: Simulator.statusText.startsWith("Failed")
-                       || Simulator.statusText.startsWith("Not started") ? "#d73a49"
-                                                                          : palette.windowText
+                readonly property string status: window.gridShown ? GridController.statusText
+                                                                  : Simulator.statusText
+                text: status
+                color: status.startsWith("Failed") || status.startsWith("Not started")
+                       || status.startsWith("Not opened") ? "#d73a49" : palette.windowText
             }
         }
     }
@@ -488,6 +528,12 @@ ApplicationWindow {
                     TabButton { text: qsTr("Netlist") }
                     TabButton { text: qsTr("Blocks") }
                     TabButton { text: qsTr("Schematic") }
+                    TabButton {
+                        objectName: "gridTab"
+                        text: qsTr("Grid")
+                        visible: GridController.available
+                        width: GridController.available ? implicitWidth : 0
+                    }
                 }
                 StackLayout {
                     Layout.fillWidth: true
@@ -542,6 +588,7 @@ ApplicationWindow {
                             onMakeSymbolRequested: makeSymbolDialog.openWith("")
                         }
                     }
+                    GridPanel { onOpenRequested: gridOpenDialog.open() }
                 }
             }
 
@@ -567,6 +614,17 @@ ApplicationWindow {
                 SchematicCanvas {
                     id: schematicCanvas
                     onPartPickerRequested: partPicker.focusSearch()
+                }
+                SplitView {
+                    orientation: Qt.Vertical
+                    GridView {
+                        SplitView.fillHeight: true
+                        SplitView.minimumHeight: 120
+                    }
+                    GridResultsTable {
+                        SplitView.preferredHeight: 260
+                        SplitView.minimumHeight: 100
+                    }
                 }
             }
         }

@@ -3,8 +3,11 @@
 OpenDSS never runs in the UI process (rule 5). The runner uses the same process
 helper as BlockRunner (core/blocks/process.py: spawn, one-way Pipe, daemon Process)
 and passes only plain data: the absolute .dss path and the PowerFlowConfig. The
-child creates its own OpenDSSEngine, runs ``load_native`` and ``run``, and sends
-back the GridResult (or the load diagnostics).
+child creates its own OpenDSSEngine, runs ``load_native`` and ``run``, reads the
+circuit back as a GridModel (after the solve, so regulator taps are the solved ones)
+and sends back both (or the load diagnostics). With ``solve=False`` the child only
+loads, checks and reads back the circuit: the UI uses it when a file is opened, so
+a file with errors never gets as far as a run.
 
 ``wait()`` returns a GridRunOutcome; the timeout covers the whole run, including the
 child's start-up (about 0.5 s, mostly ``import dss``). ``cancel()`` is the Stop: it
@@ -21,11 +24,14 @@ from pathlib import Path
 from core.blocks.process import CANCELLED, ERROR, OK, TIMEOUT, ChildProcess
 from core.grid.config import PowerFlowConfig
 from core.grid.engines.opendss.engine import OpenDSSEngine
+from core.grid.model import GridModel
 from core.grid.result import GridResult
 from core.netlist.model import ERROR as SEVERITY_ERROR
 from core.physical.component import NetworkDiagnostic
 
 DEFAULT_TIMEOUT = 30.0
+
+_NOT_SOLVED = "circuit is not solved"
 
 __all__ = [
     "CANCELLED",
@@ -35,6 +41,8 @@ __all__ = [
     "TIMEOUT",
     "GridRunOutcome",
     "GridRunner",
+    "load_grid",
+    "run_grid",
     "run_power_flow",
 ]
 
@@ -45,12 +53,15 @@ class GridRunOutcome:
 
     ``status`` is OK when the child finished, even if the file had errors or the
     power flow did not converge: then ``result`` is None (load errors) or has
-    ``converged=False``, and ``diagnostics`` says why. ERROR, TIMEOUT and CANCELLED
+    ``converged=False``, and ``diagnostics`` says why. ``model`` is the circuit read
+    back from the engine (None when it did not load); a load-only run
+    (``solve=False``) has a model and no result. ERROR, TIMEOUT and CANCELLED
     are about the process itself; ``message`` is one line for the user.
     """
 
     status: str
     result: GridResult | None = None
+    model: GridModel | None = None
     diagnostics: list[NetworkDiagnostic] = field(default_factory=list)
     message: str = ""
     traceback: str = ""
@@ -69,10 +80,12 @@ class GridRunner:
         dss_path: str | Path,
         config: PowerFlowConfig | None = None,
         timeout: float = DEFAULT_TIMEOUT,
+        solve: bool = True,
     ) -> None:
         path = str(Path(dss_path).expanduser().resolve())
+        self.solve = solve
         self._child = ChildProcess(
-            _child_main, (path, config or PowerFlowConfig()), timeout, name="grid runner"
+            _child_main, (path, config or PowerFlowConfig(), solve), timeout, name="grid runner"
         )
         self._outcome: GridRunOutcome | None = None
 
@@ -98,8 +111,10 @@ class GridRunner:
         else:
             kind, *payload = child.message
             if kind == OK:
-                result, diagnostics = payload
-                outcome = GridRunOutcome(OK, result=result, diagnostics=list(diagnostics))
+                result, model, diagnostics = payload
+                outcome = GridRunOutcome(
+                    OK, result=result, model=model, diagnostics=list(diagnostics)
+                )
             else:
                 message, trace = payload
                 outcome = GridRunOutcome(ERROR, message=message, traceback=trace)
@@ -115,17 +130,58 @@ class GridRunner:
 def run_power_flow(
     dss_path: str | Path, config: PowerFlowConfig
 ) -> tuple[GridResult | None, list[NetworkDiagnostic]]:
-    """Load and solve in the current process (the child's work; also for tests).
+    """Load and solve in the current process (also for tests).
 
     Returns (result, diagnostics): result is None when the file did not load.
+    """
+    result, _, diagnostics = run_grid(dss_path, config)
+    return result, diagnostics
+
+
+def run_grid(
+    dss_path: str | Path, config: PowerFlowConfig
+) -> tuple[GridResult | None, GridModel | None, list[NetworkDiagnostic]]:
+    """Load, solve and read back in the current process (the child's work).
+
+    Returns (result, model, diagnostics). result and model are None when the file
+    did not load. The extractor's warnings (unsupported elements, ...) are added to
+    the diagnostics; its errors are already in the result's (engine validation).
+    """
+    engine = OpenDSSEngine()
+    try:
+        diagnostics = engine.load_native(dss_path)
+        if any(d.severity == SEVERITY_ERROR for d in diagnostics):
+            return None, None, diagnostics
+        result = engine.run(config)
+        model, found = engine.extract_model()
+        extra = [d for d in found if d.severity != SEVERITY_ERROR]
+        return result, model, diagnostics + result.diagnostics + extra
+    finally:
+        engine.close()
+
+
+def load_grid(dss_path: str | Path) -> tuple[GridModel | None, list[NetworkDiagnostic]]:
+    """Load, check (engine validation) and read back without solving.
+
+    Returns (model, diagnostics); model is None when the file did not load or the
+    circuit cannot be read back. A model with error diagnostics must not be run.
     """
     engine = OpenDSSEngine()
     try:
         diagnostics = engine.load_native(dss_path)
         if any(d.severity == SEVERITY_ERROR for d in diagnostics):
             return None, diagnostics
-        result = engine.run(config)
-        return result, diagnostics + result.diagnostics
+        checks = engine.validation()
+        model, found = engine.extract_model()
+        # Not solved yet is the point of a load-only run: drop the extractor's
+        # "circuit is not solved" warning; validation already has its errors.
+        seen = {(d.block, d.message) for d in checks}
+        extra = [
+            d
+            for d in found
+            if (d.block, d.message) not in seen and not d.message.startswith(_NOT_SOLVED)
+        ]
+        return model, diagnostics + checks + extra
     finally:
         engine.close()
 
@@ -133,10 +189,14 @@ def run_power_flow(
 # ---- child process
 
 
-def _child_main(conn: Connection, dss_path: str, config: PowerFlowConfig) -> None:
+def _child_main(conn: Connection, dss_path: str, config: PowerFlowConfig, solve: bool) -> None:
     try:
-        result, diagnostics = run_power_flow(dss_path, config)
-        conn.send((OK, result, diagnostics))
+        if solve:
+            result, model, diagnostics = run_grid(dss_path, config)
+        else:
+            result = None
+            model, diagnostics = load_grid(dss_path)
+        conn.send((OK, result, model, diagnostics))
     except BaseException as err:  # everything goes back to the parent
         message = "".join(traceback.format_exception_only(err)).strip()
         conn.send((ERROR, message, traceback.format_exc()))
