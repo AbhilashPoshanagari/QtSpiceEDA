@@ -640,12 +640,18 @@ def physical_spec_of(obj: object) -> PhysicalSpec | None:
 
 @dataclass(frozen=True)
 class NetworkDiagnostic:
-    """A problem in one component's network. ``primitive`` is "" for the whole block."""
+    """A problem in one component's network. ``primitive`` is "" for the whole block.
+
+    Grid code uses the same class with the element id ("line.650632", "bus.671") as
+    ``block``. ``code`` is a stable identifier of the check ("" = none), e.g.
+    ``unknown_bus`` from core/grid/validate.py.
+    """
 
     block: str
     severity: str
     message: str
     primitive: str = ""
+    code: str = ""
 
 
 @dataclass

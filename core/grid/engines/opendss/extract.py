@@ -57,11 +57,14 @@ SUPPORTED_CLASSES = ("vsource", "line", "transformer", "regcontrol", "load", "ca
                      "pvsystem")  # fmt: skip
 """OpenDSS classes (of AllElementNames) the extractor reads."""
 
+UNSUPPORTED_ELEMENT = "unsupported_element"
+"""Diagnostic code of an element the model does not hold: the model is incomplete."""
+
 _MATRIX_RTOL = 1e-9
 
 
-def _warn(location: str, message: str) -> NetworkDiagnostic:
-    return NetworkDiagnostic(location, WARNING, message)
+def _warn(location: str, message: str, code: str = "") -> NetworkDiagnostic:
+    return NetworkDiagnostic(location, WARNING, message, code=code)
 
 
 def _each(iface: Any) -> Iterator[str]:
@@ -153,7 +156,11 @@ class _Extractor:
             cls = element.split(".", 1)[0]
             if cls not in SUPPORTED_CLASSES:
                 self.diagnostics.append(
-                    _warn(element, f"unsupported element {element}: not in the grid model")
+                    _warn(
+                        element,
+                        f"unsupported element {element}: not in the grid model",
+                        UNSUPPORTED_ELEMENT,
+                    )
                 )
 
     # ---- element classes

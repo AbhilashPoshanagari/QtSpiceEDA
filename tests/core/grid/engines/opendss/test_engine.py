@@ -182,3 +182,60 @@ def test_extract_without_a_circuit_is_an_error() -> None:
     assert model is None
     assert diagnostics[0].severity == ERROR
     assert "no circuit" in diagnostics[0].message
+
+
+# ---- G4: run() validates the circuit first
+
+
+def test_run_refuses_a_model_with_a_validation_error() -> None:
+    from core.grid import validate as v
+
+    engine = OpenDSSEngine()
+    assert engine.load_native(IEEE13) == []
+    model, _ = engine.extract_model()
+    assert model is not None
+    model.loads["611"].kv = 4.16  # 1-phase wye load given the LL voltage
+    assert not any(d.severity == ERROR for d in engine.load_model(model))
+    result = engine.run(PowerFlowConfig())
+    assert not result.converged and not result.ok
+    assert result.iterations == 0 and result.node_names == []  # nothing was solved
+    errors = [d for d in result.diagnostics if d.severity == ERROR]
+    assert [(d.code, d.block) for d in errors] == [(v.ELEMENT_KV, "load.611")]
+    engine.close()
+
+
+def test_run_keeps_validation_warnings_and_solves() -> None:
+    from core.grid import validate as v
+
+    engine, result = _solve(IEEE34)
+    assert result.converged and result.ok
+    mismatch = [d for d in result.diagnostics if d.code == v.PHASE_NODE_MISMATCH]
+    assert len(mismatch) == 6 and all(d.severity == "warning" for d in mismatch)
+    # validated once per load: a second run gives the same warnings, not twice as many
+    again = engine.run(PowerFlowConfig())
+    assert [d for d in again.diagnostics if d.code == v.PHASE_NODE_MISMATCH] == mismatch
+    engine.close()
+
+
+def test_unsupported_branch_makes_reachability_a_warning() -> None:
+    from core.grid import validate as v
+    from core.grid.engines.opendss.extract import UNSUPPORTED_ELEMENT
+
+    engine = OpenDSSEngine()
+    assert engine.load_native(FIXTURES / "small" / "series_reactor.dss") == []
+    model, found = engine.extract_model()
+    assert model is not None
+    unsupported = [(d.code, d.block) for d in found if d.code]  # also "not solved"
+    assert unsupported == [(UNSUPPORTED_ELEMENT, "reactor.r1")]
+    # Without the Reactor bus b looks unreachable: an error for a plain model ...
+    assert [(d.code, d.severity) for d in v.validate(model) if d.block == "bus.b"] == [
+        (v.UNREACHABLE_BUS, ERROR)
+    ]
+    # ... but run() knows the model is incomplete: a warning, and OpenDSS solves it.
+    result = engine.run(PowerFlowConfig())
+    assert result.converged and result.ok
+    assert [(d.code, d.severity) for d in result.diagnostics if d.block == "bus.b"] == [
+        (v.UNREACHABLE_BUS, "warning")
+    ]
+    assert result.voltage_pu("b.1") < result.voltage_pu("a.1") < 1.0
+    engine.close()

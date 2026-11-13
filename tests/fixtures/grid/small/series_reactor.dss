@@ -1,0 +1,11 @@
+! Small hand-written test circuit (ours, no reference values): bus b is fed only
+! through a series Reactor, a class the G2 model does not support. Used by
+! tests/core/grid/engines/opendss/test_engine.py (G4: validation of an incomplete model).
+Clear
+Set DefaultBaseFrequency=50
+New Circuit.reactor basekv=11 pu=1.0 phases=3 bus1=src frequency=50
+New Line.feeder bus1=src bus2=a phases=3 r1=0.25 x1=0.35 r0=0.5 x0=1.2 c1=10 c0=4 length=1.5 units=km
+New Reactor.r1 bus1=a bus2=b phases=3 R=0.5 X=2
+New Load.ld1 bus1=b phases=3 conn=wye kv=11 kw=500 kvar=200 model=1
+Set VoltageBases=[11]
+CalcVoltageBases

@@ -9,6 +9,9 @@
   path, quoted) and never reads DSS text itself.
 - OpenDSS errors become Diagnostics, never exceptions (rule 6). A solve that does
   not converge gives ``converged=False`` and an error Diagnostic.
+- ``run`` first reads the loaded circuit back as a GridModel and checks it with
+  core/grid/validate.py (once per load). Any error: no solve, a failed GridResult with
+  the validation Diagnostics. Warnings are kept in the result's Diagnostics.
 
 Meant to run in the GridRunner child process; OpenDSS never runs in the UI process.
 """
@@ -82,6 +85,8 @@ class OpenDSSEngine:
         self._path = ""
         self.script = ""
         """The script of the last ``load_model`` call ("" before)."""
+        self._validation: list[NetworkDiagnostic] | None = None
+        """validate() of the loaded circuit; None until the first run after a load."""
 
     # ---- GridEngine
 
@@ -105,6 +110,7 @@ class OpenDSSEngine:
         returned as an error Diagnostic and leaves no circuit loaded.
         """
         self._loaded = False
+        self._validation = None
         file = Path(path).expanduser().resolve()
         if not file.is_file():
             return [_error(f"file not found: {file}")]
@@ -139,6 +145,7 @@ class OpenDSSEngine:
         from core.grid.engines.opendss.writer import element_of, script_commands, write_dss
 
         self._loaded = False
+        self._validation = None
         text, diagnostics = write_dss(model)
         self.script = text
         if any(d.severity == ERROR for d in diagnostics):
@@ -189,6 +196,9 @@ class OpenDSSEngine:
         problems = config.problems()
         if problems:
             return GridResult.failed([_error(f"power-flow settings: {p}") for p in problems])
+        checks = self.validation()
+        if any(d.severity == ERROR for d in checks):
+            return GridResult.failed(checks)
         diagnostics: list[NetworkDiagnostic] = []
         ckt = self._ctx.ActiveCircuit
         sol = ckt.Solution
@@ -216,8 +226,31 @@ class OpenDSSEngine:
             )
         elif diagnostics:
             result.converged = False  # an error during the solve: do not trust it
-        result.diagnostics = diagnostics + result.diagnostics
+        result.diagnostics = checks + diagnostics + result.diagnostics
         return result
+
+    def validation(self) -> list[NetworkDiagnostic]:
+        """validate() of the loaded circuit, computed once per load.
+
+        The model is read back from the engine, so it is what OpenDSS will solve.
+        When the extractor reported unsupported elements the model is incomplete,
+        and reachability problems are only warnings (one of them may be a branch).
+        Extractor errors count; its other warnings are left out here.
+        """
+        if self._validation is not None:
+            return list(self._validation)
+        from core.grid.engines.opendss.extract import UNSUPPORTED_ELEMENT
+        from core.grid.validate import validate
+
+        model, found = self.extract_model()
+        errors = [d for d in found if d.severity == ERROR]
+        if model is None or errors:
+            checks = errors or [_error("cannot read the circuit back for validation")]
+        else:
+            incomplete = any(d.code == UNSUPPORTED_ELEMENT for d in found)
+            checks = validate(model, incomplete=incomplete)
+        self._validation = checks
+        return list(checks)
 
     def close(self) -> None:
         if self._ctx is not None:
@@ -225,6 +258,7 @@ class OpenDSSEngine:
                 self._command("clear")
         self._ctx = None
         self._loaded = False
+        self._validation = None
 
     # ---- helpers
 
