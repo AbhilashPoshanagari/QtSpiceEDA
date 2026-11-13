@@ -23,3 +23,7 @@ script of `Run_IEEE123Bus.DSS` without the meter, show and plot commands.
 `bad/` is ours too: small hand-written files with one deliberate mistake each
 (a misspelled redirect, an unknown linecode), for the G1 error tests. They contain
 no reference values.
+
+`small/` is ours as well: tiny hand-written circuits for the G2 extractor tests
+(`fuse_pv.dss`: a Fuse, which the model does not support, and a PVSystem). The values
+the tests check are the ones written in the file itself; no reference results.

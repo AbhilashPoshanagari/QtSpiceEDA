@@ -2,7 +2,7 @@
 
 Everything outside core/grid/engines/opendss/ uses this protocol, never ``dss``
 (rule 15). Engines report problems as Diagnostics and never raise on bad input
-(rule 6); ``load_model`` and ``extract_model`` raise NotImplementedError until G2/G3.
+(rule 6); ``load_model`` raises NotImplementedError until G3.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from core.grid.result import GridResult
 from core.physical.component import NetworkDiagnostic
 
 if TYPE_CHECKING:
-    from core.grid.model import GridModel  # G2
+    from core.grid.model import GridModel
 
 
 @runtime_checkable
@@ -31,8 +31,9 @@ class GridEngine(Protocol):
         """Load a circuit from an engine-independent GridModel (G3)."""
         ...
 
-    def extract_model(self) -> GridModel:
-        """Read the loaded circuit back as a GridModel (G2)."""
+    def extract_model(self) -> tuple[GridModel | None, list[NetworkDiagnostic]]:
+        """Read the loaded circuit back as a GridModel, with the extractor's
+        Diagnostics (unsupported elements, ...); None when nothing is loaded."""
         ...
 
     def run(self, config: PowerFlowConfig) -> GridResult:

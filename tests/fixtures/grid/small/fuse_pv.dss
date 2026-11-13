@@ -1,0 +1,12 @@
+! Small hand-written test circuit (ours, no reference values): one source, a line
+! without a linecode, a Fuse (a class the G2 model does not support), a load and a
+! PVSystem. Used by tests/core/grid/engines/opendss/test_extract.py.
+Clear
+Set DefaultBaseFrequency=50
+New Circuit.fusepv basekv=11 pu=1.0 phases=3 bus1=src frequency=50
+New Line.feeder bus1=src bus2=a phases=3 r1=0.25 x1=0.35 r0=0.5 x0=1.2 c1=10 c0=4 length=1.5 units=km
+New Fuse.f1 MonitoredObj=Line.feeder MonitoredTerm=1 RatedCurrent=100
+New Load.ld1 bus1=a phases=3 conn=wye kv=11 kw=500 kvar=200 model=1
+New PVSystem.pv1 bus1=a phases=3 conn=wye kv=11 kva=300 pmpp=250 irradiance=0.8 pf=1
+Set VoltageBases=[11]
+CalcVoltageBases

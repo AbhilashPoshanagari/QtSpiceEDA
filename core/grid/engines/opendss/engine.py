@@ -28,7 +28,7 @@ from core.netlist.model import ERROR, WARNING
 from core.physical.component import NetworkDiagnostic
 
 if TYPE_CHECKING:
-    from core.grid.model import GridModel  # G2
+    from core.grid.model import GridModel
 
 CIRCUIT = "circuit"
 """Diagnostic location for problems of the whole file or circuit."""
@@ -129,8 +129,21 @@ class OpenDSSEngine:
     def load_model(self, model: GridModel) -> list[NetworkDiagnostic]:
         raise NotImplementedError("load_model comes with the DSS writer (G3)")
 
-    def extract_model(self) -> GridModel:
-        raise NotImplementedError("extract_model comes with the grid model (G2)")
+    def extract_model(self) -> tuple[GridModel | None, list[NetworkDiagnostic]]:
+        """Read the loaded circuit back as a GridModel (extract.py).
+
+        Call it after ``run`` so regulator taps are the solved ones; an unsolved
+        circuit gives a warning. Without a circuit, or on an engine error, the model
+        is None and the Diagnostics say why.
+        """
+        if self._ctx is None or not self._loaded:
+            return None, [_error("no circuit is loaded")]
+        from core.grid.engines.opendss.extract import extract
+
+        try:
+            return extract(self._ctx)
+        except Exception as err:  # an engine error while reading; never raise
+            return None, [_error(_dss_message(err))]
 
     def run(self, config: PowerFlowConfig | None = None) -> GridResult:
         """Solve the loaded circuit once with ``config`` and read the results."""

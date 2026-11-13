@@ -22,6 +22,28 @@ BAD_REDIRECT = FIXTURES / "bad" / "misspelled_redirect.dss"
 UNKNOWN_LINECODE = FIXTURES / "bad" / "unknown_linecode.dss"
 
 
+FEEDER_FILES = {"ieee13": IEEE13, "ieee34": IEEE34, "ieee123": IEEE123}
+
+# What scratch/phase4/common.py (CASES) runs after `compile`, so a feeder is in the
+# same state as when its reference file was made: the Run-file RegControl settings of
+# IEEE 123 and the bus coordinates of 34 and 123 (their master files load none).
+AFTER_COMPILE: dict[str, tuple[str, ...]] = {
+    "ieee13": (),
+    "ieee34": (f'BusCoords "{FIXTURES / "ieee34" / "IEEE34_BusXY.csv"}"',),
+    "ieee123": (
+        "RegControl.creg1a.maxtapchange=1 Delay=15",
+        "RegControl.creg2a.maxtapchange=1 Delay=30",
+        "RegControl.creg3a.maxtapchange=1 Delay=30",
+        "RegControl.creg4a.maxtapchange=1 Delay=30",
+        "RegControl.creg3c.maxtapchange=1 Delay=30",
+        "RegControl.creg4b.maxtapchange=1 Delay=30",
+        "RegControl.creg4c.maxtapchange=1 Delay=30",
+        "Set MaxControlIter=30",
+        f'BusCoords "{FIXTURES / "ieee123" / "BusCoords.dat"}"',
+    ),
+}
+
+
 def reference(feeder: str) -> dict[str, Any]:
     path = FIXTURES / feeder / "opendss_reference.json"
     return json.loads(path.read_text(encoding="utf-8"))
