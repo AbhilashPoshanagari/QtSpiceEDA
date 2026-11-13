@@ -11,18 +11,30 @@ The ngspice shared library is bundled into ``<bundle>/ngspice/``, where
 
 PyInstaller also collects the libraries that ngspice itself links to. The build stops
 with a message if no library is found: an installer without ngspice is useless.
+
+OpenDSS (v0.4): the build bundles DSS-Python from the build environment, so install
+the ``grid`` extra first (``pip install -e ".[dev,grid]"``). ``hooks/`` holds the
+hook from spike S3 (hook-dss_python_backend.py): it collects the engine's native
+libraries without the debug build and adds the hidden imports ``_dss_capi`` and
+``_cffi_backend``, without which the packaged app fails with "No module named
+'_cffi_backend'". The build stops if DSS-Python is missing, unless
+``QTSPICE_BUILD_WITHOUT_GRID=1`` is set (the app then starts without the Grid tab).
 """
 
 from __future__ import annotations
 
 import ctypes.util
 import glob
+import importlib.util
 import os
 import subprocess
 from pathlib import Path
 
+from PyInstaller.utils.hooks import collect_submodules
+
 ROOT = Path(__file__).resolve().parents[1]
 LAUNCHER = ROOT / "packaging" / "qtspice.py"
+HOOKS_DIR = ROOT / "packaging" / "hooks"
 APP_NAME = "QtSpice"
 
 DATAS = [
@@ -30,8 +42,25 @@ DATAS = [
     (str(ROOT / "examples"), "examples"),
     (str(ROOT / "core" / "symbols" / "builtin"), "core/symbols/builtin"),
 ]
-HIDDEN_IMPORTS = ["app.smoke"]
+# The physical component library is imported by module name (importlib, see
+# core/physical/library/__init__.py), so PyInstaller can't find it on its own.
+HIDDEN_IMPORTS = ["app.smoke", *collect_submodules("core.physical.library")]
 EXCLUDES = ["tkinter", "pytest", "pytestqt", "ruff", "jsonschema", "PyInstaller"]
+
+
+def grid_hidden_imports() -> list[str]:
+    """``["dss"]`` to bundle DSS-Python (the app imports it lazily). Stops the build
+    when it is not installed, unless QTSPICE_BUILD_WITHOUT_GRID=1."""
+    if importlib.util.find_spec("dss") is not None:
+        print("QtSpice: bundling DSS-Python (OpenDSS)")
+        return ["dss"]
+    if os.environ.get("QTSPICE_BUILD_WITHOUT_GRID") == "1":
+        print("QtSpice: building without DSS-Python: the app will have no Grid tab")
+        return []
+    raise SystemExit(
+        'DSS-Python is not installed: pip install -e ".[grid]" '
+        "(or set QTSPICE_BUILD_WITHOUT_GRID=1 to build without the grid power flow)"
+    )
 
 
 def _library_files(folder: Path, patterns: list[str]) -> list[Path]:

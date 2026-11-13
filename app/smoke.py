@@ -7,7 +7,11 @@ the UI uses:
 2. ngspice loads and simulates NETLIST (default: the bundled RC example); for the RC
    example V(out) at the end of the transient must be 1 - exp(-5);
 3. a small block diagram runs (the block-runner child process starts);
-4. the project saves and opens again with the same result.
+4. the project saves and opens again with the same result;
+5. (v0.4) OpenDSS loads in the grid-runner child process and solves the bundled
+   IEEE 13 feeder (examples/grid/). In a packaged app a missing OpenDSS engine is a
+   failure, because the build bundles it; from source without the ``grid`` extra the
+   check is skipped.
 
 Prints one line per check and writes them to FILE as well (a windowed app on Windows
 has no console). The exit code is 0 only if every check passed. Settings go to a
@@ -75,15 +79,18 @@ def _run_checks(netlist: Path, work: Path, log: Log) -> bool:
     sim = engine.singletonInstance("QtSpice", "Simulator")
     diagram = engine.singletonInstance("QtSpice", "DiagramController")
     projects = engine.singletonInstance("QtSpice", "ProjectManager")
+    grid = engine.singletonInstance("QtSpice", "GridController")
     try:
         ok = (
             _check_netlist(sim, netlist, log)
             and _check_diagram(diagram, log)
             and _check_project(sim, projects, work, log)
+            and _check_grid(grid, log)
         )
     finally:
         sim.shutdown()
         diagram.shutdown()
+        grid.shutdown()
     for warning in warnings:
         log(f"QML warning: {warning}")
     return ok
@@ -175,4 +182,33 @@ def _check_project(sim: QObject, projects: QObject, work: Path, log: Log) -> boo
         log("FAIL: the reopened project differs from the saved one")
         return False
     log(f"ok: project saved and reopened ({path.name})")
+    return True
+
+
+def _check_grid(grid: QObject, log: Log) -> bool:
+    from app.__main__ import EXAMPLE_FEEDER
+
+    if not grid.property("available"):
+        if getattr(sys, "frozen", False):
+            log("FAIL: OpenDSS (dss-python) is not in the bundle")
+            return False
+        log("skipped: grid power flow (dss-python is not installed)")
+        return True
+    if not grid.openFile(str(EXAMPLE_FEEDER)):  # type: ignore[attr-defined]
+        log(f"FAIL: {EXAMPLE_FEEDER.name} did not open: {grid.property('statusText')}")
+        return False
+    _wait(lambda: bool(grid.property("running")), grid.runningChanged)  # type: ignore[attr-defined]
+    if not grid.property("canRun"):
+        log(f"FAIL: {EXAMPLE_FEEDER.name}: {grid.property('statusText')}")
+        return False
+    if not grid.run():  # type: ignore[attr-defined]
+        log(f"FAIL: the power flow did not start: {grid.property('statusText')}")
+        return False
+    _wait(lambda: bool(grid.property("running")), grid.runningChanged)  # type: ignore[attr-defined]
+    result = grid.result()  # type: ignore[attr-defined]
+    if result is None or not result.converged:
+        log(f"FAIL: power flow: {grid.property('statusText')}")
+        return False
+    log(f"ok: grid power flow: {grid.property('statusText')}")
+    log(f"ok: IEEE 13 node 671.1 = {result.voltage_pu('671.1'):.5f} pu")
     return True

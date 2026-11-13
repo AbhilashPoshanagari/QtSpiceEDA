@@ -5,14 +5,25 @@
 import sys
 
 sys.path.insert(0, SPECPATH)  # noqa: F821  (SPECPATH is set by PyInstaller)
-from common import APP_NAME, DATAS, EXCLUDES, HIDDEN_IMPORTS, LAUNCHER, ROOT, ngspice_binaries
+from common import (
+    APP_NAME,
+    DATAS,
+    EXCLUDES,
+    HIDDEN_IMPORTS,
+    HOOKS_DIR,
+    LAUNCHER,
+    ROOT,
+    grid_hidden_imports,
+    ngspice_binaries,
+)
 
 a = Analysis(  # noqa: F821
     [str(LAUNCHER)],
     pathex=[str(ROOT)],
     binaries=ngspice_binaries("linux"),
     datas=DATAS,
-    hiddenimports=HIDDEN_IMPORTS,
+    hiddenimports=HIDDEN_IMPORTS + grid_hidden_imports(),
+    hookspath=[str(HOOKS_DIR)],
     excludes=EXCLUDES,
 )
 pyz = PYZ(a.pure)  # noqa: F821
