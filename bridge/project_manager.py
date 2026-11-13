@@ -9,7 +9,11 @@ WaveformModel)``); a project is the state they hold:
   (``DiagramController.export_state()``);
 - the last netlist result and the last diagram result (saved as .npz files);
 - the schematic, once ``attachSchematic(SchematicController)`` is called (S5); until
-  then a loaded schematic is only kept so that saving does not drop it.
+  then a loaded schematic is only kept so that saving does not drop it;
+- the grid feeder (G7), once ``attachGrid(GridController)`` is called: the .dss file
+  open in the Grid tab and the power-flow settings and limits. Opening a project opens
+  its .dss file there. The feeder is kept even when it cannot be opened (no
+  dss-python, a missing file), so saving does not drop it.
 
 ``modified`` compares that state with what was last saved or opened, so undoing
 back to the saved state clears it again. ``save()`` returns False when the project
@@ -44,12 +48,15 @@ from PySide6.QtCore import Property, QObject, QSettings, QUrl, Signal, Slot
 from PySide6.QtQml import QmlElement, QmlSingleton
 
 from bridge.diagram_controller import DiagramController, DiagramState
+from bridge.grid_controller import GridController
 from bridge.simulator import Simulator
+from core.grid.config import PowerFlowConfig
 from core.project.io import (
     SUFFIX,
     AnalysisSettings,
     BlockSource,
     DiagramEntry,
+    GridSettings,
     LoadResult,
     NetlistEntry,
     Project,
@@ -135,6 +142,11 @@ class ProjectManager(QObject):
         self._plot_defs: str | None = None  # W9: None = the shipped default
         self._display_units = False  # O1: the rpm/degC toggle of the waveform window
         self._plots_ctl: QObject | None = None
+        # G7: the project's feeder (absolute .dss path) and its settings; kept as
+        # loaded while no GridController is attached or it cannot open the file.
+        self._grid_path: Path | None = None
+        self._grid_config = PowerFlowConfig()
+        self._grid_ctl: GridController | None = None
         self._saved_json = ""
         self._saved_results: tuple[object, object] = (None, None)
         self._pending: tuple[Path, Project, list[str]] | None = None
@@ -224,6 +236,18 @@ class ProjectManager(QObject):
         if self._simulator is not None and self._diagram is not None:
             self._mark_saved()
 
+    @Slot(QObject)
+    def attachGrid(self, controller: QObject) -> None:  # noqa: N802 - QML API
+        """Make the Grid tab's feeder and power-flow settings (GridController) part of
+        the project."""
+        assert isinstance(controller, GridController)
+        self._grid_ctl = controller
+        controller.fileChanged.connect(self._on_grid_file)
+        controller.configChanged.connect(self._on_grid_config)
+        self._load_grid()
+        if self._simulator is not None and self._diagram is not None:
+            self._mark_saved()
+
     # ---- state
 
     def current_project(self, path: Path | None = None) -> Project:
@@ -267,7 +291,60 @@ class ProjectManager(QObject):
                 if self._plots_ctl is not None
                 else self._display_units
             ),
+            grid=self._grid_entry(path),
         )
+
+    def _grid_entry(self, path: Path | None) -> GridSettings | None:
+        """The feeder as stored in the .qsp: the .dss path relative to its folder when
+        inside it (with /), else absolute."""
+        if self._grid_path is None:
+            return None
+        return GridSettings(self._relative_entry(self._grid_path, path), self._grid_config)
+
+    def _relative_entry(self, file: Path, path: Path | None) -> str:
+        target = path if path is not None else (Path(self._file_path) if self._file_path else None)
+        folder = target.parent.resolve() if target is not None else None
+        file = file.resolve()
+        if folder is not None and file.is_relative_to(folder):
+            return file.relative_to(folder).as_posix()
+        return str(file)
+
+    def _load_grid(self) -> list[str]:
+        """Show the project's feeder in the attached GridController. Returns what was
+        skipped."""
+        ctl = self._grid_ctl
+        if ctl is None:
+            return []
+        ctl.clear()
+        ctl.set_config(self._grid_config)
+        if self._grid_path is None:
+            return []
+        if not self._grid_path.is_file():
+            return [f"grid feeder {self._grid_path} is missing"]
+        if not ctl.property("available"):
+            return [
+                f"grid feeder {self._grid_path.name} was not opened: dss-python is not installed"
+            ]
+        ctl.openFile(str(self._grid_path))
+        return []
+
+    @Slot()
+    def _on_grid_file(self) -> None:
+        """The user opened another .dss file in the Grid tab: it is the project's feeder
+        now. (``clear`` leaves the stored feeder alone.)"""
+        if self._applying or self._grid_ctl is None:
+            return
+        path = self._grid_ctl.property("filePath")
+        if path:
+            self._grid_path = Path(path)
+            self._update_modified()
+
+    @Slot()
+    def _on_grid_config(self) -> None:
+        if self._applying or self._grid_ctl is None:
+            return
+        self._grid_config = self._grid_ctl.config
+        self._update_modified()
 
     def _project_symbols(self) -> list[Path]:
         ctl = self._schematic_ctl
@@ -276,16 +353,7 @@ class ProjectManager(QObject):
     def _symbol_entries(self, path: Path | None) -> list[str]:
         """The circuit symbols as stored in the .qsp: relative to its folder when inside
         it (with /), else absolute."""
-        target = path if path is not None else (Path(self._file_path) if self._file_path else None)
-        folder = target.parent.resolve() if target is not None else None
-        out: list[str] = []
-        for symbol in self._project_symbols():
-            symbol = symbol.resolve()
-            if folder is not None and symbol.is_relative_to(folder):
-                out.append(symbol.relative_to(folder).as_posix())
-            else:
-                out.append(str(symbol))
-        return out
+        return [self._relative_entry(symbol, path) for symbol in self._project_symbols()]
 
     # ---- slots
 
@@ -419,6 +487,9 @@ class ProjectManager(QObject):
             self._plots_ctl.load_layouts(self._plots)  # type: ignore[attr-defined]
             self._plots_ctl.setProperty("displayUnits", self._display_units)
         folder = Path(path).parent if path else Path.cwd()
+        self._grid_path = (folder / project.grid.dss_file).resolve() if project.grid else None
+        self._grid_config = project.grid.config if project.grid else PowerFlowConfig()
+        grid_skipped = self._load_grid()
         self._symbols = [(folder / s).resolve() for s in project.symbols]
         skipped = [f"circuit symbol {s} is missing" for s in self._symbols if not s.is_file()]
         if self._schematic_ctl is not None:
@@ -448,11 +519,12 @@ class ProjectManager(QObject):
         if netlist_result is None and diagram_result is not None and self._waveforms is not None:
             self._waveforms.set_result(diagram_result)  # type: ignore[attr-defined]
         self._set_file_path(path)
-        return warnings + skipped
+        return warnings + skipped + grid_skipped
 
     def _can_replace(self) -> bool:
         sim, diagram = self._parts()
-        if sim.property("running") or diagram.property("running"):
+        grid_running = self._grid_ctl is not None and self._grid_ctl.property("running")
+        if sim.property("running") or diagram.property("running") or grid_running:
             self._set_error("Stop the running simulation first")
             return False
         self._pending = None

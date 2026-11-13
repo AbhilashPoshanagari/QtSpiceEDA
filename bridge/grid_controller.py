@@ -16,6 +16,10 @@ QML uses it as ``import QtSpice`` / ``GridController.openFile(url)``.
 - The voltage profile goes to the waveform window as a SimulationResult
   (``GridResult.to_simulation_result``, rule 7), with two flat limit traces.
 
+The project (G7, ProjectManager.attachGrid) stores ``filePath`` and ``config``;
+``set_config`` replaces the settings and limits (``configChanged``) and recomputes the
+violations of a result already shown; ``clear`` forgets the open file.
+
 ``available`` is OpenDSSEngine.available(), read once: without dss-python the grid
 menu entries and the Grid tab are hidden and every slot refuses politely.
 """
@@ -264,6 +268,7 @@ class GridController(QObject):
     modelChanged = Signal()  # a new GridModel (geometry, canRun)
     resultChanged = Signal()  # a new result or none (tables, summary, geometry colours)
     selectedBusChanged = Signal()
+    configChanged = Signal()  # new settings or limits (set_config)
     resultReady = Signal()
     loadFailed = Signal()
     _done = Signal(object)  # (runner, outcome), emitted from the wait thread
@@ -272,7 +277,8 @@ class GridController(QObject):
         super().__init__(parent)
         self._available: bool | None = None
         self.config = PowerFlowConfig()
-        """Settings and limits of the next run (G7 stores them in the project)."""
+        """Settings and limits of the next run (stored in the project); change it
+        with ``set_config``."""
         self.timeout: float | None = None
         """Child timeout in s; None = GridRunner's default. Tests may set it."""
         self._path = ""
@@ -394,8 +400,8 @@ class GridController(QObject):
     nodes = Property(QObject, _get_nodes, constant=True)
     branches = Property(QObject, _get_branches, constant=True)
     violations = Property(QObject, _get_violations, constant=True)
-    voltageMinPu = Property(float, _get_vmin, constant=True)  # noqa: N815
-    voltageMaxPu = Property(float, _get_vmax, constant=True)  # noqa: N815
+    voltageMinPu = Property(float, _get_vmin, notify=configChanged)  # noqa: N815
+    voltageMaxPu = Property(float, _get_vmax, notify=configChanged)  # noqa: N815
 
     def model(self) -> GridModel | None:
         return self._model
@@ -407,6 +413,34 @@ class GridController(QObject):
         return list(self._violations)
 
     # ---- QML API
+
+    def set_config(self, config: PowerFlowConfig) -> None:
+        """Use ``config`` for the next run. The violations and the limit traces of a
+        result already shown are computed again with the new limits."""
+        if config == self.config:
+            return
+        self.config = config
+        self.configChanged.emit()
+        if self._result is not None:
+            self._set_result(self._result)
+
+    def clear(self) -> None:
+        """Forget the open file, its model and result (a new or other project). Stops
+        a run in progress."""
+        self.stop()
+        self._runner = None
+        self.runningChanged.emit()
+        self._path = ""
+        self._model = None
+        self._load_diagnostics = []
+        self._set_result(None)
+        self._selected_bus = ""
+        self._console = []
+        self.consoleTextChanged.emit()
+        self._set_status("")
+        self.selectedBusChanged.emit()
+        self.fileChanged.emit()
+        self.modelChanged.emit()
 
     @Slot(QObject)
     def attachWaveforms(self, model: QObject) -> None:  # noqa: N802 - QML API

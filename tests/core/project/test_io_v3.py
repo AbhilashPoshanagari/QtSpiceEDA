@@ -70,7 +70,7 @@ def test_physical_project_round_trips_byte_for_byte(tmp_path: Path) -> None:
     project = physical_project()
     save_project(path, project)
     data = json.loads(path.read_text("utf-8"))
-    assert data["version"] == FORMAT_VERSION == 3
+    assert data["version"] == FORMAT_VERSION
     jsonschema.validate(data, SCHEMA)
     assert data["display_units"] is True
     diagram = data["diagrams"][0]["diagram"]
@@ -112,7 +112,7 @@ def test_version_2_file_of_a_development_build_with_physical_wires_opens(
     tmp_path: Path,
 ) -> None:
     """v0.3 builds before O1 wrote physical diagrams as version 2 (bug: they could not
-    be reopened). They open now, and save as version 3."""
+    be reopened). They open now, and save as the current version."""
     data = physical_project().to_dict()
     data["version"] = 2
     del data["display_units"]
@@ -123,7 +123,7 @@ def test_version_2_file_of_a_development_build_with_physical_wires_opens(
     assert loaded.project is not None
     assert loaded.project.diagrams[0].diagram["physical_wires"]
     save_project(path, loaded.project)
-    assert json.loads(path.read_text("utf-8"))["version"] == 3
+    assert json.loads(path.read_text("utf-8"))["version"] == FORMAT_VERSION
 
 
 def test_version_2_file_may_not_have_display_units(tmp_path: Path) -> None:
@@ -186,10 +186,10 @@ def test_max_step_zero_means_ts_and_is_allowed(tmp_path: Path) -> None:
     assert load_project(write(tmp_path, project.to_dict())).ok
 
 
-def test_version_4_is_refused(tmp_path: Path) -> None:
-    data = Project().to_dict() | {"version": 4}
+def test_a_newer_version_is_refused(tmp_path: Path) -> None:
+    data = Project().to_dict() | {"version": FORMAT_VERSION + 1}
     loaded = load_project(write(tmp_path, data))
-    assert not loaded.ok and "format version 4" in loaded.errors[0]
+    assert not loaded.ok and f"format version {FORMAT_VERSION + 1}" in loaded.errors[0]
 
 
 @pytest.mark.parametrize(
@@ -198,7 +198,7 @@ def test_version_4_is_refused(tmp_path: Path) -> None:
     + [EXAMPLES / n for n in V2_SAMPLES],
     ids=lambda p: p.name,
 )
-def test_v1_and_v2_projects_open_save_as_v3_and_reopen_unchanged(
+def test_v1_and_v2_projects_open_save_as_current_and_reopen_unchanged(
     path: Path, tmp_path: Path
 ) -> None:
     copy = tmp_path / path.name
@@ -217,7 +217,7 @@ def test_v1_and_v2_projects_open_save_as_v3_and_reopen_unchanged(
     assert before.project is not None
     save_project(copy, before.project)
     data = json.loads(copy.read_text("utf-8"))
-    assert data["version"] == 3
+    assert data["version"] == FORMAT_VERSION
     jsonschema.validate(data, SCHEMA)
     after = load_project(copy)
     assert after.ok and after.project is not None

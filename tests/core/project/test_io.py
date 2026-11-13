@@ -271,7 +271,7 @@ def test_schematic_round_trip(tmp_path: Path) -> None:
     project = Project(schematic=rc_schematic())
     save_project(path, project)
     data = json.loads(path.read_text("utf-8"))
-    assert data["version"] == FORMAT_VERSION == 3
+    assert data["version"] == FORMAT_VERSION == 4
     jsonschema.validate(data, SCHEMA)
     loaded = load_project(path)
     assert loaded.ok and loaded.warnings == []

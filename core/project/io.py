@@ -24,6 +24,12 @@ physical components (``physical_sources``), the parameter sweep (``sweep``) and 
 rpm/degC display-unit setting (``display_units``). Versions 1 and 2 still open and are
 saved as version 3. Version 2 files written by v0.3 development builds may already
 hold physical wires, user components and a sweep; they open as well.
+
+Format version 4 (G7) adds the optional ``grid`` section of v0.4: the .dss file of the
+feeder (relative to the .qsp folder when inside it, ``/`` separators, else absolute),
+the PowerFlowConfig solver settings (``power_flow``) and the voltage and loading limits
+(``limits``). Grid results are not stored; the feeder is solved again. Versions 1-3
+still open and are saved as version 4.
 """
 
 from __future__ import annotations
@@ -36,6 +42,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from core.grid.config import CONTROL_MODES, PowerFlowConfig
 from core.netlist.model import ERROR
 from core.physical.mapper import SOLVER_SETTINGS
 from core.schematic.model import Schematic
@@ -44,7 +51,7 @@ from core.sim.result import SimulationResult
 from core.waveform.layout import PlotLayout, layouts_from_dict, layouts_to_dict
 
 FORMAT = "qtspice-project"
-FORMAT_VERSION = 3
+FORMAT_VERSION = 4
 SUFFIX = ".qsp"
 DEFAULT_T_END = 1.0
 DEFAULT_DT = 0.001
@@ -55,8 +62,13 @@ _KEYS = (*_KEYS_V1, "simulation")  # version 2
 _OPTIONAL_KEYS_V2 = ("schematic", "symbols", "plots", "plot_defs", "physical_sources", "sweep")
 """Version 2 fields that may be left out (``physical_sources``: M5, ``sweep``: M7, both
 written as version 2 by v0.3 development builds before O1)."""
-_OPTIONAL_KEYS = (*_OPTIONAL_KEYS_V2, "display_units")
+_OPTIONAL_KEYS_V3 = (*_OPTIONAL_KEYS_V2, "display_units")
 """Version 3 fields that may be left out."""
+_OPTIONAL_KEYS = (*_OPTIONAL_KEYS_V3, "grid")
+"""Version 4 fields that may be left out."""
+_GRID_KEYS = ("dss_file", "power_flow", "limits")
+_POWER_FLOW_KEYS = ("control_mode", "max_iterations", "max_control_iterations", "tolerance")
+_LIMIT_KEYS = ("voltage_min_pu", "voltage_max_pu", "loading_limit_pct")
 SOLVER_SPEC = "SolverConfiguration"
 """The block spec whose settings O1 checks (the B5 Solver Configuration)."""
 _PORT_REF = re.compile(r"^[^.\s]+\.[^.\s]+$")  # "block.port"
@@ -108,6 +120,23 @@ class SimulationSettings:
 
 
 @dataclass
+class GridSettings:
+    """The project's feeder (G7): the .dss file as stored in the .qsp (relative to its
+    folder with ``/``, or absolute) and the settings and limits of the next run."""
+
+    dss_file: str
+    config: PowerFlowConfig = field(default_factory=PowerFlowConfig)
+
+    def to_dict(self) -> dict[str, Any]:
+        settings = self.config.to_dict()
+        return {
+            "dss_file": self.dss_file,
+            "power_flow": {k: settings[k] for k in _POWER_FLOW_KEYS},
+            "limits": {k: settings[k] for k in _LIMIT_KEYS},
+        }
+
+
+@dataclass
 class Project:
     netlists: list[NetlistEntry] = field(default_factory=list)
     diagrams: list[DiagramEntry] = field(default_factory=list)
@@ -132,6 +161,8 @@ class Project:
     sweep: dict[str, str] | None = None
     # O1: the waveform window shows rad/s and K as rpm and degC. False (SI) is left out.
     display_units: bool = False
+    # G7: the feeder of the grid power flow. None = no feeder, left out of the file.
+    grid: GridSettings | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """The JSON content of the .qsp file (results only by file name). ``schematic``
@@ -166,6 +197,8 @@ class Project:
             data["sweep"] = {k: str(self.sweep.get(k, "")) for k in _SWEEP_FIELDS}
         if self.display_units:
             data["display_units"] = True
+        if self.grid is not None:
+            data["grid"] = self.grid.to_dict()
         return data
 
     def to_json(self) -> str:
@@ -216,6 +249,12 @@ def save_project(path: str | Path, project: Project) -> None:
             raise ProjectError("the diagram end time and time step must be positive numbers")
     if not valid_compat_mode(project.simulation.compat_mode):
         raise ProjectError("the compatibility mode must be lower-case letters, e.g. 'ltpsa'")
+    if project.grid is not None:
+        if not project.grid.dss_file.strip():
+            raise ProjectError("the grid section needs a .dss file")
+        problems = project.grid.config.problems()
+        if problems:
+            raise ProjectError(f"power-flow settings: {problems[0]}")
     text = project.to_json()  # before touching the disk: fails on NaN etc.
 
     folder = results_dir(path)
@@ -304,6 +343,9 @@ def load_project(path: str | Path) -> LoadResult:
     if "sweep" in data:
         project.sweep = {k: data["sweep"][k] for k in _SWEEP_FIELDS}
     project.display_units = data.get("display_units", False) is True
+    if "grid" in data:
+        grid = data["grid"]
+        project.grid = GridSettings(grid["dss_file"], _grid_config(grid))
     warnings: list[str] = []
     if data.get("schematic") is not None:
         schematic, found = Schematic.from_dict(data["schematic"])
@@ -350,7 +392,7 @@ def _check_body(data: dict[str, Any]) -> list[str]:
     for key in keys:
         if key not in data:
             errors.append(f"missing field {key!r}")
-    optional = {1: (), 2: _OPTIONAL_KEYS_V2}.get(version, _OPTIONAL_KEYS)
+    optional = {1: (), 2: _OPTIONAL_KEYS_V2, 3: _OPTIONAL_KEYS_V3}.get(version, _OPTIONAL_KEYS)
     allowed = (*keys, *optional)
     for key in data:
         if key not in allowed:
@@ -392,6 +434,8 @@ def _check_body(data: dict[str, Any]) -> list[str]:
             errors.append("sweep must have exactly the strings block, parameter and values")
     if "display_units" in data and not isinstance(data["display_units"], bool):
         errors.append("'display_units' must be true or false")
+    if "grid" in data:
+        errors += _check_grid(data["grid"])
     if errors:
         return errors
 
@@ -443,6 +487,43 @@ def _check_body(data: dict[str, Any]) -> list[str]:
         if name in analysis and not (_is_number(value) and value > 0):
             errors.append(f"analysis.{name} must be a positive number")
     return errors
+
+
+def _check_grid(grid: object) -> list[str]:
+    """The v4 grid section: a .dss path, the four solver settings (``null`` = keep the
+    file's value) and the three limits, checked with PowerFlowConfig.problems()."""
+    if not isinstance(grid, dict) or set(grid) != set(_GRID_KEYS):
+        return ["'grid' must have exactly the fields dss_file, power_flow and limits"]
+    errors: list[str] = []
+    if not isinstance(grid["dss_file"], str) or not grid["dss_file"].strip():
+        errors.append("grid.dss_file must be a non-empty path")
+    power_flow, limits = grid["power_flow"], grid["limits"]
+    if not isinstance(power_flow, dict) or set(power_flow) != set(_POWER_FLOW_KEYS):
+        errors.append(f"grid.power_flow must have exactly the fields {', '.join(_POWER_FLOW_KEYS)}")
+    else:
+        if power_flow["control_mode"] not in CONTROL_MODES:
+            errors.append(f"grid.power_flow.control_mode must be one of {', '.join(CONTROL_MODES)}")
+        for name in ("max_iterations", "max_control_iterations"):
+            value = power_flow[name]
+            if value is not None and (not isinstance(value, int) or isinstance(value, bool)):
+                errors.append(f"grid.power_flow.{name} must be a whole number or null")
+        if power_flow["tolerance"] is not None and not _is_number(power_flow["tolerance"]):
+            errors.append("grid.power_flow.tolerance must be a number or null")
+    if not isinstance(limits, dict) or set(limits) != set(_LIMIT_KEYS):
+        errors.append(f"grid.limits must have exactly the fields {', '.join(_LIMIT_KEYS)}")
+    elif not all(_is_number(limits[k]) for k in _LIMIT_KEYS):
+        errors.append("grid.limits must be numbers")
+    if errors:
+        return errors
+    return [f"grid: {problem}" for problem in _grid_config(grid).problems()]
+
+
+def _grid_config(grid: dict[str, Any]) -> PowerFlowConfig:
+    """The PowerFlowConfig of a checked grid section (numbers as float)."""
+    power_flow = dict(grid["power_flow"])
+    if power_flow["tolerance"] is not None:
+        power_flow["tolerance"] = float(power_flow["tolerance"])
+    return PowerFlowConfig(**power_flow, **{k: float(v) for k, v in grid["limits"].items()})
 
 
 def _check_diagram(diagram: dict[str, Any], where: str, version: int) -> list[str]:

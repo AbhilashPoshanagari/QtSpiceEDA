@@ -27,6 +27,7 @@ ApplicationWindow {
         WaveformController.attachProbes(SchematicController)
         ProjectManager.attachPlots(WaveformController)
         GridController.attachWaveforms(WaveformModel)
+        ProjectManager.attachGrid(GridController)
     }
 
     onClosing: close => {
