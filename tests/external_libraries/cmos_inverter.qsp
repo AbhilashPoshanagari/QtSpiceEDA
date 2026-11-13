@@ -1,0 +1,167 @@
+{
+  "format": "qtspice-project",
+  "version": 2,
+  "netlists": [],
+  "diagrams": [],
+  "block_sources": [],
+  "analysis": {
+    "card": "",
+    "diagram_t_end": 1.0,
+    "diagram_dt": 0.001
+  },
+  "results": [],
+  "simulation": {
+    "compat_mode": "ltpsa"
+  },
+  "schematic": {
+    "title": "CMOS inverter, TSMC 180 nm",
+    "instances": [
+      {
+        "symbol": "cmosp",
+        "name": "MP1",
+        "x": 256,
+        "y": 0,
+        "rotation": 0,
+        "mirror": false,
+        "attrs": {
+          "Value": "CMOSP",
+          "SpiceLine": "L=180n W=0.9u"
+        }
+      },
+      {
+        "symbol": "cmosn",
+        "name": "MN1",
+        "x": 256,
+        "y": 160,
+        "rotation": 0,
+        "mirror": false,
+        "attrs": {
+          "Value": "CMOSN",
+          "SpiceLine": "L=180n W=0.36u"
+        }
+      },
+      {
+        "symbol": "voltage",
+        "name": "Vdd",
+        "x": 448,
+        "y": 0,
+        "rotation": 0,
+        "mirror": false,
+        "attrs": {
+          "Value": "1.8"
+        }
+      },
+      {
+        "symbol": "voltage",
+        "name": "Vin",
+        "x": 96,
+        "y": 160,
+        "rotation": 0,
+        "mirror": false,
+        "attrs": {
+          "Value": "PULSE(0 1.8 1n 50p 50p 5n 10n)"
+        }
+      },
+      {
+        "symbol": "cap",
+        "name": "C1",
+        "x": 448,
+        "y": 160,
+        "rotation": 0,
+        "mirror": false,
+        "attrs": {
+          "Value": "10f"
+        }
+      }
+    ],
+    "wires": [],
+    "labels": [
+      {
+        "x": 304,
+        "y": 0,
+        "name": "out"
+      },
+      {
+        "x": 256,
+        "y": 80,
+        "name": "in"
+      },
+      {
+        "x": 304,
+        "y": 96,
+        "name": "vdd"
+      },
+      {
+        "x": 304,
+        "y": 48,
+        "name": "vdd"
+      },
+      {
+        "x": 304,
+        "y": 160,
+        "name": "out"
+      },
+      {
+        "x": 256,
+        "y": 240,
+        "name": "in"
+      },
+      {
+        "x": 448,
+        "y": 16,
+        "name": "vdd"
+      },
+      {
+        "x": 96,
+        "y": 176,
+        "name": "in"
+      },
+      {
+        "x": 464,
+        "y": 160,
+        "name": "out"
+      }
+    ],
+    "grounds": [
+      {
+        "x": 304,
+        "y": 256
+      },
+      {
+        "x": 304,
+        "y": 208
+      },
+      {
+        "x": 448,
+        "y": 96
+      },
+      {
+        "x": 96,
+        "y": 256
+      },
+      {
+        "x": 464,
+        "y": 224
+      }
+    ],
+    "ports": [],
+    "texts": [
+      {
+        "x": 96,
+        "y": 320,
+        "text": ".tran 1p 40n",
+        "directive": true
+      },
+      {
+        "x": 96,
+        "y": 360,
+        "text": "MP1 / MN1 are the cmosp / cmosn symbols of tsmc_180_nm; their ModelFile tsmc018.lib (BSIM3 level 49) is included from beside the symbols.",
+        "directive": false
+      }
+    ]
+  },
+  "symbols": [
+    "tsmc_180_nm/cmosn.asy",
+    "tsmc_180_nm/cmosp.asy"
+  ]
+}
