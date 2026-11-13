@@ -2,7 +2,7 @@
 
 Everything outside core/grid/engines/opendss/ uses this protocol, never ``dss``
 (rule 15). Engines report problems as Diagnostics and never raise on bad input
-(rule 6); ``load_model`` raises NotImplementedError until G3.
+(rule 6).
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ class GridEngine(Protocol):
         ...
 
     def load_model(self, model: GridModel) -> list[NetworkDiagnostic]:
-        """Load a circuit from an engine-independent GridModel (G3)."""
+        """Load a circuit from an engine-independent GridModel."""
         ...
 
     def extract_model(self) -> tuple[GridModel | None, list[NetworkDiagnostic]]:

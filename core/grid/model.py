@@ -190,6 +190,9 @@ class Transformer:
     """Reactance winding 2-3 in % (3-winding transformers)."""
     pct_noload_loss: float = 0.0
     pct_imag: float = 0.0
+    ppm_antifloat: float = 1.0
+    """Shunt capacitance to ground on each winding, in ppm of the winding's base
+    admittance (OpenDSS ppm_antifloat). IEEE 123 sets 0 on its regulators."""
     enabled: bool = True
 
     cls: ClassVar[str] = "transformer"

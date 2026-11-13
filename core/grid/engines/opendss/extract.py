@@ -50,7 +50,7 @@ from core.grid.model import (
 from core.netlist.model import WARNING
 from core.physical.component import NetworkDiagnostic
 
-_LOAD_MODEL = {1: LOAD_PQ, 2: LOAD_Z, 4: LOAD_CVR, 5: LOAD_I}
+LOAD_MODEL_BY_NUMBER = {1: LOAD_PQ, 2: LOAD_Z, 4: LOAD_CVR, 5: LOAD_I}
 """OpenDSS load model number -> ours. Others (3, 6, 7, 8) are unsupported."""
 
 SUPPORTED_CLASSES = ("vsource", "line", "transformer", "regcontrol", "load", "capacitor",
@@ -344,6 +344,7 @@ class _Extractor:
                 xlt=float(xf.Xlt),
                 pct_noload_loss=self._prop_float("%NoLoadLoss"),
                 pct_imag=self._prop_float("%IMag"),
+                ppm_antifloat=self._prop_float("ppm_antifloat"),
                 enabled=bool(el.Enabled),
             )
 
@@ -378,7 +379,7 @@ class _Extractor:
             element_id = f"load.{name}"
             el = self._activate(element_id)
             number = int(ld.Model)
-            kind = _LOAD_MODEL.get(number)
+            kind = LOAD_MODEL_BY_NUMBER.get(number)
             if kind is None:
                 self.diagnostics.append(
                     _warn(

@@ -80,6 +80,8 @@ class OpenDSSEngine:
         self._ctx: Any | None = None
         self._loaded = False
         self._path = ""
+        self.script = ""
+        """The script of the last ``load_model`` call ("" before)."""
 
     # ---- GridEngine
 
@@ -127,7 +129,41 @@ class OpenDSSEngine:
         return []
 
     def load_model(self, model: GridModel) -> list[NetworkDiagnostic]:
-        raise NotImplementedError("load_model comes with the DSS writer (G3)")
+        """Write ``model`` as a DSS script (writer.py) and run it in this context.
+
+        The script is run one command at a time, so an engine error names the script
+        line and the element it defines. Writer problems come back as Diagnostics;
+        any error leaves no circuit
+        loaded. The written script is kept in ``script`` for inspection.
+        """
+        from core.grid.engines.opendss.writer import element_of, script_commands, write_dss
+
+        self._loaded = False
+        text, diagnostics = write_dss(model)
+        self.script = text
+        if any(d.severity == ERROR for d in diagnostics):
+            return diagnostics
+        ctx, more = self._context()
+        if ctx is None:
+            return diagnostics + more
+        locale.setlocale(locale.LC_NUMERIC, "C")
+        element = CIRCUIT
+        for number, command in script_commands(text):
+            element = element_of(command, CIRCUIT if not command.startswith("~") else element)
+            try:
+                self._command(command)
+            except Exception as err:
+                message = f"script line {number}: {_dss_message(err)}"
+                return [*diagnostics, _error(message, element)]
+        try:
+            name = ctx.ActiveCircuit.Name
+        except Exception as err:
+            return [*diagnostics, _error(_dss_message(err))]
+        if not name:
+            return [*diagnostics, _error("the written script defines no circuit")]
+        self._loaded = True
+        self._path = ""
+        return diagnostics
 
     def extract_model(self) -> tuple[GridModel | None, list[NetworkDiagnostic]]:
         """Read the loaded circuit back as a GridModel (extract.py).

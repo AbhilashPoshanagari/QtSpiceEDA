@@ -182,9 +182,3 @@ def test_extract_without_a_circuit_is_an_error() -> None:
     assert model is None
     assert diagnostics[0].severity == ERROR
     assert "no circuit" in diagnostics[0].message
-
-
-def test_load_model_comes_later() -> None:
-    engine = OpenDSSEngine()
-    with pytest.raises(NotImplementedError):
-        engine.load_model(None)  # type: ignore[arg-type]
