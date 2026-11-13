@@ -11,7 +11,19 @@ from core.blocks.library.sources import Constant, Sine, Step
 from core.blocks.library.stateful import Integrator, UnitDelay
 from core.blocks.registry import BlockRegistry
 
-NAMES = ["Constant", "Step", "Sine", "Gain", "Sum", "Product", "Integrator", "UnitDelay", "Scope"]
+NAMES = [
+    "Constant",
+    "Step",
+    "Sine",
+    "Gain",
+    "Sum",
+    "Product",
+    "Integrator",
+    "UnitDelay",
+    "Scope",
+    "DiscretePI",
+    "DiscretePID",
+]
 
 
 def test_all_builtins_in_order() -> None:

@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from core.blocks.decorator import spec_of
-from core.blocks.library import arithmetic, sinks, sources, stateful
+from core.blocks.library import arithmetic, control, sinks, sources, stateful
 from core.blocks.spec import BlockSpec
 
-_MODULES = (sources, arithmetic, stateful, sinks)
+_MODULES = (sources, arithmetic, stateful, sinks, control)
 
 
 def builtin_blocks() -> dict[str, object]:

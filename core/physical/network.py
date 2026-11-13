@@ -222,13 +222,17 @@ class NetworkExtractor:
             isinstance(p, Port) and p.name == port and p.domain == ANY_DOMAIN for p in spec.ports
         )
 
+    @staticmethod
+    def _is_optional(spec: PhysicalSpec, port: str) -> bool:
+        return any(isinstance(p, Port) and p.name == port and p.optional for p in spec.ports)
+
     def _check(self, net: PhysicalNetwork, specs: dict[str, PhysicalSpec], report: Report) -> None:
         for node in net.nodes:
             if not node.wired:
                 for block_id, port in node.ports:
                     if specs[block_id].role == SOLVER:
                         report(block_id, "the Solver Configuration is not connected to a network")
-                    else:
+                    elif not self._is_optional(specs[block_id], port):
                         report(block_id, f"port {port!r} is not connected", WARNING)
         if not net.domains:
             return  # only lone Solver Configurations: already reported

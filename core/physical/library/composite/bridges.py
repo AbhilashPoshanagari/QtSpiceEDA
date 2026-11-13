@@ -1,7 +1,12 @@
 """M1 / M3: half-bridge and H-bridge, switching or averaged.
 
 Ports: ``p`` / ``n`` (DC link + / -) and the leg outputs (``out``; ``a`` and ``b``
-for the H-bridge); signal input ``u``.
+for the H-bridge); signal input ``u``; optional electrical gate port ``g`` (M4).
+
+The switching model's gate is ``u`` + V(g): ``g`` is measured against the reference
+and pulled down to it by ``GATE_R``, so it reads 0 when left unconnected. The PWM
+Generator (M4) drives ``g`` with edges made inside ngspice; ``u`` then stays 0. The
+averaged model reads only ``u`` (the duty cycle); ``g`` has no effect there.
 
 ``model`` chooses the version (M3):
 
@@ -18,7 +23,7 @@ for the H-bridge); signal input ``u``.
 Feeding the switching bridge a PWM gate and the averaged one the PWM's duty cycle
 gives the same average voltage, which is what M3 checks. Switching losses and dead
 time are not modelled. ``u`` is held between controller ticks (combined run); with
-no controller it is 0. PWM made inside ngspice is M4.
+no controller it is 0.
 """
 
 from __future__ import annotations
@@ -66,14 +71,25 @@ def _model(params: Mapping[str, object]) -> str:
     return model
 
 
+GATE_R = 1e6
+"""Pull-down of the gate port ``g`` [Ohm]."""
+
+
+def _gate(ports: Ports) -> tuple[str, list[Primitive]]:
+    """The switching gate expression u + V(g), and g's pull-down resistor."""
+    expr = f"({ELE.across_expr(ports.c)} + {ELE.across_expr(ports.g)})"
+    return expr, [Resistor("Rg", ports.g, ports.ground, ELE.resistance_from(GATE_R))]
+
+
 def _switching_leg(
     prefix: str, p: str, n: str, out: str, ctrl: str, high_on: bool, params: Mapping[str, object]
 ) -> list[Primitive]:
-    """One switching leg; ``high_on``: the high switch closes while ctrl > threshold."""
+    """One switching leg; ``high_on``: the high switch closes while the gate expression
+    ``ctrl`` > threshold."""
     r_on = num(ELE.resistance_from(positive(params, "R_on")))
     r_off = num(ELE.resistance_from(positive(params, "R_off")))
     thr = num(ELE.to_voltage(real(params, "threshold")))
-    gate = f"({ELE.across_expr(ctrl)} > {thr})"
+    gate = f"({ctrl} > {thr})"
     high_r, low_r = (r_on, r_off) if high_on else (r_off, r_on)
     diode = {"Vf": real(params, "Vf"), "R_on": real(params, "R_d")}
     return [
@@ -119,8 +135,8 @@ def _duty(ctrl: str) -> str:
 class HalfBridge(PhysicalComponent):
     """Half-bridge leg between DC link p (+) and n (-), output out, controlled by u.
 
-    model "switching": u > threshold closes the high switch (out = p), otherwise the
-    low one (out = n); switches R_on / R_off with antiparallel diodes.
+    model "switching": u + V(g) > threshold closes the high switch (out = p), otherwise
+    the low one (out = n); switches R_on / R_off with antiparallel diodes.
     model "averaged": u is the duty cycle, out = u * V(p, n) behind R_on.
     """
 
@@ -129,14 +145,16 @@ class HalfBridge(PhysicalComponent):
         Port("n", ELECTRICAL, "DC -"),
         Port("out", ELECTRICAL, "output"),
         SignalInput("u", "", "gate or duty"),
+        Port("g", ELECTRICAL, "gate", optional=True),
     )
     parameters = _PARAMETERS
     internal = {"c": ELECTRICAL, "m": ELECTRICAL, "s": ELECTRICAL}
 
     def network(self, ports: Ports, params: Mapping[str, object]) -> list[Primitive]:
-        prims: list[Primitive] = [ExternalSource("Vc", ports.c, ports.ground, "v", "u", 0.0)]
+        gate, prims = _gate(ports)
+        prims.append(ExternalSource("Vc", ports.c, ports.ground, "v", "u", 0.0))
         if _model(params) == SWITCHING:
-            return prims + _switching_leg("", ports.p, ports.n, ports.out, ports.c, True, params)
+            return prims + _switching_leg("", ports.p, ports.n, ports.out, gate, True, params)
         return prims + _averaged_leg(
             "", ports.p, ports.n, ports.out, ports.m, ports.s, _duty(ports.c), params
         )
@@ -146,7 +164,7 @@ class HalfBridge(PhysicalComponent):
 class HBridge(PhysicalComponent):
     """H-bridge (two legs) between DC link p (+) and n (-), outputs a and b, control u.
 
-    model "switching": u > threshold gives V(a, b) = +V(p, n), otherwise -V(p, n).
+    model "switching": u + V(g) > threshold gives V(a, b) = +V(p, n), otherwise -V(p, n).
     model "averaged": u is the duty cycle d, V(a, b) = (2d - 1) * V(p, n).
     """
 
@@ -156,6 +174,7 @@ class HBridge(PhysicalComponent):
         Port("a", ELECTRICAL, "output A"),
         Port("b", ELECTRICAL, "output B"),
         SignalInput("u", "", "gate or duty"),
+        Port("g", ELECTRICAL, "gate", optional=True),
     )
     parameters = _PARAMETERS
     internal = {
@@ -168,12 +187,13 @@ class HBridge(PhysicalComponent):
 
     def network(self, ports: Ports, params: Mapping[str, object]) -> list[Primitive]:
         p, n, c = ports.p, ports.n, ports.c
-        prims: list[Primitive] = [ExternalSource("Vc", c, ports.ground, "v", "u", 0.0)]
+        gate, prims = _gate(ports)
+        prims.append(ExternalSource("Vc", c, ports.ground, "v", "u", 0.0))
         if _model(params) == SWITCHING:
             return (
                 prims
-                + _switching_leg("A", p, n, ports.a, c, True, params)
-                + _switching_leg("B", p, n, ports.b, c, False, params)
+                + _switching_leg("A", p, n, ports.a, gate, True, params)
+                + _switching_leg("B", p, n, ports.b, gate, False, params)
             )
         duty = _duty(c)
         return (

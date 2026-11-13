@@ -21,6 +21,7 @@ BUILTIN_MODULES: tuple[str, ...] = (
     "core.physical.library.converters.sources",
     "core.physical.library.converters.sensors",
     "core.physical.library.converters.solver",
+    "core.physical.library.converters.pwm",
     "core.physical.library.composite.motor",
     "core.physical.library.composite.ratios",
     "core.physical.library.composite.battery",

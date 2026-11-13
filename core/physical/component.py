@@ -97,11 +97,16 @@ class PhysicalComponentError(ValueError):
 
 @dataclass(frozen=True)
 class Port:
-    """A conserving port of ``domain``."""
+    """A conserving port of ``domain``.
+
+    ``optional``: the port may be left unconnected without a warning (the component
+    must then keep the port's node defined, e.g. with a resistor to ``GROUND``).
+    """
 
     name: str
     domain: str
     label: str = ""
+    optional: bool = False
 
     @property
     def role(self) -> str:
@@ -376,6 +381,23 @@ class SubcircuitInstance:
     text: str
 
 
+@dataclass(frozen=True)
+class Crossing:
+    """A breakpoint hint for the combined run (M4); adds no element to the circuit.
+
+    ``carrier`` names a ``VoltageSource`` of this component with a ``Pulse`` waveform,
+    ``level`` an ``ExternalSource`` of kind "v". After each controller tick the
+    CoSimulator sets an ngspice breakpoint at every time in the next tick where the
+    carrier crosses the level's held value, so a comparator of the two (a
+    ``Behavioural``) switches on an accepted time point. The edge itself is still made
+    inside ngspice. Runs without a controller ignore it.
+    """
+
+    name: str
+    carrier: str
+    level: str
+
+
 Primitive = (
     Resistor
     | Capacitor
@@ -390,6 +412,7 @@ Primitive = (
     | ExternalSource
     | Sensor
     | SubcircuitInstance
+    | Crossing
 )
 PRIMITIVE_TYPES = (
     Resistor,
@@ -405,6 +428,7 @@ PRIMITIVE_TYPES = (
     ExternalSource,
     Sensor,
     SubcircuitInstance,
+    Crossing,
 )
 
 
@@ -700,6 +724,7 @@ def check_network(
         names.add(prim.name)
         good.append(prim)
     sources = {p.name for p in good if isinstance(p, VoltageSource)}
+    by_name = {p.name: p for p in good}
 
     def domain_of(node: object, prim: str) -> str | None:
         if node == GROUND:
@@ -730,6 +755,9 @@ def check_network(
             continue
         if isinstance(prim, SubcircuitInstance):
             _check_subcircuit(prim, domain_of, err)
+            continue
+        if isinstance(prim, Crossing):
+            _check_crossing(prim, by_name, err)
             continue
         same_domain(prim.a, prim.b, n)
         if prim.a == prim.b:
@@ -775,6 +803,21 @@ def _check_subcircuit(
         err("subckt must name a .subckt", prim.name)
     if not isinstance(prim.text, str) or ".subckt" not in prim.text.lower():
         err("text must hold the .subckt definition", prim.name)
+
+
+def _check_crossing(
+    prim: Crossing, by_name: Mapping[str, Primitive], err: Callable[..., None]
+) -> None:
+    carrier = by_name.get(prim.carrier) if isinstance(prim.carrier, str) else None
+    if not isinstance(carrier, VoltageSource) or not isinstance(carrier.waveform, Pulse):
+        err(
+            f"carrier {prim.carrier!r} must be a VoltageSource with a Pulse waveform "
+            "of this component",
+            prim.name,
+        )
+    level = by_name.get(prim.level) if isinstance(prim.level, str) else None
+    if not isinstance(level, ExternalSource) or level.kind != "v":
+        err(f"level {prim.level!r} must be a kind 'v' ExternalSource of this component", prim.name)
 
 
 def _check_waveform(wave: object, prim: str, err: Callable[..., None]) -> None:
@@ -905,5 +948,8 @@ def compose(
             changes["signal"] = sig[prim.signal]
         if isinstance(prim, SubcircuitInstance):
             changes["nodes"] = tuple(node_map[n] for n in prim.nodes)
+        if isinstance(prim, Crossing):
+            changes["carrier"] = names[prim.carrier]
+            changes["level"] = names[prim.level]
         out.append(dataclasses.replace(prim, **changes))  # type: ignore[arg-type]
     return out

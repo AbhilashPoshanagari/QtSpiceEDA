@@ -20,6 +20,8 @@ For one ``PhysicalNetwork`` (from ``NetworkExtractor``):
   takes its value from the GetVSRCData / GetISRCData callbacks, C1). With
   ``external=False`` it is a plain ``dc <initial>`` source, so the deck runs in
   plain ngspice;
+- a ``Crossing`` adds no element: it becomes a ``CrossingHint`` (the carrier's
+  pulse in volts and the level's external element) for the CoSimulator (M4);
 - a ``SubcircuitInstance`` becomes ``X_<block>_<name> <nodes> <subckt>``; the
   ``.subckt`` blocks and models of its text are added to the circuit once (the same
   name with a different definition is an error);
@@ -53,6 +55,7 @@ from core.physical.component import (
     VCVS,
     Behavioural,
     Capacitor,
+    Crossing,
     CurrentSource,
     ExternalSource,
     Inductor,
@@ -103,6 +106,17 @@ class ExternalInput:
     domain: str = ""
     """Domain of the source's nodes: the CoSimulator converts the signal value to a
     voltage or current with this domain (rule 12)."""
+
+
+@dataclass(frozen=True)
+class CrossingHint:
+    """Where the CoSimulator sets breakpoints: when ``carrier`` (a pulse, in volts)
+    crosses the held voltage of external source ``level`` (M4, ``Crossing``)."""
+
+    block: str
+    carrier: Pulse
+    level: str
+    """Circuit element name of the external source, e.g. ``V_pwm_Vd``."""
 
 
 SOLVER_SETTINGS = ("Ts", "reltol", "abstol", "max_step")
@@ -169,6 +183,7 @@ class MappedNetwork:
     units: dict[str, str] = field(default_factory=dict)
     """Physical vector name -> SI unit."""
     external_inputs: list[ExternalInput] = field(default_factory=list)
+    crossings: list[CrossingHint] = field(default_factory=list)
     node_names: dict[PortRef, str] = field(default_factory=dict)
     """(block, port) -> circuit node."""
     diagnostics: list[NetworkDiagnostic] = field(default_factory=list)
@@ -351,7 +366,11 @@ class NetworkMapper:
                     nodes[port.name] = out.node_names.get((block.id, port.name), "")
             for internal, domain in spec.internal.items():
                 nodes[internal] = new_node(domain)
-            names = {p.name: element_name(p, block.id) for p in result.primitives}
+            names = {
+                p.name: element_name(p, block.id)
+                for p in result.primitives
+                if not isinstance(p, Crossing)
+            }
             clash = False
             for name in names.values():
                 other = used.setdefault(name.casefold(), block.id)
@@ -370,7 +389,16 @@ class NetworkMapper:
 
             outputs = {p.name: p.unit for p in spec.ports if isinstance(p, SignalOutput)}
             domains = spec.node_domains()
+            by_name = {p.name: p for p in result.primitives}
             for prim in result.primitives:
+                if isinstance(prim, Crossing):
+                    carrier = by_name[prim.carrier]
+                    assert isinstance(carrier, VoltageSource)  # check_network made sure
+                    assert isinstance(carrier.waveform, Pulse)
+                    out.crossings.append(
+                        CrossingHint(block.id, carrier.waveform, names[prim.level])
+                    )
+                    continue
                 if isinstance(prim, SubcircuitInstance):
                     element = _subcircuit_element(prim, block.id, nodes, names, out)
                     if element is not None:

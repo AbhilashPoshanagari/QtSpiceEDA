@@ -11,6 +11,9 @@ imports it. Results are written up in the "Spike results" section of `CLAUDE.md`
 | `spike3_child.py` | Spike 1 in a spawned `multiprocessing` child (like `BlockRunner`), second child, terminated child |
 | `spike4_msd.py` | Mass-spring-damper as C = m, R = 1/b, L = 1/k vs the analytic step response |
 | `spike5_locale.py` | de_DE locale with and without `setlocale(LC_NUMERIC, "C")` |
+| `spike6_pwm.py` ... `spike6e_pwm.py` | M4: 20 kHz PWM edges in plain ngspice (held duty vs sawtooth `pulse`): comparator forms, RC filter, curvature precursor, `S` switch, capped max step |
+| `spike6f_pwm_cosim.py` | M4: time points around a PWM edge in a combined run with the `Crossing` breakpoint hint |
+| `spike7_pi_loop.py` | M4: peak speed of the DC-motor PI loop for each anti-windup mode (`python -m scratch.phase3.spike7_pi_loop clamping`) |
 | `fresh.py` | Runs a function in a fresh spawned process (ngspice is global per process) |
 
 Run from the repository root (needs ngspice, see `third_party/ngspice/README.md`):

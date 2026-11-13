@@ -198,6 +198,15 @@ Python 3.12; the CI `spikes` job repeats them on Windows (ngspice 44.2), macOS a
   shares the process libc: see the CI `spikes` job log for the result without the fix.
   Note: core/sim/ngspice_adapter.py does not call setlocale(LC_NUMERIC, "C") today,
   although rule 4 requires it.
+- M4 PWM edges (scratch/phase3/spike6*_pwm.py): a comparator of a held duty and a
+  `pulse` sawtooth switches exactly at the carrier corners (ngspice breakpoints) but
+  steps over the duty crossing: up to 4.5 us late at 20 kHz. Smooth comparators, an RC
+  after it, a curvature "precursor" and the S switch do not help; no XSPICE code models
+  are shipped. Capping the step costs: 1 us -> 390 ns error, 500 ns -> 177 ns, at
+  15-25x the points. Chosen: the `Crossing` primitive; the CoSimulator sets a pair of
+  breakpoints at edge +- 1e-4*Ts from each tick (one on the edge alone is not enough:
+  the comparator is undecided there and ngspice's next step is long). Edges then land
+  within 20 ns. The edge is still made by the comparator inside ngspice.
 
 Note : wheh you do the commit add 
 Authored by and Co-Authored-By: Abhilash Poshanagari <abhi.sree762@gmail.com>

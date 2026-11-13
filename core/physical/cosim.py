@@ -24,6 +24,16 @@ The deck runs two ticks past ``t_end`` and stops half a tick after the last tick
 A Solver Configuration's ``Ts`` must equal the run's time step; its ``max_step``
 caps ngspice's internal step (never above Ts) and reltol / abstol go into the deck.
 Signal values become source values through the Domain registry (rule 12).
+
+PWM edges (M4) are made inside ngspice by a comparator of a held duty and a pulse
+carrier. A comparator edge is not a breakpoint, so ngspice would step over it; a
+``Crossing`` hint makes the CoSimulator set a pair of breakpoints, ``_EDGE_EPS * Ts``
+before and after every time in the next tick where the carrier crosses the held value
+(``pulse_crossings``), together with the next tick's breakpoint. The comparator
+switches between the two accepted points, so the edge is known to within that
+distance. (One breakpoint on the crossing itself is not enough: the comparator is
+undecided there and ngspice's next step is long.) The controller never sets a source
+value at an edge.
 """
 
 from __future__ import annotations
@@ -38,7 +48,9 @@ import numpy as np
 from core.blocks.diagram import DiagramError
 from core.blocks.engine import ExecutionEngine, NetworkError, port_key
 from core.netlist.model import ERROR
+from core.physical.component import Pulse
 from core.physical.mapper import (
+    CrossingHint,
     MappedNetwork,
     NetworkMapper,
     max_step,
@@ -55,8 +67,47 @@ TIME = "time"
 MIN_TS = 10e-6
 """Smallest controller tick v0.3 supports."""
 
+_EDGE_EPS = 1e-4
+"""Crossing breakpoints are this many Ts before and after the edge. It must stay above
+ngspice's smallest breakpoint spacing (5e-5 times the largest step, at most Ts)."""
+
 _TICK_TOL = 1e-6
 """A time point is on tick k when |t - k*Ts| <= _TICK_TOL * Ts."""
+
+
+def pulse_crossings(wave: Pulse, level: float, t0: float, t1: float) -> list[float]:
+    """Times in the open interval (t0, t1) where ``wave`` crosses ``level`` on one of its
+    ramps (ngspice ``pulse`` timing), in order.
+
+    Levels at or beyond ``v1`` / ``v2`` give none (the corners are ngspice's own
+    breakpoints already); a ramp of zero length gives none either.
+    """
+    span = wave.v2 - wave.v1
+    if not span or not (t1 > t0):
+        return []
+    frac = (level - wave.v1) / span
+    if not 0.0 < frac < 1.0:
+        return []
+    offsets = []
+    if wave.rise > 0:
+        offsets.append(wave.rise * frac)
+    if wave.fall > 0:
+        offsets.append(wave.rise + wave.width + wave.fall * (1.0 - frac))
+    if not offsets:
+        return []
+    if wave.period > 0:
+        first = max(0, math.floor((t0 - wave.delay - wave.period) / wave.period))
+        last = math.floor((t1 - wave.delay) / wave.period)
+        if wave.ncycles:
+            last = min(last, int(wave.ncycles) - 1)
+        cycles = range(first, last + 1)
+    else:
+        cycles = range(1)
+    out = []
+    for n in cycles:
+        start = wave.delay + n * wave.period
+        out.extend(t for off in offsets if t0 < (t := start + off) < t1)
+    return sorted(out)
 
 
 class CoSimError(RuntimeError):
@@ -248,6 +299,21 @@ class CoSimulator:
         warnings: list[str] = []
         tol = _TICK_TOL * ts
 
+        hints: list[CrossingHint] = list(mapped.crossings)
+
+        def schedule(k: int) -> None:
+            """Breakpoints for the interval after tick k: the next tick and the edges."""
+            if k + 1 >= steps:
+                return
+            t0, t1 = k * ts, (k + 1) * ts
+            eps = _EDGE_EPS * ts
+            for hint in hints:
+                level = held.get(hint.level.lower(), 0.0)
+                for edge in pulse_crossings(hint.carrier, level, t0 + eps, t1 - eps):
+                    adapter.set_breakpoint(edge - eps)
+                    adapter.set_breakpoint(edge + eps)
+            adapter.set_breakpoint(t1)
+
         def on_point(t: float, point: dict[str, float]) -> None:
             if self._error is not None:
                 return
@@ -262,8 +328,7 @@ class CoSimulator:
                     for holder in holders.values():
                         holder.sense(point)
                     self.engine.tick(k)
-                    if k + 1 < steps:
-                        adapter.set_breakpoint((k + 1) * ts)
+                    schedule(k)
             except BaseException as err:  # stop the run; run() raises it
                 self._error = err
                 adapter.stop()
