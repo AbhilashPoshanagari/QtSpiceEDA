@@ -14,6 +14,7 @@ Needs the grid extra: `pip install -e ".[dev,grid]"` (dss-python 0.15.x).
 | `spike2_contexts.py` | S2: two contexts (IEEE 13 + IEEE 34) do not affect each other; `compile` moves the process cwd unless `AllowChangeDir=False`; IEEE 13 in a spawn + Pipe + daemon child (BlockRunner pattern); a child terminated during IEEE 123 solves |
 | `spike3_pyinstaller/` | S3: `app.py` (10 lines: compile IEEE 13, print 671.1), `build.py` (one-file builds: plain, `--collect-binaries`, `--hidden-import _cffi_backend`, our hook; runs each exe and lists the bundled native libraries), `hooks/hook-dss_python_backend.py` |
 | `spike4_api.py` | S4: every element of a feeder read back through the API; per value, typed interface or `ActiveDSSElement.Properties()`; unit codes, switch, taps before/after the solve, bus coordinates, voltage bases (`python scratch/phase4/spike4_api.py ieee34`) |
+| `spike5_locale.py` | S5: de_DE locale with and without `setlocale(LC_NUMERIC, "C")`: reading "1.5" (typed, Properties, `?`), numbers written by `save circuit`, IEEE 13 against its reference |
 
 Run from the repository root:
 
@@ -23,6 +24,7 @@ python scratch/phase4/spike1_install.py
 python scratch/phase4/spike2_contexts.py
 python scratch/phase4/spike3_pyinstaller/build.py          # all variants, ~1 min each
 python scratch/phase4/spike4_api.py
+python scratch/phase4/spike5_locale.py
 ```
 
 The CI job `spikes-grid` runs all of the above on Windows, macOS and Linux.

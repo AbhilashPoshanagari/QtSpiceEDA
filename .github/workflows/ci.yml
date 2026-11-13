@@ -118,6 +118,13 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: German locale (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y locales
+          sudo locale-gen de_DE.UTF-8
+
       - name: Install Python packages
         run: python -m pip install -e ".[dev,grid]"
 
@@ -130,6 +137,7 @@ jobs:
           python scratch/phase4/spike2_contexts.py
           python scratch/phase4/spike3_pyinstaller/build.py
           python scratch/phase4/spike4_api.py
+          python scratch/phase4/spike5_locale.py
 
   # Build the installable apps (PyInstaller one-folder builds) and upload them.
   package:
