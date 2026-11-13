@@ -27,12 +27,7 @@
     "diagram_t_end": 1.0,
     "diagram_dt": 0.001
   },
-  "results": [
-    {
-      "name": "netlist",
-      "file": "netlist.npz"
-    }
-  ],
+  "results": [],
   "simulation": {
     "compat_mode": "ltpsa"
   },
@@ -176,8 +171,7 @@
           "title": "H(f) = V(out)/V(in)",
           "traces": [
             "V(out)/V(in)",
-            "V(n003)/V(n001)",
-            "V(n003)"
+            "V(n003)/V(n001)"
           ],
           "y": {
             "auto": true,

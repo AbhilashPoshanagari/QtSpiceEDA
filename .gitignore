@@ -23,3 +23,6 @@ third_party/ngspice/bin/
 
 # Office lock files
 ~$*
+
+# Personal projects (machine-specific paths, saved results): never shipped
+/local/
