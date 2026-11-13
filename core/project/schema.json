@@ -7,7 +7,7 @@
   "required": ["format", "version", "netlists", "diagrams", "block_sources", "analysis", "results"],
   "additionalProperties": false,
   "if": { "properties": { "version": { "const": 1 } } },
-  "then": { "not": { "anyOf": [{ "required": ["simulation"] }, { "required": ["schematic"] }, { "required": ["symbols"] }, { "required": ["plots"] }, { "required": ["plot_defs"] }, { "required": ["physical_sources"] }] } },
+  "then": { "not": { "anyOf": [{ "required": ["simulation"] }, { "required": ["schematic"] }, { "required": ["symbols"] }, { "required": ["plots"] }, { "required": ["plot_defs"] }, { "required": ["physical_sources"] }, { "required": ["sweep"] }] } },
   "else": { "required": ["simulation"] },
   "properties": {
     "format": { "const": "qtspice-project" },
@@ -100,6 +100,17 @@
         "tran": { "$ref": "#/$defs/plotLayout" },
         "ac": { "$ref": "#/$defs/plotLayout" },
         "dc": { "$ref": "#/$defs/plotLayout" }
+      }
+    },
+    "sweep": {
+      "description": "Format version 2, optional (M7; part of format version 3 with O1): the block diagram's parameter sweep, one block parameter and its values as the user typed them (e.g. \"1m 2m 5m\"). Left out when there is none.",
+      "type": "object",
+      "required": ["block", "parameter", "values"],
+      "additionalProperties": false,
+      "properties": {
+        "block": { "type": "string" },
+        "parameter": { "type": "string" },
+        "values": { "type": "string" }
       }
     },
     "plot_defs": {

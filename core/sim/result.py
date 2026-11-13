@@ -20,12 +20,17 @@ class SimulationResult:
     ``axis`` names the independent vector (``"time"``, ``"frequency"``, a DC sweep
     source, ...) and is also a key in ``vectors``. An operating-point result has an
     empty ``axis`` and one-element vectors. AC vectors are complex arrays.
+
+    ``runs`` (M7): a parameter sweep's label per run, e.g. ``["J=0.001", "J=0.002"]``;
+    vector ``name@k`` then belongs to run k (1-based, ``core.blocks.sweep``). Empty
+    for a single run.
     """
 
     axis: str
     vectors: dict[str, np.ndarray] = field(default_factory=dict)
     units: dict[str, str] = field(default_factory=dict)
     analysis: str = ""
+    runs: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.axis and self.axis not in self.vectors:
@@ -76,6 +81,8 @@ class SimulationResult:
             "units": self.units,
             "order": list(self.vectors),
         }
+        if self.runs:
+            meta["runs"] = list(self.runs)
         arrays = {f"v{i}": np.asarray(v) for i, v in enumerate(self.vectors.values())}
         np.savez_compressed(Path(path), **arrays, **{_META_KEY: np.array(json.dumps(meta))})
 
@@ -91,4 +98,5 @@ class SimulationResult:
             vectors=vectors,
             units=dict(meta["units"]),
             analysis=meta["analysis"],
+            runs=[str(r) for r in meta.get("runs", [])],
         )

@@ -95,6 +95,8 @@ from core.blocks.library import builtin_specs
 from core.blocks.registry import BlockRegistry, SourceResult
 from core.blocks.runner import DEFAULT_TIMEOUT, BlockRunner, RunOutcome
 from core.blocks.spec import BlockSpec, is_plain_constant
+from core.blocks.sweep import SweepRunner, SweepSpec, parse_values, typed
+from core.blocks.sweep import check as check_sweep
 from core.netlist.parser import parse_number
 from core.physical.component import SOLVER, NetworkDiagnostic
 from core.physical.cosim import MIN_TS, CoSimulator
@@ -180,6 +182,9 @@ class DiagramState:
     dt: float = DEFAULT_DT
     physical_sources: list[tuple[str, str]] = field(default_factory=list)
     """M5: (document, code) of each user physical component document."""
+    sweep: dict[str, str] | None = None
+    """M7: the parameter sweep, {"block", "parameter", "values"} (values as typed),
+    or None."""
 
 
 MAX_CONSOLE_LINES = 5000
@@ -713,6 +718,8 @@ class DiagramController(QObject):
     componentDocumentChanged = Signal()
     componentDocumentReplaced = Signal(str)  # code of the current component document
     _runDone = Signal(object)  # RunOutcome, emitted from the run thread
+    _sweepProgress = Signal(int, int, str)  # run k of n, its label (from the run thread)
+    sweepChanged = Signal()
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -772,7 +779,7 @@ class DiagramController(QObject):
         # is destroyed, and its last indexChanged must not reach other objects.
         self._undo.indexChanged.connect(self.diagramEdited)
 
-        self._runner: BlockRunner | None = None
+        self._runner: BlockRunner | SweepRunner | None = None
         self._thread: threading.Thread | None = None
         self._running = False
         self._run_status = ""
@@ -783,6 +790,8 @@ class DiagramController(QObject):
         self._dt = DEFAULT_DT
         self.timeout = DEFAULT_TIMEOUT
         self._runDone.connect(self._on_run_done, Qt.ConnectionType.QueuedConnection)
+        self._sweep: dict[str, str] | None = None
+        self._sweepProgress.connect(self._on_sweep_progress, Qt.ConnectionType.QueuedConnection)
         app = QCoreApplication.instance()
         if app is not None:
             app.aboutToQuit.connect(self.shutdown)
@@ -1438,6 +1447,7 @@ class DiagramController(QObject):
             t_end=self._t_end,
             dt=self._dt,
             physical_sources=list(self._components.sources().items()),
+            sweep=dict(self._sweep) if self._sweep else None,
         )
 
     def load_state(self, state: DiagramState) -> list[str]:
@@ -1532,6 +1542,16 @@ class DiagramController(QObject):
         self._undo.setClean()
         self._set_t_end(state.t_end)
         self._set_dt(state.dt)
+        self._sweep = None
+        if state.sweep:
+            problem = self.setSweep(
+                str(state.sweep.get("block", "")),
+                str(state.sweep.get("parameter", "")),
+                str(state.sweep.get("values", "")),
+            )
+            if problem:
+                warnings.append(f"the parameter sweep was not loaded: {problem}")
+        self.sweepChanged.emit()
         self._result = None
         self._set_hint("")
         self._run_details = ""
@@ -1559,6 +1579,15 @@ class DiagramController(QObject):
         Returns False (with ``runStatus`` set) if it cannot start. An algebraic loop
         marks its blocks with ``inLoop``.
         """
+        return self._start(t_end, dt, sweep=False)
+
+    @Slot(float, float, result=bool)
+    def runSweep(self, t_end: float, dt: float) -> bool:  # noqa: N802 - QML API
+        """M7: run the diagram once per value of the parameter sweep (``setSweep``),
+        one run after another; the result has every run, labelled (``runs``)."""
+        return self._start(t_end, dt, sweep=True)
+
+    def _start(self, t_end: float, dt: float, sweep: bool) -> bool:
         if self._running:
             return False
         self._set_loop(set())
@@ -1610,17 +1639,42 @@ class DiagramController(QObject):
                 "ngspice is not available: a diagram with physical blocks needs the "
                 "ngspice shared library"
             )
+        spec: SweepSpec | None = None
+        if sweep:
+            spec, problem = self._sweep_spec()
+            if spec is None:
+                return self._not_started(problem)
         sources = {doc: self._registry.source(doc) for doc in self._registry.documents()}
-        runner = BlockRunner(
-            self._diagram.to_dict(),
-            sources,
-            t_end,
-            dt,
-            timeout=self.timeout,
-            components=self._components.sources(),
-        )
+        timeout = self.timeout
+        components = self._components.sources()
+
+        def make_runner(diagram: dict) -> BlockRunner:
+            return BlockRunner(diagram, sources, t_end, dt, timeout=timeout, components=components)
+
+        runner: BlockRunner | SweepRunner
+        if spec is not None:
+            # a closure with a weak reference: never a bound method of this QObject
+            # in a core object it owns (no reference cycle)
+            ref = weakref.ref(self)
+
+            def progress(k: int, n: int, label: str) -> None:
+                ctl = ref()
+                if ctl is not None:
+                    ctl._sweepProgress.emit(k, n, label)
+
+            runner = SweepRunner(self._diagram.to_dict(), spec, make_runner, progress)
+        else:
+            runner = make_runner(self._diagram.to_dict())
         self._runner = runner
         self._set_running(True)
+        if spec is not None:
+            values = ", ".join(f"{v:g}" for v in spec.values)
+            self._log(
+                [
+                    f"Parameter sweep: {len(spec.values)} runs of "
+                    f"{spec.block}.{spec.parameter} = {values}"
+                ]
+            )
         if engine.networks:
             count = len(engine.networks)
             self._log(
@@ -1710,12 +1764,84 @@ class DiagramController(QObject):
         if thread is not None and thread is not threading.current_thread():
             thread.join(timeout=10)
 
-    def _run_thread(self, runner: BlockRunner) -> None:
+    # ---- parameter sweep (M7)
+
+    def _get_sweep_block(self) -> str:
+        return self._sweep["block"] if self._sweep else ""
+
+    def _get_sweep_parameter(self) -> str:
+        return self._sweep["parameter"] if self._sweep else ""
+
+    def _get_sweep_values(self) -> str:
+        return self._sweep["values"] if self._sweep else ""
+
+    sweepBlock = Property(str, _get_sweep_block, notify=sweepChanged)  # noqa: N815
+    sweepParameter = Property(str, _get_sweep_parameter, notify=sweepChanged)  # noqa: N815
+    sweepValues = Property(str, _get_sweep_values, notify=sweepChanged)  # noqa: N815
+
+    @Slot(result="QStringList")
+    def sweepBlocks(self) -> list[str]:  # noqa: N802 - QML API
+        """Ids of the blocks that have a parameter that can be swept."""
+        return [b.id for b in self._diagram.blocks if self.sweepParameters(b.id)]
+
+    @Slot(str, result="QStringList")
+    def sweepParameters(self, block_id: str) -> list[str]:  # noqa: N802 - QML API
+        """The settings of ``block_id`` that can be swept (numbers)."""
+        try:
+            settings = self._diagram.effective_settings(block_id)
+        except DiagramError:
+            return []
+        return [
+            name
+            for name in settings
+            if not check_sweep(SweepSpec(block_id, name, (1.0,)), self._diagram)
+        ]
+
+    @Slot(str, str, str, result=str)
+    def setSweep(self, block_id: str, parameter: str, values: str) -> str:  # noqa: N802
+        """Set the parameter sweep: sweep ``parameter`` of ``block_id`` over ``values``
+        (text such as ``1m 2m 5m``). Returns "" or why it was not set. A run setting,
+        like the end time: not an undo step."""
+        numbers, problems = parse_values(values)
+        if problems:
+            return problems[0]
+        found = check_sweep(SweepSpec(block_id, parameter, tuple(numbers)), self._diagram)
+        if found:
+            return found[0].message
+        self._sweep = {"block": block_id, "parameter": parameter, "values": values.strip()}
+        self.sweepChanged.emit()
+        return ""
+
+    @Slot()
+    def clearSweep(self) -> None:  # noqa: N802 - QML API
+        if self._sweep is not None:
+            self._sweep = None
+            self.sweepChanged.emit()
+
+    def _sweep_spec(self) -> tuple[SweepSpec | None, str]:
+        """The sweep to run now, or (None, why not)."""
+        if not self._sweep:
+            return None, "no parameter sweep is set"
+        numbers, problems = parse_values(self._sweep["values"])
+        if problems:
+            return None, f"parameter sweep: {problems[0]}"
+        spec = SweepSpec(self._sweep["block"], self._sweep["parameter"], tuple(numbers))
+        found = check_sweep(spec, self._diagram)
+        if found:
+            return None, f"parameter sweep: {found[0].message}"
+        return typed(self._diagram, spec), ""
+
+    @Slot(int, int, str)
+    def _on_sweep_progress(self, k: int, n: int, label: str) -> None:
+        if self._running:
+            self._set_run_status(f"Running {k} of {n} ({label})…")
+
+    def _run_thread(self, runner: BlockRunner | SweepRunner) -> None:
         outcome = runner.run()
         self._runDone.emit((runner, outcome))
 
     @Slot(object)
-    def _on_run_done(self, payload: tuple[BlockRunner, RunOutcome]) -> None:
+    def _on_run_done(self, payload: tuple[BlockRunner | SweepRunner, RunOutcome]) -> None:
         runner, outcome = payload
         if runner is not self._runner:
             return
@@ -1728,7 +1854,11 @@ class DiagramController(QObject):
             steps = len(outcome.result.vectors["time"])
             traces = outcome.result.trace_names()
             shown = ", ".join(traces) if traces else "no Scope blocks"
-            self._set_run_status(f"Finished: {steps} steps ({shown})")
+            if outcome.result.runs:
+                runs = ", ".join(outcome.result.runs)
+                self._set_run_status(f"Finished: {len(outcome.result.runs)} runs ({runs})")
+            else:
+                self._set_run_status(f"Finished: {steps} steps ({shown})")
             self._log([self._run_status])
             self._set_running(False)
             self.resultReady.emit()

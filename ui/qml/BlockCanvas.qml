@@ -97,6 +97,8 @@ Item {
         }
     }
 
+    SweepDialog { id: sweepDialog }
+
     Shortcut {
         sequences: [StandardKey.Delete, "Backspace"]
         enabled: root.visible
@@ -156,6 +158,20 @@ Item {
                     text: qsTr("Run")
                     enabled: !DiagramController.running
                     onClicked: root.run()
+                }
+                ToolButton {
+                    // M7: run once per value of one block parameter
+                    objectName: "diagramSweepButton"
+                    text: DiagramController.sweepBlock !== "" ? qsTr("Sweep (%1.%2)…")
+                              .arg(DiagramController.sweepBlock).arg(DiagramController.sweepParameter)
+                          : qsTr("Sweep…")
+                    enabled: !DiagramController.running
+                    onClicked: {
+                        sweepDialog.tEnd = Number(tEndField.text)
+                        sweepDialog.dt = Number(dtField.text)
+                        const sel = DiagramController.selectedBlock
+                        sweepDialog.openFor(sel.id !== undefined ? sel.id : "")
+                    }
                 }
                 ToolButton {
                     objectName: "diagramStopButton"

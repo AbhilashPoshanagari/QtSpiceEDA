@@ -44,9 +44,10 @@ DEFAULT_DT = 0.001
 _NAME = re.compile(r"^[A-Za-z0-9_-]+$")
 _KEYS_V1 = ("format", "version", "netlists", "diagrams", "block_sources", "analysis", "results")
 _KEYS = (*_KEYS_V1, "simulation")  # version 2
-_OPTIONAL_KEYS = ("schematic", "symbols", "plots", "plot_defs", "physical_sources")
-"""Version 2 fields that may be left out (``physical_sources``: M5; O1 makes it
-part of format version 3)."""
+_OPTIONAL_KEYS = ("schematic", "symbols", "plots", "plot_defs", "physical_sources", "sweep")
+"""Version 2 fields that may be left out (``physical_sources``: M5, ``sweep``: M7;
+O1 makes them part of format version 3)."""
+_SWEEP_FIELDS = ("block", "parameter", "values")
 
 
 class ProjectError(Exception):
@@ -113,6 +114,9 @@ class Project:
     plot_defs: str | None = None
     # M5: the code of each user physical component document. Left out when empty.
     physical_sources: list[BlockSource] = field(default_factory=list)
+    # M7: the diagram's parameter sweep {"block", "parameter", "values"} (values as
+    # typed, e.g. "1m 2m 5m"). None = no sweep, left out of the file.
+    sweep: dict[str, str] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """The JSON content of the .qsp file (results only by file name). ``schematic``
@@ -143,6 +147,8 @@ class Project:
             data["physical_sources"] = [
                 {"document": s.document, "code": s.code} for s in self.physical_sources
             ]
+        if self.sweep is not None:
+            data["sweep"] = {k: str(self.sweep.get(k, "")) for k in _SWEEP_FIELDS}
         return data
 
     def to_json(self) -> str:
@@ -278,6 +284,8 @@ def load_project(path: str | Path) -> LoadResult:
     project.physical_sources = [
         BlockSource(s["document"], s["code"]) for s in data.get("physical_sources", [])
     ]
+    if "sweep" in data:
+        project.sweep = {k: data["sweep"][k] for k in _SWEEP_FIELDS}
     warnings: list[str] = []
     if data.get("schematic") is not None:
         schematic, found = Schematic.from_dict(data["schematic"])
@@ -354,6 +362,14 @@ def _check_body(data: dict[str, Any]) -> list[str]:
     items("block_sources", {"document": str, "code": str})
     items("physical_sources", {"document": str, "code": str})
     items("results", {"name": str, "file": str})
+    if "sweep" in data:
+        sweep = data["sweep"]
+        if (
+            not isinstance(sweep, dict)
+            or set(sweep) != set(_SWEEP_FIELDS)
+            or not all(isinstance(v, str) for v in sweep.values())
+        ):
+            errors.append("sweep must have exactly the strings block, parameter and values")
     if errors:
         return errors
 

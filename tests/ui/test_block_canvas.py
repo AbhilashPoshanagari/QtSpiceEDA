@@ -234,6 +234,40 @@ def test_properties_panel_shows_a_check_box_for_steady_state(scene: Scene, qtbot
     assert settings("SolverConfiguration1")["steady_state"] is False
 
 
+def test_sweep_dialog_sets_and_runs_a_sweep(scene: Scene, qtbot) -> None:
+    # M7: Sweep… opens the dialog on the selected block; Run sweep runs every value
+    ctl = scene.ctl
+
+    def popup(name: str) -> QObject:
+        found = scene.window.findChild(QObject, name)
+        assert found is not None, name
+        return found
+
+    for i, name in enumerate(("Constant", "Gain", "Scope")):
+        ctl.addBlock(name, 160 * i, 100)
+    ctl.connectPorts("Constant1.y", "Gain1.u")
+    ctl.connectPorts("Gain1.y", "Scope1.u")
+    qtbot.wait(20)
+    click(scene.window, scene.block_center("Gain1"))
+    click(scene.window, item_center(find_item(scene.canvas, "diagramSweepButton")))
+    dialog = popup("sweepDialog")
+    qtbot.waitUntil(lambda: dialog.property("opened") is True)
+    assert popup("sweepBlock").property("currentText") == "Gain1"
+    assert popup("sweepParameter").property("currentText") == "k"
+    values = popup("sweepValues")
+    values.setProperty("text", "1 lots")
+    click(scene.window, item_center(popup("sweepRunButton")))
+    problem = popup("sweepProblem")
+    assert "not a number" in problem.property("text")
+    values.setProperty("text", "1 2")
+    with qtbot.waitSignal(ctl.resultReady, timeout=60_000):
+        click(scene.window, item_center(popup("sweepRunButton")))
+    assert ctl.result.runs == ["k=1", "k=2"]
+    qtbot.waitUntil(lambda: dialog.property("visible") is False)
+    button = find_item(scene.canvas, "diagramSweepButton")
+    assert button.property("text") == "Sweep (Gain1.k)…"
+
+
 def test_algebraic_loop_is_highlighted(scene: Scene, qtbot) -> None:
     scene.ctl.addBlock("Gain", 0, 0)
     scene.ctl.addBlock("Gain", 200, 0)

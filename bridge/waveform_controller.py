@@ -24,6 +24,13 @@ out and labelled in those units, taken from the Domain registry. It is a view
 setting only: expressions are still computed from the SI values. ``vectorGroup``
 names the component a physical vector belongs to (``inertia`` for ``inertia.A.w``)
 and ``groupedVectorNames`` lists the vectors group by group, for the Add Trace dialog.
+
+Parameter sweeps (M7). A sweep result has ``runs`` (one label per run) and vectors
+``<name>@<k>`` (``core.blocks.sweep``). Its trace list and Add Trace dialog show the
+base names; adding a base name (or an expression of base names) adds one trace per
+run, ``<name>@<k>``, each in its own colour. An expression trace ``<expr>@<k>`` is
+computed from run k's vectors. Pane and cursor entries carry a ``label`` such as
+``inertia.A.w  J=0.002`` for the run they belong to.
 """
 
 from __future__ import annotations
@@ -41,6 +48,7 @@ from PySide6.QtGui import QColor, QUndoCommand, QUndoStack
 from PySide6.QtQml import QmlElement, QmlSingleton
 
 from bridge.waveform_model import si
+from core.blocks.sweep import run_name, split_run_name
 from core.netlist.parser import parse_number
 from core.physical.domains import DOMAINS, DisplayUnit
 from core.waveform.expr import Data
@@ -193,6 +201,7 @@ class WaveformController(QObject):
         self._display_on = False
         self._si_traces: dict[str, tuple[str, Any]] = {}
         self._result_analysis = ""
+        self._runs: list[str] = []  # M7: the run labels of a sweep result
 
     # ---- wiring
 
@@ -247,6 +256,7 @@ class WaveformController(QObject):
         x, traces = model.raw_data()  # type: ignore[attr-defined]
         analysis = getattr(result, "analysis", "") if result is not None else ""
         self._result_analysis = analysis
+        self._runs = [str(r) for r in getattr(result, "runs", None) or []]
         analysis = TIME_RUNS.get(analysis, analysis)
         if not getattr(result, "axis", "") or analysis not in ANALYSES:
             analysis = ""
@@ -323,6 +333,30 @@ class WaveformController(QObject):
         self._undo.push(_LayoutCommand(self, text, self._analysis, layout.copy(), after, merge))
         return True
 
+    # ---- sweep runs (M7)
+
+    def _split_run(self, name: str) -> tuple[str, int] | None:
+        """(base, k) for trace ``name@k`` of a sweep result, else None."""
+        return split_run_name(name, len(self._runs)) if self._runs else None
+
+    def _expand(self, name: str) -> list[str]:
+        """The traces that adding ``name`` adds: one per run for a base name of a sweep
+        result, else ``name`` itself."""
+        if not self._runs or self._split_run(name) is not None:
+            return [name]
+        return [run_name(name, k) for k in range(1, len(self._runs) + 1)]
+
+    def _label(self, name: str) -> str:
+        """What a trace is called on screen: ``name  J=0.002`` for run 2 of a sweep."""
+        found = self._split_run(name)
+        if found is None:
+            return name
+        base, k = found
+        return f"{base}  {self._runs[k - 1]}"
+
+    def _get_runs(self) -> list[str]:
+        return list(self._runs)
+
     # ---- properties
 
     def _get_analysis(self) -> str:
@@ -351,6 +385,7 @@ class WaveformController(QObject):
             traces = [
                 {
                     "name": n,
+                    "label": self._label(n),
                     "color": self.colorOf(n),
                     "present": self._store.has(n),
                     "expression": n not in self._raw,
@@ -380,6 +415,14 @@ class WaveformController(QObject):
     def _get_result_traces(self) -> list[dict[str, Any]]:
         layout = self._layout()
         shown = set(layout.all_traces()) if layout else set()
+        if self._runs:  # a sweep: one row per base name, for all of its runs
+            out = []
+            for base in self.vectorNames(""):
+                names = self._expand(base)
+                on = [n for n in names if n in shown]
+                color = self.colorOf(on[0]) if on else UNSHOWN_COLOR
+                out.append({"name": base, "color": color, "shown": bool(on)})
+            return out
         return [
             {"name": n, "color": self.colorOf(n), "shown": n in shown}
             for n in self._store.names()
@@ -447,6 +490,7 @@ class WaveformController(QObject):
     activePane = Property(int, _get_active_pane, notify=layoutChanged)  # noqa: N815
     panes = Property("QVariantList", _get_panes, notify=layoutChanged)
     resultTraces = Property("QVariantList", _get_result_traces, notify=layoutChanged)  # noqa: N815
+    runs = Property("QStringList", _get_runs, notify=layoutChanged)
     xLog = Property(bool, _get_x_log, notify=layoutChanged)  # noqa: N815
     xMin = Property(float, _get_x_min, notify=layoutChanged)  # noqa: N815
     xMax = Property(float, _get_x_max, notify=layoutChanged)  # noqa: N815
@@ -623,8 +667,13 @@ class WaveformController(QObject):
 
     @Slot(str, result=bool)
     def addTrace(self, name: str) -> bool:  # noqa: N802 - QML API
-        """Add ``name`` to the active pane."""
-        return self._edit(f"Add {name}", lambda layout: layout.add_trace(layout.active, name))
+        """Add ``name`` to the active pane (every run of it, for a sweep result)."""
+        names = self._expand(name)
+
+        def change(layout: PlotLayout) -> bool:
+            return any([layout.add_trace(layout.active, n) for n in names])
+
+        return self._edit(f"Add {name}", change)
 
     @Slot(str)
     def probe(self, name: str) -> None:
@@ -640,13 +689,23 @@ class WaveformController(QObject):
         """Trace list checkbox: on adds to the active pane, off removes from all."""
         if shown:
             return self.addTrace(name)
-        return self._edit(f"Remove {name}", lambda layout: layout.remove_everywhere(name))
+        names = self._expand(name)
+
+        def change(layout: PlotLayout) -> bool:
+            return any([layout.remove_everywhere(n) for n in names])
+
+        return self._edit(f"Remove {name}", change)
 
     @Slot(int, str, int, bool, result=bool)
     def dropTrace(self, src: int, name: str, dst: int, copy_: bool) -> bool:  # noqa: N802
         """Drop a dragged trace name on pane ``dst`` (``src`` -1: from the trace list)."""
         text = f"Copy {name}" if copy_ or src < 0 else f"Move {name}"
-        return self._edit(text, lambda layout: layout.drop_trace(src, name, dst, copy_))
+        names = self._expand(name) if src < 0 else [name]
+
+        def change(layout: PlotLayout) -> bool:
+            return any([layout.drop_trace(src, n, dst, copy_) for n in names])
+
+        return self._edit(text, change)
 
     @Slot(int, str, result=bool)
     def showOnly(self, pane: int, name: str) -> bool:  # noqa: N802 - QML API
@@ -654,16 +713,23 @@ class WaveformController(QObject):
 
     # ---- expressions (W7, W8)
 
-    def _data(self) -> Data:
+    def _data(self, run: int = 0) -> Data:
+        """The vectors expressions see; ``run`` k > 0: run k of a sweep, by base name."""
         result = self._result
         axis_name = getattr(result, "axis", "") or ""
         store = self._store
         # Expressions always see the SI values, whatever the rpm/degC toggle shows.
-        vectors = {
-            n: self._si_traces.get(n, (store.unit(n), store.raw(n)))
-            for n in store.names()
-            if n in self._raw
-        }
+        vectors = {}
+        for n in store.names():
+            if n not in self._raw:
+                continue
+            key = n
+            if run:
+                found = self._split_run(n)
+                if found is None or found[1] != run:
+                    continue
+                key = found[0]
+            vectors[key] = self._si_traces.get(n, (store.unit(n), store.raw(n)))
         if axis_name and axis_name not in vectors:
             vectors[axis_name] = (store.axis_unit, store.x)
         return Data(self._analysis, axis_name, store.x if len(store.x) else None, vectors)
@@ -677,8 +743,12 @@ class WaveformController(QObject):
         for name in layout.all_traces():
             if name in self._raw or self._store.has(name) or name in self._expr_errors:
                 continue
-            data = data or self._data()
-            result = self._engine.evaluate(name, data)
+            found = self._split_run(name)
+            if found is not None:  # an expression of one run of a sweep
+                result = self._engine.evaluate(found[0], self._data(found[1]))
+            else:
+                data = data or self._data()
+                result = self._engine.evaluate(name, data)
             if (
                 result.ok
                 and result.values is not None
@@ -696,8 +766,15 @@ class WaveformController(QObject):
     @Slot(str, result="QStringList")
     def vectorNames(self, pattern: str) -> list[str]:  # noqa: N802 - QML API
         """Result vectors matching ``pattern`` (case-insensitive wildcards * and ?;
-        text without a wildcard matches anywhere in the name)."""
+        text without a wildcard matches anywhere in the name). For a sweep result:
+        the base names, each once."""
         names = [n for n in self._store.names() if n in self._raw]
+        if self._runs:
+            bases: dict[str, None] = {}
+            for n in names:
+                found = self._split_run(n)
+                bases[found[0] if found else n] = None
+            names = list(bases)
         pattern = pattern.strip().lower()
         if not pattern:
             return names
@@ -759,6 +836,13 @@ class WaveformController(QObject):
         if not self._analysis:
             found = self._engine.check(text)
             return found[0].message if found else ""
+        if self._runs:  # a sweep: check it on run 1 (a run's own trace: on its run)
+            found_run = self._split_run(text)
+            if found_run is not None:
+                result = self._engine.evaluate(found_run[0], self._data(found_run[1]))
+            else:
+                result = self._engine.evaluate(text, self._data(1))
+            return result.message if not result.ok else ""
         result = self._engine.evaluate(text, self._data())
         return result.message if not result.ok else ""
 
@@ -776,10 +860,16 @@ class WaveformController(QObject):
         index = layout.active if pane < 0 else pane
         if not 0 <= index < len(layout.panes):
             return "no such pane"
-        if text in layout.panes[index].traces:
+        names = [n for n in self._expand(text) if n not in layout.panes[index].traces]
+        if not names:
             return "the pane already shows this trace"
-        self._expr_errors.pop(text, None)
-        self._edit(f"Add {text}", lambda lay: lay.add_trace(index, text))
+        for n in names:
+            self._expr_errors.pop(n, None)
+
+        def change(lay: PlotLayout) -> bool:
+            return any([lay.add_trace(index, n) for n in names])
+
+        self._edit(f"Add {text}", change)
         return ""
 
     @Slot(int, str, str, result=str)
@@ -1211,6 +1301,7 @@ class WaveformController(QObject):
             if c is not None:
                 point = self._cursor_point(c)
                 point["which"] = i + 1
+                point["label"] = self._label(c["name"])
                 out.append(point)
         return out
 

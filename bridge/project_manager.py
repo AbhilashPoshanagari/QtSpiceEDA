@@ -188,6 +188,7 @@ class ProjectManager(QObject):
             simulator.resultReady,
             diagram.sourcesChanged,
             diagram.runSettingsChanged,
+            diagram.sweepChanged,
             diagram.resultReady,
             diagram.diagramEdited,
         ):
@@ -238,6 +239,7 @@ class ProjectManager(QObject):
             diagrams=[DiagramEntry(self._diagram_name, state.diagram)] + self._extra_diagrams,
             block_sources=[BlockSource(d, c) for d, c in state.sources],
             physical_sources=[BlockSource(d, c) for d, c in state.physical_sources],
+            sweep=dict(state.sweep) if state.sweep else None,
             analysis=AnalysisSettings(sim.property("analysisCard"), state.t_end, state.dt),
             simulation=SimulationSettings(sim.property("compatMode")),
             results=results,
@@ -422,6 +424,7 @@ class ProjectManager(QObject):
                 project.analysis.diagram_t_end,
                 project.analysis.diagram_dt,
                 components,
+                dict(project.sweep) if project.sweep else None,
             )
         )
         sim.set_file_path(path)

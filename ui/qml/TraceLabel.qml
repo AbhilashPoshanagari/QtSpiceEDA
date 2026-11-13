@@ -17,6 +17,7 @@ Item {
     id: label
     required property int paneIndex
     required property string name
+    property string caption: name  // M7: e.g. "inertia.A.w  J=0.002" for a sweep run
     required property color traceColor
     property bool present: true
     property string error: ""  // why an expression trace cannot be drawn (W7)
@@ -55,7 +56,7 @@ Item {
         Label {
             id: text
             anchors.centerIn: parent
-            text: label.name
+            text: label.caption
             color: label.traceColor
             font.pointSize: 9
             font.strikeout: !label.present

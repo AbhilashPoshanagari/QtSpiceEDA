@@ -51,7 +51,7 @@ Rectangle {
                 required property var modelData
                 Layout.row: modelData.which
                 Layout.column: 1
-                text: modelData.name
+                text: modelData.label || modelData.name
                 color: modelData.color
             }
         }

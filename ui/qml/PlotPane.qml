@@ -129,6 +129,7 @@ FocusScope {
                 required property var modelData
                 paneIndex: pane.paneIndex
                 name: modelData.name
+                caption: modelData.label || modelData.name
                 traceColor: modelData.color
                 present: modelData.present
                 error: modelData.error || ""
