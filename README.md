@@ -1,4 +1,4 @@
-# QtSpice 0.2
+# QtSpice 0.3
 
 QtSpice is a small desktop EDA application written in Python with Qt Quick. You can:
 
@@ -17,6 +17,10 @@ QtSpice is a small desktop EDA application written in Python with Qt Quick. You 
 - write a Python function with `@block`, so it becomes a block with matching ports;
 - place, wire and run blocks in a block diagram with a fixed time step, with Scope
   blocks plotting into the same waveform viewer;
+- model **physical systems** in the same diagram (new in 0.3): electrical,
+  rotational, translational and thermal parts such as motors, bridges, batteries and
+  heatsinks, joined by physical wires, solved by ngspice and driven by signal blocks
+  such as a PI controller in one combined run;
 - save everything in one `.qsp` project file, with the results in `.npz` files next
   to it.
 
@@ -388,6 +392,192 @@ The editor only *reads* your code; it never executes it. The code runs in a sepa
 process when you press **Run**, with a timeout and **Stop**. If you open a project made
 somewhere else that contains block code, QtSpice asks before loading the code.
 
+## Physical modelling (new in 0.3)
+
+A block diagram can also hold **physical blocks**: resistors, motors, inertias, springs,
+thermal masses and so on, joined by **physical wires**. Physical blocks don't pass
+signals from an output to an input. They share a node, and each node has an *across*
+quantity (voltage, speed, temperature) and a *through* quantity that is conserved at
+the node (current, torque, force, heat flow). QtSpice has no equation solver of its
+own: every physical network is turned into a SPICE circuit and solved by ngspice.
+
+### Domains
+
+| Domain        | Across            | Through     | Storage (C)    | R from        | L from         | Reference |
+|---------------|-------------------|-------------|----------------|---------------|----------------|-----------|
+| electrical    | voltage V         | current A   | capacitor      | resistor      | inductor       | 0 V       |
+| rotational    | speed w [rad/s]   | torque [N·m]| inertia J      | damper 1/b    | spring 1/k     | 0 rad/s   |
+| translational | speed v [m/s]     | force F [N] | mass m         | damper 1/b    | spring 1/k     | 0 m/s     |
+| thermal       | temperature T [K] | heat Q [W]  | thermal mass   | resistance R [K/W] | –         | 0 K       |
+
+Ports are round and coloured by domain. A wire between ports of two different domains
+is refused, and the status line says why. The Solver Configuration's grey port joins
+a network of any domain.
+
+### Conventions
+
+- **Units.** Everything is SI inside: rad/s, K, m/s, N·m. rpm, °C and mm are for
+  display only. The **rpm / °C** button in the waveform window shows rad/s as rpm and K
+  as °C, and the project saves the toggle. Expressions always see the SI values.
+- **Signs.** The through quantity is positive flowing **into port A and out of port B**
+  of a part (into `p` and out of `n` for electrical parts, as in SPICE). A source
+  delivers its through quantity into the network at A. A sensor measures A relative to
+  B, so put B on the reference to read an absolute value.
+- **References.** Every domain a network uses needs its reference block: Electrical
+  Reference, Mechanical Rotational / Translational Reference or Thermal Reference.
+  Mass, inertia and thermal mass are one-port parts, tied to the reference inside.
+- **Thermal reference** is absolute zero. An ambient temperature is a Temperature
+  Source between the body and the Thermal Reference, e.g. 298.15 K for 25 °C.
+- **Position and angle** come from integrating speed inside the network (Position and
+  Angle sensors).
+- **Domains couple only through controlled sources.** In a DC motor, for example,
+  E = k·w and τ = k·i.
+- **Solver Configuration.** Each physical network needs exactly one, wired to any
+  node. Its `Ts` is the controller tick and must equal the diagram's time step: the
+  canvas step follows it. The other settings are `reltol`, `abstol`, `max_step`
+  (0 = Ts) and `steady_state`. The run is refused, and the failing blocks are named,
+  if a network has no Solver Configuration, two of them, or a missing reference.
+- **Start values.** Storage parts start from their start values (`w0`, `v0`, `T0`,
+  capacitor `v0`, inductor `i0`, spring `tau0`/`F0`). Tick `steady_state` in the Solver
+  Configuration to run an operating point first instead.
+
+### The combined run
+
+A diagram with physical blocks has one **Run** button, like any other diagram. The
+run is split this way:
+
+- Every physical network runs in ngspice as one stateful block of the diagram. The
+  signal blocks (Gain, Sum, PI, your own `@block` code) run in Python with the fixed
+  step `Ts`.
+- At each tick k·Ts, QtSpice reads the sensors, runs the signal blocks once, and sets
+  the signal-controlled sources. ngspice gets a breakpoint at every tick.
+- **One-sample delay.** The sensor values the controller sees at tick k are those of
+  the accepted ngspice point at tick k. A value the controller sets is held until the
+  next tick (zero-order hold). The physical network therefore reacts to a controller
+  output one tick later. In a feedback loop this delay is part of the loop: pick `Ts`
+  small compared with the time constants you control.
+- Steps that ngspice rejects and redoes never reach the controller.
+- PWM edges are made inside ngspice by the PWM Generator, not by the Python
+  controller, so they are not rounded to the tick.
+- The result is one set of waveforms. Signal vectors carry their Scope labels, and
+  physical vectors are named `<component>.<port>.<quantity>` in SI, e.g.
+  `motor.A.w`. **Add Trace** groups them by component, and the Y axis shows the unit.
+- Ts may be as small as 10 µs. At 100 µs a combined run takes about 0.55 s per
+  simulated second on a current PC; at 10 µs, about 5.4 s.
+- The run takes place in the block-runner child process, with **Stop** and a timeout.
+  **Sweep…** next to Run repeats it for a list of values of one block parameter and
+  overlays the runs.
+
+### The library
+
+The block library has these groups under **Physical**:
+
+- **Electrical:** Resistor, Capacitor, Inductor, Diode, Controlled Switch, DC / sine /
+  pulse voltage and current sources, Electrical Reference.
+- **Rotational:** Inertia, Rotational Damper, Rotational Spring, Torque Source, Angular
+  Velocity Source, Mechanical Rotational Reference.
+- **Translational:** Mass, Translational Damper, Translational Spring, Force Source,
+  Velocity Source, Mechanical Translational Reference.
+- **Thermal:** Thermal Mass, Conduction, Convection, Heat Flow Source, Temperature
+  Source, Thermal Reference.
+- **Sensors and sources:**
+  - signal-controlled sources (voltage, current, torque, angular velocity, force,
+    velocity, heat flow, temperature), driven by a signal wire;
+  - sensors with a signal output (voltage, current, angular velocity, angle, torque,
+    velocity, position, force, temperature, heat flow);
+  - Solver Configuration;
+  - PWM Generator.
+- **Composite:** DC Motor, Gearbox, Ideal Transformer, Battery (state-of-charge
+  table), Half-Bridge and H-Bridge (`model` = `switching` or `averaged`), Thermal
+  Resistor and Thermal MOSFET (their power loss flows into a thermal port).
+- **User:** your own components (see below).
+
+The **Signal** group adds **DiscretePI** and **DiscretePID** for controllers, with
+output limits and anti-windup (`clamping` or `back-calculation`). Numeric settings
+of physical blocks take SPICE suffixes (`10m`, `2.2u`), and the Properties panel
+shows each setting's unit.
+
+### Writing your own component
+
+Open the **Components** tab and write a class with `@physical_component`. It uses
+the same API as the built-in library, and it appears under **Physical > User** as
+soon as it checks clean:
+
+```python
+T0 = 298.15
+
+
+@physical_component
+class TCThermalResistor(PhysicalComponent):
+    """Thermal resistance R0 * (1 + alpha * (Tm - T0)) between A and B, where Tm is
+    the mean of the two port temperatures."""
+
+    ports = (Port("A", THERMAL), Port("B", THERMAL))
+    parameters = (
+        Parameter("R0", 1.0, "K/W", "resistance at T0"),
+        Parameter("alpha", 0.004, "1/K", "temperature coefficient"),
+    )
+
+    def network(self, ports, params):
+        th = get_domain(THERMAL)
+        r0 = th.resistance_from(float(params["R0"]))
+        alpha = float(params["alpha"])
+        if r0 <= 0:
+            raise ValueError("R0 must be positive")
+        mean = f"({th.across_expr(ports.A)} + {th.across_expr(ports.B)}) / 2"
+        r = f"{r0!r} * (1 + {alpha!r} * ({mean} - {T0!r}))"
+        heat = f"{th.across_expr(ports.A, ports.B)} / ({r})"
+        return [Behavioural("R", ports.A, ports.B, "i", heat)]
+```
+
+- `ports`: conserving ports `Port(name, DOMAIN)` and signal ports `SignalInput` /
+  `SignalOutput`. `parameters`: `Parameter(name, default, unit, description)`.
+- `network(self, ports, params)` returns primitives such as `Resistor`, `Capacitor`,
+  `Inductor`, `VoltageSource`, `CurrentSource`, `Behavioural`, `ExternalSource` and
+  `Sensor`, between the port nodes and the `internal` nodes you declare.
+- Ask the domain for the mapping (`get_domain(THERMAL).across_expr(...)`,
+  `.resistance_from(...)`, `.to_current(...)`) instead of writing SPICE voltages and
+  currents yourself.
+- An error raised in `network` (a bad parameter, say) is reported on the block when
+  the run starts.
+- The editor only reads the code: it checks the declarations and the calls in
+  `network`, and never runs it. The code runs in the block-runner process when you
+  press Run. As with `@block` code, a project from somewhere else asks before it
+  loads component code.
+
+## Known limitations (v0.3)
+
+Physical modelling in 0.3 is kept small on purpose. These are not supported:
+
+- **No equation solver or equation language of QtSpice's own.** Every physical
+  network is mapped to a SPICE circuit and solved by ngspice. Python never integrates
+  physical equations, and there is no Simscape-like language for components. Your own
+  components are built from SPICE primitives (see *Writing your own component*).
+- **Four domains only:** electrical, rotational, translational and thermal. No
+  hydraulic, gas, thermal-liquid or magnetic domains.
+- **No 3D multibody** mechanics. Translational and rotational motion are each
+  one-dimensional.
+- **No real-time runs, hardware-in-the-loop or code generation.**
+- **No linearization or frequency analysis of mixed models.** A combined run is a
+  transient run. (A plain netlist or schematic still has `.ac`.)
+- **One controller rate.** All signal blocks run at the one fixed tick Ts. There are
+  no variable-step controllers and no multi-rate diagrams.
+- **Ts is at least 10 µs.**
+- **Physical blocks live in block diagrams only.** They can't be placed in the
+  schematic editor.
+- **Circuit blocks (M2)** are made in code (`core/physical/circuit_block.py`). The
+  app has no menu to make one, and a project doesn't store them.
+- **One-sample delay.** The controller always sees the sensors of the current tick
+  and acts on the next one (see *The combined run*).
+- **Speed and timeout.** A combined run at Ts = 10 µs is about 5 times slower than
+  real time. Combined runs share the block diagrams' fixed **10 s** timeout, so at
+  Ts = 10 µs only about 1.5 s can be simulated. The three samples each run in a few
+  seconds.
+
+Everything listed for v0.2 below still applies, except where 0.3 replaced it: block
+diagrams may now hold physical blocks, and projects are saved as format version 3.
+A project saved by 0.3 doesn't open in 0.2.
+
 ## Known limitations (v0.2)
 
 - **Schematic:** one sheet per project, and one schematic, one netlist and one diagram
@@ -416,7 +606,7 @@ somewhere else that contains block code, QtSpice asks before loading the code.
   status line, not on the netlist line or the part.
 - **Block diagrams:**
   - Fixed-step forward Euler only (no variable-step solver).
-  - No physical/acausal blocks.
+  - Physical blocks: see *Physical modelling* and *Known limitations (v0.3)*.
   - A Scope records scalar values only.
   - Each run has a fixed **10 s** timeout that can't be changed from the UI.
   - There is no limit on End time / Step, and a run with a very large number of steps
@@ -426,8 +616,9 @@ somewhere else that contains block code, QtSpice asks before loading the code.
     `netlist.npz` and `diagram.npz`, and deletes only result files that the project
     itself listed. Other files in the folder are left alone, but a file with one of
     those two names is overwritten.
-  - Projects saved by 0.2 (format version 2) don't open in 0.1. Projects from 0.1 open
-    in 0.2 and are saved as version 2.
+  - Projects saved by 0.2 (format version 2) don't open in 0.1, and projects saved by
+    0.3 (format version 3) don't open in 0.2. Projects from 0.1 and 0.2 open in 0.3 and
+    are saved as version 3.
   - The samples live in the app folder. Use **Save As…** to keep your own copy.
 - **Simulator:** QtSpice has no SPICE engine of its own. Accuracy, convergence and
   device models are ngspice's.
