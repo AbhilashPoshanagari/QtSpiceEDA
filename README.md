@@ -1,4 +1,4 @@
-# QtSpice 0.3
+# QtSpice 0.4
 
 QtSpice is a small desktop EDA application written in Python with Qt Quick. You can:
 
@@ -21,6 +21,9 @@ QtSpice is a small desktop EDA application written in Python with Qt Quick. You 
   rotational, translational and thermal parts such as motors, bridges, batteries and
   heatsinks, joined by physical wires, solved by ngspice and driven by signal blocks
   such as a PI controller in one combined run;
+- open a **distribution feeder** written for OpenDSS (`.dss`) and run a snapshot
+  power flow (new in 0.4, optional `grid` extra): node voltages, branch flows,
+  losses, voltage and loading violations, a voltage profile and a single-line view;
 - save everything in one `.qsp` project file, with the results in `.npz` files next
   to it.
 
@@ -47,6 +50,18 @@ Then get ngspice:
 | Windows | Put the 64-bit `ngspice.dll` (and the DLLs it needs) in `third_party/ngspice/lib/`. |
 | macOS   | `brew install libngspice` |
 | Linux   | `sudo apt install libngspice0` (or your distribution's package) |
+
+For distribution-grid power flow (0.4), also install the optional `grid` extra. It
+adds [DSS-Python](https://github.com/dss-extensions/dss_python) 0.15.x (BSD-3), which
+brings the OpenDSS engine as a pip wheel on Windows, macOS and Linux (no compiler
+needed):
+
+```bash
+pip install -e ".[dev,grid]"
+```
+
+Without it the app starts and everything else works; the **Grid** tab and the
+**Open Grid (.dss)…** menu entry are hidden.
 
 To use a library somewhere else, set `QTSPICE_NGSPICE_LIB` to the library file. If
 QtSpice can't find ngspice, the app still starts: you can edit and check netlists and
@@ -554,6 +569,109 @@ class TCThermalResistor(PhysicalComponent):
   press Run. As with `@block` code, a project from somewhere else asks before it
   loads component code.
 
+## Distribution grids (new in 0.4)
+
+QtSpice 0.4 opens distribution feeders written for
+[OpenDSS](https://www.epri.com/pages/sa/opendss) and runs a **snapshot power flow**:
+one steady-state solution at the loads given in the file. It needs the `grid` extra
+(see *Install*). Open a feeder with **File → Open Grid (.dss)…** or the **Open .dss…**
+button on the **Grid** tab, then press **Run**. Try `examples/ieee13_powerflow.qsp`.
+
+- **Results:** node voltages (kV, pu, angle), branch currents, powers and loading,
+  and total source power and losses (also per element class). The tables sort by any
+  column.
+- **Violations** are computed by QtSpice from the limits, not by OpenDSS: by default
+  a node voltage outside 0.95–1.05 pu, or a branch loaded above 100 % of its normal
+  rating. Rows with a violation are highlighted.
+- **Voltage profile:** pu against distance from the source, per phase, with the two
+  limits as flat traces, in the waveform window (cursors and zoom work as usual).
+- **Single-line view:** drawn from the bus coordinates in the file and coloured by the
+  lowest pu voltage of each bus; open switches are drawn open. It is read-only. Buses
+  without coordinates are counted and left out. Click a bus to see its phase voltages.
+- **Console:** what OpenDSS reported, QtSpice's own checks of the feeder (unknown
+  buses, buses not reached from a source, phase and kV mismatches, missing voltage
+  bases) and the run summary.
+- **Project:** the `.dss` file (relative to the project when it is inside the project
+  folder), the power-flow settings and the limits are saved in the `.qsp` (format
+  version 4). Results are not saved; **Run** again (about half a second).
+
+### How `.dss` files are read
+
+QtSpice does not parse DSS text itself. OpenDSS compiles the file (with its
+`redirect`s, `like=`, line codes, RPN values and so on) and solves it, and QtSpice
+reads every element back through the OpenDSS API into its own grid model. Each run
+uses its own OpenDSS context in a separate process, so the app never blocks and
+**Stop** always works.
+
+The model knows the Vsource, buses, line codes, lines, switches, transformers (with
+their windings), regulators (RegControl), loads, capacitors and PV systems. Any other
+element in the file (a fuse, a storage element, ...) is still solved by OpenDSS, but
+the Console reports it as a warning, `unsupported element <class>.<name>`: nothing is
+dropped silently. The base frequency and the voltage bases always come from the file.
+
+### Units and sign conventions
+
+| Quantity            | Unit in the grid model                               |
+|---------------------|------------------------------------------------------|
+| length              | m                                                    |
+| series impedance    | ohm/km, full phase matrices                          |
+| shunt capacitance   | nF/km, full phase matrices                           |
+| voltage             | kV (line-to-line for 3-phase and delta; as given for 1-phase wye) |
+| power               | kW, kvar, kVA                                        |
+| transformer R, X    | % on the winding / element base                      |
+| node voltage result | complex V, line-to-neutral; pu = abs(V) / line-to-neutral base |
+
+- Names are lower case. Elements are `<class>.<name>` (`line.650632`), nodes are
+  `<bus>.<node>` (`671.1`).
+- Branch currents are per phase at terminal 1. Branch power is positive flowing into
+  terminal 1.
+- Source power is positive when it is supplied to the grid. (OpenDSS reports it as
+  negative; QtSpice flips the sign.)
+
+### Benchmarks
+
+The IEEE PES test feeders match the published IEEE results node by node, within the
+test tolerance of 0.5 % on |V| (pu) and 0.5° on the angle
+(`tests/core/grid/test_benchmarks.py`; DSS-Python 0.15.7, OpenDSS engine 0.14.5):
+
+| Feeder   | Values compared | Largest error in |V| | Largest angle error |
+|----------|-----------------|-----------------------|---------------------|
+| IEEE 13  | 35 nodes        | 0.135 %               | 0.06°               |
+| IEEE 34  | 92 nodes        | 0.141 %               | 0.06°               |
+| IEEE 123 | 271 values      | 0.136 %               | 0.10°               |
+
+For this comparison the regulator taps are set to the published ones, with controls
+off. OpenDSS's own RegControl settles one or two tap steps away from the published
+taps, which moves voltages by up to 2.2 %. The controlled OpenDSS solution is tested
+separately, against the OpenDSS result of the original files.
+
+## Known limitations (v0.4)
+
+The grid side of 0.4 analyses snapshot power flow only. These are not supported (some
+are planned for later versions):
+
+- **No power-flow solver of QtSpice's own**, and no DSS-language parser. Feeders are
+  solved only by OpenDSS, through DSS-Python. There is no second grid engine
+  (pandapower, the Windows COM OpenDSS, OpenDSSDirect.py).
+- **Snapshot power flow only.** No QSTS, load shapes or yearly runs, no fault studies,
+  hosting capacity, EV impact, harmonics or dynamics.
+- **No GIS or ArcGIS import**, no data normalisation or electrical enrichment, no
+  conductor or transformer catalogs, and no writing results back to GIS.
+- **Read-only grid view.** Feeders can't be drawn or edited in the UI: edit the `.dss`
+  file and open it again.
+- **No coupling** of grid models with ngspice circuits, physical networks or Python
+  controllers.
+- **No settings dialog.** The power-flow settings and limits are stored in the
+  project, but 0.4 has no dialog to change them (edit the `grid` section of the
+  `.qsp`).
+- **Grid results are not saved** in the project.
+- **Tests on Windows:** pytest may print "Windows fatal exception: code 0xe0465043"
+  when it first imports `dss`. It is an exception that the OpenDSS engine raises and
+  handles itself; the tests pass.
+
+Everything listed for v0.2 and v0.3 below still applies. Projects are saved as format
+version 4, which 0.3 doesn't open.
+
 ## Known limitations (v0.3)
 
 Physical modelling in 0.3 is kept small on purpose. These are not supported:
@@ -627,7 +745,7 @@ A project saved by 0.3 doesn't open in 0.2.
     those two names is overwritten.
   - Projects saved by 0.2 (format version 2) don't open in 0.1, and projects saved by
     0.3 (format version 3) don't open in 0.2. Projects from 0.1 and 0.2 open in 0.3 and
-    are saved as version 3.
+    are saved as version 3. (0.4 opens versions 1-3 and saves version 4.)
   - The samples live in the app folder. Use **Save As…** to keep your own copy.
 - **Simulator:** QtSpice has no SPICE engine of its own. Accuracy, convergence and
   device models are ngspice's.
@@ -646,5 +764,7 @@ ruff check . && ruff format --check .
 ```
 
 Architecture rules and the folder layout are in [CLAUDE.md](CLAUDE.md). Tests that need
-ngspice are marked `@pytest.mark.ngspice` and are skipped when it is missing. See
+ngspice are marked `@pytest.mark.ngspice` and are skipped when it is missing. Tests
+that need DSS-Python are marked `@pytest.mark.opendss` and are skipped without it
+(`pytest -q -m opendss` runs only those). See
 [CHANGELOG.md](CHANGELOG.md) for the release notes.
