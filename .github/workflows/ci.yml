@@ -138,6 +138,7 @@ jobs:
           python scratch/phase4/spike3_pyinstaller/build.py
           python scratch/phase4/spike4_api.py
           python scratch/phase4/spike5_locale.py
+          python scratch/phase4/spike6_timing.py
 
   # Build the installable apps (PyInstaller one-folder builds) and upload them.
   package:
