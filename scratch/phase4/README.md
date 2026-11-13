@@ -1,0 +1,22 @@
+# v0.4 spikes (scratch only)
+
+Throw-away code for the Phase 4 week-1 spikes (S1-S6): DSS-Python / OpenDSS. Nothing
+in `app/`, `bridge/` or `core/` imports it. Results are written up in the
+"Spike results (v0.4)" section of `CLAUDE.md`.
+
+Needs the grid extra: `pip install -e ".[dev,grid]"` (dss-python 0.15.x).
+
+| File | What it shows |
+|---|---|
+| `common.py` | Feeder cases (IEEE 13/34/123 from `tests/fixtures/grid/`), `new_context()` (own DSS context, `AllowChangeDir=False`), compile + solve, reading the solution, reference-file helpers |
+| `make_reference.py` | Writes `tests/fixtures/grid/<feeder>/opendss_reference.json`: the OpenDSS result of the original files. Re-run only on purpose |
+| `spike1_install.py` | S1: versions; IEEE 13 converged, iterations, total power, V at bus 671 |
+
+Run from the repository root:
+
+```bash
+pytest -q -rs -s scratch/phase4
+python scratch/phase4/spike1_install.py
+```
+
+The CI job `spikes-grid` runs all of the above on Windows, macOS and Linux.

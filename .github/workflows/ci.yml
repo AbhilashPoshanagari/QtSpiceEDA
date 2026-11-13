@@ -102,6 +102,32 @@ jobs:
           python scratch/phase3/spike4_msd.py
           python scratch/phase3/spike5_locale.py
 
+  # v0.4 spikes (scratch/phase4): DSS-Python install, contexts and child process,
+  # PyInstaller one-file build, API coverage, locale and timing, on every OS.
+  # Results go to the job log.
+  spikes-grid:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python packages
+        run: python -m pip install -e ".[dev,grid]"
+
+      - name: Spike tests
+        run: pytest -q -rs -s scratch/phase4
+
+      - name: Spike reports
+        run: |
+          python scratch/phase4/spike1_install.py
+
   # Build the installable apps (PyInstaller one-folder builds) and upload them.
   package:
     needs: test

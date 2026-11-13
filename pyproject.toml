@@ -21,6 +21,10 @@ dev = [
     "pyinstaller>=6.10",
     "jsonschema>=4.20",
 ]
+# Distribution-grid power flow (v0.4). Optional: the app runs without it.
+grid = [
+    "dss-python~=0.15.7",
+]
 
 [project.scripts]
 qtspice = "app.__main__:main"
@@ -218,4 +222,5 @@ testpaths = ["tests"]
 markers = [
     "ngspice: test needs the ngspice shared library (skipped when it is missing)",
     "benchmark: timing test (skipped when the CI environment variable is set)",
+    "opendss: test needs dss-python (skipped when it is missing)",
 ]
