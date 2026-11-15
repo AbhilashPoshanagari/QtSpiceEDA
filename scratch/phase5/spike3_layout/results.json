@@ -1,0 +1,386 @@
+{
+ "machine": "Intel64 Family 6 Model 140 Stepping 1, GenuineIntel",
+ "python": "3.12.2",
+ "pyside6": "6.8.3",
+ "runs": 50,
+ "feeders": {
+  "ieee13": {
+   "original": {
+    "buses": 16,
+    "segments": 15,
+    "crossings": 0,
+    "overlaps": 0,
+    "through": 0,
+    "mean_len": 5.2,
+    "max_len": 9.0,
+    "width": 27.599999999999998,
+    "height": 26.75,
+    "overlap_buses": [],
+    "buses_without_coordinates": []
+   },
+   "auto": {
+    "leaf-trunk": {
+     "ms": 0.09,
+     "buses": 16,
+     "segments": 15,
+     "crossings": 0,
+     "overlaps": 0,
+     "through": 0,
+     "mean_len": 9.82,
+     "max_len": 20.88,
+     "width": 54.4,
+     "height": 22.75,
+     "overlap_buses": []
+    },
+    "leaf-mid": {
+     "ms": 0.088,
+     "buses": 16,
+     "segments": 15,
+     "crossings": 0,
+     "overlaps": 0,
+     "through": 0,
+     "mean_len": 7.96,
+     "max_len": 12.0,
+     "width": 54.4,
+     "height": 22.75,
+     "overlap_buses": []
+    },
+    "packed": {
+     "ms": 0.183,
+     "buses": 16,
+     "segments": 15,
+     "crossings": 0,
+     "overlaps": 0,
+     "through": 0,
+     "mean_len": 9.82,
+     "max_len": 20.88,
+     "width": 54.4,
+     "height": 22.75,
+     "overlap_buses": []
+    },
+    "packed-mid": {
+     "ms": 0.271,
+     "buses": 16,
+     "segments": 15,
+     "crossings": 0,
+     "overlaps": 0,
+     "through": 0,
+     "mean_len": 7.96,
+     "max_len": 12.0,
+     "width": 54.4,
+     "height": 22.75,
+     "overlap_buses": []
+    }
+   },
+   "mixed": {},
+   "measure_ms": 1.96
+  },
+  "ieee34": {
+   "original": {
+    "buses": 37,
+    "segments": 36,
+    "crossings": 0,
+    "overlaps": 1,
+    "through": 0,
+    "mean_len": 6.17,
+    "max_len": 18.0,
+    "width": 96.8,
+    "height": 41.75,
+    "overlap_buses": [
+     "834",
+     "858"
+    ],
+    "buses_without_coordinates": []
+   },
+   "auto": {
+    "leaf-trunk": {
+     "ms": 0.16,
+     "buses": 37,
+     "segments": 36,
+     "crossings": 0,
+     "overlaps": 0,
+     "through": 0,
+     "mean_len": 10.63,
+     "max_len": 32.39,
+     "width": 164.8,
+     "height": 34.75,
+     "overlap_buses": []
+    },
+    "leaf-mid": {
+     "ms": 0.178,
+     "buses": 37,
+     "segments": 36,
+     "crossings": 0,
+     "overlaps": 0,
+     "through": 0,
+     "mean_len": 8.27,
+     "max_len": 20.35,
+     "width": 164.8,
+     "height": 34.75,
+     "overlap_buses": []
+    },
+    "packed": {
+     "ms": 0.211,
+     "buses": 37,
+     "segments": 36,
+     "crossings": 0,
+     "overlaps": 0,
+     "through": 0,
+     "mean_len": 8.32,
+     "max_len": 23.32,
+     "width": 164.8,
+     "height": 14.75,
+     "overlap_buses": []
+    },
+    "packed-mid": {
+     "ms": 0.268,
+     "buses": 37,
+     "segments": 36,
+     "crossings": 0,
+     "overlaps": 0,
+     "through": 0,
+     "mean_len": 8.05,
+     "max_len": 20.22,
+     "width": 164.8,
+     "height": 23.75,
+     "overlap_buses": []
+    }
+   },
+   "mixed": {
+    "30pct_removed": {
+     "ms": 68.5,
+     "placed": [
+      "802",
+      "806",
+      "818",
+      "888",
+      "842",
+      "848",
+      "852",
+      "834",
+      "820",
+      "890",
+      "822"
+     ],
+     "buses": 37,
+     "segments": 36,
+     "crossings": 0,
+     "overlaps": 0,
+     "through": 0,
+     "mean_len": 6.46,
+     "max_len": 18.0,
+     "width": 96.8,
+     "height": 42.75,
+     "overlap_buses": []
+    }
+   },
+   "measure_ms": 5.19
+  },
+  "ieee123": {
+   "original": {
+    "buses": 130,
+    "segments": 129,
+    "crossings": 4,
+    "overlaps": 5,
+    "through": 11,
+    "mean_len": 6.78,
+    "max_len": 20.88,
+    "width": 119.0,
+    "height": 85.75,
+    "overlap_buses": [
+     "15",
+     "150",
+     "150r",
+     "160",
+     "160r",
+     "25",
+     "25r",
+     "34",
+     "9",
+     "9r"
+    ],
+    "buses_without_coordinates": [
+     "300_open",
+     "94_open"
+    ]
+   },
+   "auto": {
+    "leaf-trunk": {
+     "ms": 0.592,
+     "buses": 132,
+     "segments": 131,
+     "crossings": 0,
+     "overlaps": 0,
+     "through": 4,
+     "mean_len": 16.85,
+     "max_len": 164.08,
+     "width": 148.0,
+     "height": 166.75,
+     "overlap_buses": []
+    },
+    "leaf-mid": {
+     "ms": 0.572,
+     "buses": 132,
+     "segments": 131,
+     "crossings": 0,
+     "overlaps": 0,
+     "through": 0,
+     "mean_len": 8.12,
+     "max_len": 33.74,
+     "width": 148.0,
+     "height": 166.75,
+     "overlap_buses": []
+    },
+    "packed": {
+     "ms": 0.746,
+     "buses": 132,
+     "segments": 131,
+     "crossings": 0,
+     "overlaps": 0,
+     "through": 4,
+     "mean_len": 12.48,
+     "max_len": 108.12,
+     "width": 148.0,
+     "height": 110.75,
+     "overlap_buses": []
+    },
+    "packed-mid": {
+     "ms": 0.912,
+     "buses": 132,
+     "segments": 131,
+     "crossings": 0,
+     "overlaps": 0,
+     "through": 1,
+     "mean_len": 7.17,
+     "max_len": 23.84,
+     "width": 148.0,
+     "height": 121.75,
+     "overlap_buses": []
+    }
+   },
+   "mixed": {
+    "as_is": {
+     "ms": 106.6,
+     "placed": [
+      "9r",
+      "150r",
+      "300_open",
+      "160r",
+      "25r",
+      "94_open"
+     ],
+     "buses": 132,
+     "segments": 131,
+     "crossings": 0,
+     "overlaps": 1,
+     "through": 3,
+     "mean_len": 6.88,
+     "max_len": 20.88,
+     "width": 122.0,
+     "height": 89.75,
+     "overlap_buses": [
+      "15",
+      "34"
+     ]
+    },
+    "30pct_removed": {
+     "ms": 1478.4,
+     "placed": [
+      "149",
+      "14",
+      "99",
+      "102",
+      "105",
+      "104",
+      "108",
+      "111",
+      "114",
+      "8",
+      "150r",
+      "300_open",
+      "51",
+      "13",
+      "160r",
+      "135",
+      "19",
+      "23",
+      "25",
+      "31",
+      "28",
+      "5",
+      "39",
+      "57",
+      "94_open",
+      "56",
+      "64",
+      "65",
+      "68",
+      "72",
+      "77",
+      "80",
+      "84",
+      "83",
+      "76",
+      "88",
+      "9r",
+      "98",
+      "106",
+      "300",
+      "20",
+      "32",
+      "85",
+      "107"
+     ],
+     "buses": 132,
+     "segments": 131,
+     "crossings": 2,
+     "overlaps": 1,
+     "through": 2,
+     "mean_len": 7.98,
+     "max_len": 25.3,
+     "width": 131.0,
+     "height": 98.75,
+     "overlap_buses": [
+      "15",
+      "34"
+     ]
+    }
+   },
+   "measure_ms": 51.88,
+   "auto_8x": {
+    "leaf-trunk": {
+     "ms": 6.01,
+     "buses": 1057,
+     "crossings": 0,
+     "overlaps": 0,
+     "through": 35,
+     "max_len": 1176.01
+    },
+    "leaf-mid": {
+     "ms": 8.46,
+     "buses": 1057,
+     "crossings": 0,
+     "overlaps": 0,
+     "through": 0,
+     "max_len": 588.02
+    },
+    "packed": {
+     "ms": 7.5,
+     "buses": 1057,
+     "crossings": 0,
+     "overlaps": 0,
+     "through": 35,
+     "max_len": 784.02
+    },
+    "packed-mid": {
+     "ms": 9.48,
+     "buses": 1057,
+     "crossings": 0,
+     "overlaps": 0,
+     "through": 8,
+     "max_len": 220.12
+    }
+   }
+  }
+ }
+}
