@@ -242,3 +242,84 @@ def test_without_dss_python(qapp: object, monkeypatch: pytest.MonkeyPatch) -> No
     assert "dss-python" in c.statusText
     assert not c.run() and not c.canRun and not c.running
     assert c.geometry == {"hasCoordinates": False, "buses": [], "branches": [], "missing": 0}
+
+
+@pytest.mark.opendss
+def test_summary_has_losses_percent_and_voltage_range(qtbot, ctl: GridController) -> None:
+    open_and_run(qtbot, ctl, IEEE13)
+    r = ctl.result()
+    s = ctl.summary
+    assert float(s["lossesPct"]) == pytest.approx(
+        100 * r.total_losses_kw / r.total_power_kw, abs=0.005
+    )
+    # lowest / highest voltage over the phase nodes (a, b, c) of the result
+    phase = [
+        (name, float(pu))
+        for name, pu in zip(r.node_names, r.node_voltage_pu, strict=True)
+        if name.rpartition(".")[2] in ("1", "2", "3") and not math.isnan(float(pu))
+    ]
+    low = min(phase, key=lambda x: x[1])
+    high = max(phase, key=lambda x: x[1])
+    assert float(s["minPu"]) == pytest.approx(low[1], abs=5e-5)
+    assert float(s["maxPu"]) == pytest.approx(high[1], abs=5e-5)
+    assert s["minPuBus"] == low[0].rpartition(".")[0]
+    assert s["maxPuBus"] == high[0].rpartition(".")[0]
+
+
+@pytest.mark.opendss
+def test_bus_table_folds_the_node_table(qtbot, ctl: GridController) -> None:
+    open_and_run(qtbot, ctl, IEEE13)
+    by_bus: dict[str, dict[str, float]] = {}
+    highlighted: set[str] = set()
+    for row in ctl.nodes.rows():
+        bus, phase, pu = row.keys[0], row.keys[1], row.keys[3]
+        if phase in ("a", "b", "c") and not math.isnan(pu):
+            by_bus.setdefault(bus, {})[phase] = pu
+        if row.highlight:
+            highlighted.add(bus)
+    rows = {r.keys[0]: r for r in ctl.buses.rows()}
+    assert set(rows) == set(by_bus)
+    for bus, phases in by_bus.items():
+        keys = rows[bus].keys
+        for i, p in enumerate("abc"):
+            if p in phases:
+                assert keys[1 + i] == phases[p]
+            else:
+                assert math.isnan(keys[1 + i]) and rows[bus].cells[1 + i] == "—"
+        assert keys[4] == min(phases.values()) and keys[5] == max(phases.values())
+        assert rows[bus].highlight == (bus in highlighted)
+
+
+@pytest.mark.opendss
+def test_tables_filter_and_export_csv(qtbot, ctl: GridController, tmp_path) -> None:
+    import csv
+
+    open_and_run(qtbot, ctl, IEEE13)
+    nodes = ctl.nodes
+    total = nodes.rowCount()
+    assert nodes.totalCount == nodes.count == total
+
+    nodes.setFilter("67")  # buses 670, 671, 675 (text columns only)
+    assert {r.keys[0] for r in nodes.rows()} == {"670", "671", "675"}
+    assert nodes.count == nodes.rowCount() < total and nodes.totalCount == total
+    assert nodes.filterText == "67"
+
+    nodes.setFilter("")
+    nodes.setOnlyHighlighted(True)
+    assert nodes.rows() and all(r.highlight for r in nodes.rows())
+    assert nodes.count == sum(1 for r in nodes.rows() if r.highlight)
+
+    # sorting keeps the filter; the CSV has the shown rows in the shown order
+    nodes.sortBy(3)
+    path = tmp_path / "nodes.csv"
+    assert nodes.saveCsv(str(path))
+    with path.open(encoding="utf-8", newline="") as f:
+        lines = list(csv.reader(f))
+    assert lines[0] == [title for title, _ in grid_controller.NODE_COLUMNS]
+    assert lines[1:] == [r.cells for r in nodes.rows()]
+
+    # a new result keeps the filter settings
+    assert ctl.run()
+    wait_idle(qtbot, ctl)
+    assert nodes.onlyHighlighted and all(r.highlight for r in nodes.rows())
+    assert not nodes.saveCsv(str(tmp_path / "missing" / "x.csv"))

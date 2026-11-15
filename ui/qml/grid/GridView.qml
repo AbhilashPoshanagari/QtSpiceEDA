@@ -1,13 +1,16 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import QtQuick.Layouts
 import QtSpice
 
 // Read-only single-line view of the open feeder (G6), drawn from the bus coordinates
 // in GridController.geometry. Buses are coloured by their lowest phase voltage in pu,
 // lines over their loading limit are drawn thick and red, open switches are drawn
-// open. Click a bus to see its phase voltages; wheel to zoom, drag to pan, double-
-// click to fit. Nothing here edits the feeder (drawing feeders is out of scope).
+// open. Click a bus to see its phase voltages, hover it for a quick readout; wheel or
+// the toolbar to zoom, drag to pan, double-click or Fit to fit. Bus labels that would
+// overlap another label or bus are left out (zoom in to see them). Nothing here edits
+// the feeder (drawing feeders is out of scope).
 Item {
     id: root
     objectName: "gridView"
@@ -19,6 +22,11 @@ Item {
     property real panX: 0
     property real panY: 0
     readonly property real margin: 30
+    property bool labelsOn: true
+    property string hoverBus: ""
+    property real hoverX: 0
+    property real hoverY: 0
+    property int labelCount: 0  // labels drawn by the last paint (for tests)
 
     // ---- feeder coordinates -> pixels (y up in the file, down on screen)
     readonly property real spanX: hasDrawing ? Math.max(geo.maxX - geo.minX, 1e-9) : 1
@@ -71,11 +79,57 @@ Item {
         return "#2da44e"
     }
     function fit() { zoom = 1; panX = 0; panY = 0 }
+    // Zoom by `f`, keeping the point (x, y) of the view where it is.
+    function zoomAt(f, x, y) {
+        const nz = Math.min(Math.max(zoom * f, 0.2), 50)
+        const k = nz / zoom
+        panX = (panX + width / 2 - x) * k + x - width / 2
+        panY = (panY + height / 2 - y) * k + y - height / 2
+        zoom = nz
+    }
+    // The first label rectangle next to a bus at (x, y) that overlaps nothing in
+    // `taken` and stays inside the view; null if there is none.
+    function labelSpot(x, y, w, h, taken) {
+        const spots = [[x + 7, y - h - 2], [x + 7, y + 2], [x - 7 - w, y - h - 2],
+                       [x - 7 - w, y + 2], [x + 9, y - h / 2], [x - 9 - w, y - h / 2]]
+        for (const [sx, sy] of spots) {
+            if (sx < 0 || sy < 0 || sx + w > width || sy + h > height)
+                continue
+            let free = true
+            for (const t of taken) {
+                if (sx < t.x + t.w && sx + w > t.x && sy < t.y + t.h && sy + h > t.y) {
+                    free = false
+                    break
+                }
+            }
+            if (free)
+                return { x: sx, y: sy, w: w, h: h }
+        }
+        return null
+    }
+    // Save the drawing, with its legend but without the toolbar, as an image file.
+    function saveImage(url) {
+        const path = urlToPath(url)
+        toolbar.visible = false
+        hoverBus = ""
+        root.grabToImage(result => {
+            toolbar.visible = Qt.binding(() => root.hasDrawing)
+            result.saveToFile(path)
+        })
+    }
+    function urlToPath(url) {
+        const text = url.toString()
+        if (!text.startsWith("file:"))
+            return text
+        // file:///C:/a%20b.png -> C:/a b.png (Windows); file:///home/x.png -> /home/x.png
+        return decodeURIComponent(text.replace(/^file:\/\//, "").replace(/^\/([A-Za-z]:)/, "$1"))
+    }
 
     onGeoChanged: canvas.requestPaint()
     onZoomChanged: canvas.requestPaint()
     onPanXChanged: canvas.requestPaint()
     onPanYChanged: canvas.requestPaint()
+    onLabelsOnChanged: canvas.requestPaint()
     onWidthChanged: canvas.requestPaint()
     onHeightChanged: canvas.requestPaint()
 
@@ -133,8 +187,12 @@ Item {
                 }
             }
             ctx.setLineDash([])
-            const labels = root.geo.buses.length <= 60 || root.zoom >= 2
             ctx.font = "10px sans-serif"
+            const taken = []  // bus symbols, then the labels placed so far
+            for (const b of root.geo.buses) {
+                const x = root.px(b.x), y = root.py(b.y)
+                taken.push({ x: x - 6, y: y - 6, w: 12, h: 12 })
+            }
             for (const b of root.geo.buses) {
                 const x = root.px(b.x), y = root.py(b.y)
                 const r = b.name === GridController.selectedBus ? 7 : 5
@@ -147,11 +205,31 @@ Item {
                 else
                     ctx.arc(x, y, r, 0, 2 * Math.PI)
                 ctx.fill(); ctx.stroke()
-                if (labels) {
-                    ctx.fillStyle = palette.text
-                    ctx.fillText(b.name, x + 7, y - 6)
+            }
+            // Labels: the selected bus first (always shown), then sources, then the
+            // rest; a label that would overlap a bus or another label is left out.
+            let drawn = 0
+            if (root.labelsOn) {
+                ctx.textBaseline = "top"
+                const rank = b => b.name === GridController.selectedBus ? 0 : (b.source ? 1 : 2)
+                const order = root.geo.buses.slice().sort((p, q) => rank(p) - rank(q))
+                for (const b of order) {
+                    const x = root.px(b.x), y = root.py(b.y)
+                    if (x < -20 || y < -20 || x > root.width + 20 || y > root.height + 20)
+                        continue
+                    const w = ctx.measureText(b.name).width, h = 11
+                    let spot = root.labelSpot(x, y, w, h, taken)
+                    if (spot === null && b.name === GridController.selectedBus)
+                        spot = { x: x + 7, y: y - h - 2, w: w, h: h }
+                    if (spot === null)
+                        continue
+                    taken.push(spot)
+                    ctx.fillStyle = b.name === GridController.selectedBus ? "#0969da" : palette.text
+                    ctx.fillText(b.name, spot.x, spot.y)
+                    drawn++
                 }
             }
+            root.labelCount = drawn
         }
     }
 
@@ -160,11 +238,19 @@ Item {
         anchors.fill: parent
         enabled: root.hasDrawing
         acceptedButtons: Qt.LeftButton
+        hoverEnabled: true
         property real lastX: 0
         property real lastY: 0
         property bool dragged: false
         onPressed: e => { lastX = e.x; lastY = e.y; dragged = false }
         onPositionChanged: e => {
+            if (!pressed) {
+                root.hoverBus = root.busAt(e.x, e.y)
+                root.hoverX = e.x
+                root.hoverY = e.y
+                return
+            }
+            root.hoverBus = ""
             if (Math.abs(e.x - lastX) + Math.abs(e.y - lastY) > 2 || dragged) {
                 dragged = true
                 root.panX += e.x - lastX
@@ -176,15 +262,110 @@ Item {
             if (!dragged)
                 GridController.selectBus(root.busAt(e.x, e.y))
         }
+        onExited: root.hoverBus = ""
         onDoubleClicked: root.fit()
-        onWheel: w => {
-            const f = w.angleDelta.y > 0 ? 1.2 : 1 / 1.2
-            const nz = Math.min(Math.max(root.zoom * f, 0.2), 50)
-            const k = nz / root.zoom
-            // keep the point under the cursor where it is
-            root.panX = (root.panX + root.width / 2 - w.x) * k + w.x - root.width / 2
-            root.panY = (root.panY + root.height / 2 - w.y) * k + w.y - root.height / 2
-            root.zoom = nz
+        onWheel: w => root.zoomAt(w.angleDelta.y > 0 ? 1.2 : 1 / 1.2, w.x, w.y)
+    }
+
+    // Toolbar, top left over the drawing
+    Frame {
+        id: toolbar
+        objectName: "gridToolbar"
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.margins: 4
+        padding: 1
+        visible: root.hasDrawing
+        background: Rectangle { color: palette.window; border.color: palette.mid; radius: 3; opacity: 0.92 }
+        Row {
+            ToolButton {
+                objectName: "gridZoomIn"
+                text: "+"
+                implicitWidth: 28
+                onClicked: root.zoomAt(1.5, root.width / 2, root.height / 2)
+                ToolTip.visible: hovered
+                ToolTip.delay: 600
+                ToolTip.text: qsTr("Zoom in (or use the wheel)")
+            }
+            ToolButton {
+                objectName: "gridZoomOut"
+                text: "\u2212"
+                implicitWidth: 28
+                onClicked: root.zoomAt(1 / 1.5, root.width / 2, root.height / 2)
+                ToolTip.visible: hovered
+                ToolTip.delay: 600
+                ToolTip.text: qsTr("Zoom out (or use the wheel)")
+            }
+            ToolButton {
+                objectName: "gridFit"
+                text: qsTr("Fit")
+                onClicked: root.fit()
+                ToolTip.visible: hovered
+                ToolTip.delay: 600
+                ToolTip.text: qsTr("Show the whole feeder (or double-click)")
+            }
+            ToolButton {
+                objectName: "gridLabels"
+                text: qsTr("Labels")
+                checkable: true
+                checked: root.labelsOn
+                onToggled: root.labelsOn = checked
+                ToolTip.visible: hovered
+                ToolTip.delay: 600
+                ToolTip.text: qsTr("Bus names; a name that would overlap is left out")
+            }
+            ToolButton {
+                objectName: "gridSaveImage"
+                text: qsTr("Save image\u2026")
+                onClicked: imageDialog.open()
+            }
+        }
+    }
+
+    FileDialog {
+        id: imageDialog
+        title: qsTr("Save the single-line view")
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "png"
+        nameFilters: [qsTr("PNG images (*.png)")]
+        onAccepted: root.saveImage(selectedFile)
+    }
+
+    // Quick readout of the bus under the mouse
+    Rectangle {
+        id: hoverTip
+        objectName: "gridHoverTip"
+        readonly property var volts: root.hoverBus !== "" ? GridController.busVoltages(root.hoverBus) : []
+        visible: root.hoverBus !== "" && root.hasDrawing
+        x: Math.min(root.hoverX + 14, root.width - width - 4)
+        y: Math.max(4, Math.min(root.hoverY + 14, root.height - height - 4))
+        width: hoverColumn.implicitWidth + 12
+        height: hoverColumn.implicitHeight + 8
+        color: palette.toolTipBase
+        border.color: palette.mid
+        radius: 3
+        Column {
+            id: hoverColumn
+            x: 6
+            y: 4
+            Label {
+                text: qsTr("Bus %1").arg(root.hoverBus)
+                font.bold: true
+                color: palette.toolTipText
+            }
+            Label {
+                objectName: "gridHoverText"
+                color: palette.toolTipText
+                text: hoverTip.volts.length === 0
+                      ? (GridController.hasResult ? qsTr("no phase nodes") : qsTr("run to see its voltages"))
+                      : hoverTip.volts.map(v => v.phase + " " + v.pu).join("   ") + " pu"
+            }
+            Label {
+                visible: hoverTip.volts.length > 0
+                color: palette.placeholderText
+                font.pointSize: 8
+                text: qsTr("click for kV and angles")
+            }
         }
     }
 

@@ -9,8 +9,9 @@ QML uses it as ``import QtSpice`` / ``GridController.openFile(url)``.
 - ``run`` solves in a new GridRunner child (rule 5: OpenDSS never runs in the UI
   process); ``stop`` terminates it. Both children are waited for on a Python thread
   that reports back through a queued signal, as DiagramController does.
-- Results: ``nodes``, ``branches`` and ``violations`` (sortable table models),
-  ``summary`` (totals), ``geometry`` (single-line view), ``busVoltages(bus)``.
+- Results: ``nodes``, ``buses`` (one row per bus), ``branches`` and ``violations``
+  (table models: sort, filter, CSV), ``summary`` (totals, losses %, lowest and
+  highest phase voltage), ``geometry`` (single-line view), ``busVoltages(bus)``.
   Violations are computed by core/grid/analysis.py from the PowerFlowConfig limits
   (rule 19), never here and never in QML.
 - The voltage profile goes to the waveform window as a SimulationResult
@@ -26,6 +27,7 @@ menu entries and the Grid tab are hidden and every slot refuses politely.
 
 from __future__ import annotations
 
+import csv
 import math
 import threading
 from dataclasses import dataclass, field
@@ -115,20 +117,27 @@ class _Row:
 
 
 class GridTableModel(QAbstractTableModel):
-    """Rows of one results table. Read-only, sortable by any column (``sortBy``)."""
+    """Rows of one results table. Read-only, sortable by any column (``sortBy``),
+    filtered by text and to the highlighted rows (``setFilter``, ``setOnlyHighlighted``),
+    and saved as CSV (``saveCsv``)."""
 
     HighlightRole = Qt.ItemDataRole.UserRole + 1
     NumericRole = Qt.ItemDataRole.UserRole + 2
 
     sortChanged = Signal()
+    filterChanged = Signal()
+    countChanged = Signal()
 
     def __init__(self, columns: list[tuple[str, bool]], parent: QObject | None = None) -> None:
         """``columns``: (title, numeric) per column; numeric columns align right."""
         super().__init__(parent)
         self._columns = columns
-        self._rows: list[_Row] = []
+        self._all: list[_Row] = []
+        self._rows: list[_Row] = []  # the shown rows: filtered, then sorted
         self._sort_column = -1
         self._ascending = True
+        self._filter = ""
+        self._only_highlighted = False
 
     # Qt model API
     def rowCount(self, parent: QModelIndex | QPersistentModelIndex = QModelIndex()) -> int:  # noqa: B008, N802
@@ -171,12 +180,78 @@ class GridTableModel(QAbstractTableModel):
     # ours
     def set_rows(self, rows: list[_Row]) -> None:
         self.beginResetModel()
-        self._rows = list(rows)
-        self._sort_rows()
+        self._all = list(rows)
+        self._apply_filter()
         self.endResetModel()
+        self.countChanged.emit()
 
     def rows(self) -> list[_Row]:
+        """The shown rows (after the filter), in their shown order."""
         return list(self._rows)
+
+    def _apply_filter(self) -> None:
+        text = self._filter.strip().lower()
+        text_columns = [i for i, (_, numeric) in enumerate(self._columns) if not numeric]
+
+        def shown(row: _Row) -> bool:
+            if self._only_highlighted and not row.highlight:
+                return False
+            return not text or any(text in row.cells[i].lower() for i in text_columns)
+
+        self._rows = [r for r in self._all if shown(r)]
+        self._sort_rows()
+
+    def _refilter(self) -> None:
+        self.beginResetModel()
+        self._apply_filter()
+        self.endResetModel()
+        self.filterChanged.emit()
+        self.countChanged.emit()
+
+    def _get_filter(self) -> str:
+        return self._filter
+
+    def _get_only_highlighted(self) -> bool:
+        return self._only_highlighted
+
+    def _get_count(self) -> int:
+        return len(self._rows)
+
+    def _get_total(self) -> int:
+        return len(self._all)
+
+    filterText = Property(str, _get_filter, notify=filterChanged)  # noqa: N815
+    onlyHighlighted = Property(bool, _get_only_highlighted, notify=filterChanged)  # noqa: N815
+    count = Property(int, _get_count, notify=countChanged)
+    totalCount = Property(int, _get_total, notify=countChanged)  # noqa: N815
+
+    @Slot(str)
+    def setFilter(self, text: str) -> None:  # noqa: N802 - QML API
+        """Show only rows with ``text`` in a text column (bus, element, location...)."""
+        if text != self._filter:
+            self._filter = text
+            self._refilter()
+
+    @Slot(bool)
+    def setOnlyHighlighted(self, on: bool) -> None:  # noqa: N802 - QML API
+        """Show only the highlighted rows (those in violation)."""
+        if on != self._only_highlighted:
+            self._only_highlighted = on
+            self._refilter()
+
+    @Slot(str, result=bool)
+    def saveCsv(self, url_or_path: str) -> bool:  # noqa: N802 - QML API
+        """Write the shown rows, in their shown order, as CSV; False if it cannot."""
+        path = _path_of(url_or_path)
+        try:
+            with path.open("w", encoding="utf-8", newline="") as f:
+                out = csv.writer(f)
+                out.writerow([title for title, _ in self._columns])
+                for row in self._rows:
+                    out.writerow(["" if c == "—" else c for c in row.cells])
+        except OSError:
+            return False
+        return True
 
     def _get_sort_column(self) -> int:
         return self._sort_column
@@ -233,6 +308,15 @@ NODE_COLUMNS = [
     ("V (pu)", True),
     ("Angle (°)", True),
 ]
+BUS_COLUMNS = [
+    ("Bus", False),
+    ("Va (pu)", True),
+    ("Vb (pu)", True),
+    ("Vc (pu)", True),
+    ("Min (pu)", True),
+    ("Max (pu)", True),
+]
+"""One row per bus: the node table folded by phase (phase nodes a, b, c only)."""
 BRANCH_COLUMNS = [
     ("Element", False),
     ("From", False),
@@ -296,6 +380,7 @@ class GridController(QObject):
         self.profile: SimulationResult | None = None
         """The last voltage profile handed to the waveform window."""
         self._nodes = GridTableModel(NODE_COLUMNS, self)
+        self._buses = GridTableModel(BUS_COLUMNS, self)
         self._branches = GridTableModel(BRANCH_COLUMNS, self)
         self._violation_rows = GridTableModel(VIOLATION_COLUMNS, self)
         self._done.connect(self._on_done, Qt.ConnectionType.QueuedConnection)
@@ -357,6 +442,19 @@ class GridController(QObject):
                 violationCount=len(self._violations),
                 losses=list(self._losses),
             )
+            total, lost = r.total_power_kw, r.total_losses_kw
+            if total is not None and lost is not None and math.isfinite(total) and total > 0:
+                out["lossesPct"] = _fmt(100.0 * lost / total, 2)
+            phase_pu = self._bus_min_pu(), self._bus_max_pu()
+            if phase_pu[0]:
+                low = min(phase_pu[0].items(), key=lambda kv: kv[1])
+                high = max(phase_pu[1].items(), key=lambda kv: kv[1])
+                out.update(
+                    minPu=_fmt(low[1], 4),
+                    minPuBus=low[0],
+                    maxPu=_fmt(high[1], 4),
+                    maxPuBus=high[0],
+                )
         return out
 
     def _get_geometry(self) -> dict[str, Any]:
@@ -370,6 +468,9 @@ class GridController(QObject):
 
     def _get_nodes(self) -> QObject:
         return self._nodes
+
+    def _get_buses(self) -> QObject:
+        return self._buses
 
     def _get_branches(self) -> QObject:
         return self._branches
@@ -398,6 +499,7 @@ class GridController(QObject):
         "QVariantList", _get_selected_voltages, notify=selectedBusChanged
     )
     nodes = Property(QObject, _get_nodes, constant=True)
+    buses = Property(QObject, _get_buses, constant=True)
     branches = Property(QObject, _get_branches, constant=True)
     violations = Property(QObject, _get_violations, constant=True)
     voltageMinPu = Property(float, _get_vmin, notify=configChanged)  # noqa: N815
@@ -690,7 +792,7 @@ class GridController(QObject):
     def _fill_tables(self) -> None:
         r = self._result
         if r is None or not r.converged:
-            for table in (self._nodes, self._branches, self._violation_rows):
+            for table in (self._nodes, self._buses, self._branches, self._violation_rows):
                 table.set_rows([])
             return
         bad_nodes = {v.location for v in self._violations if v.kind != OVERLOAD}
@@ -712,6 +814,20 @@ class GridController(QObject):
                 )
             )
         self._nodes.set_rows(nodes)
+
+        bad_buses = {_split_node(node)[0] for node in bad_nodes}
+        buses = []
+        for bus, phases in self._phase_pu().items():
+            values = [phases.get(p, math.nan) for p in ("a", "b", "c")]
+            low, high = min(phases.values()), max(phases.values())
+            buses.append(
+                _Row(
+                    [bus, *(_fmt(v, 5) for v in values), _fmt(low, 5), _fmt(high, 5)],
+                    [bus, *values, low, high],
+                    bus in bad_buses,
+                )
+            )
+        self._buses.set_rows(buses)
 
         branches = []
         for element, br in r.branches.items():
@@ -839,9 +955,10 @@ class GridController(QObject):
             "branches": branches,
         }
 
-    def _bus_min_pu(self) -> dict[str, float]:
+    def _phase_pu(self) -> dict[str, dict[str, float]]:
+        """{bus: {phase letter: pu}} of the phase nodes (a, b, c) of the last result."""
         r = self._result
-        out: dict[str, float] = {}
+        out: dict[str, dict[str, float]] = {}
         if r is None or not r.converged:
             return out
         for node, pu in zip(r.node_names, r.node_voltage_pu, strict=False):
@@ -849,8 +966,14 @@ class GridController(QObject):
             pu = float(pu)
             if number not in PHASE_LETTERS or math.isnan(pu):
                 continue
-            out[bus] = min(out.get(bus, math.inf), pu)
+            out.setdefault(bus, {})[PHASE_LETTERS[number]] = pu
         return out
+
+    def _bus_min_pu(self) -> dict[str, float]:
+        return {bus: min(p.values()) for bus, p in self._phase_pu().items()}
+
+    def _bus_max_pu(self) -> dict[str, float]:
+        return {bus: max(p.values()) for bus, p in self._phase_pu().items()}
 
     # ---- console and status
 

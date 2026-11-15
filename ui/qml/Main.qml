@@ -16,7 +16,75 @@ ApplicationWindow {
     property bool quitting: false
     property var pendingAction: null  // runs once unsaved changes are saved or discarded
 
+    // ---- window layout (UI only: nothing here is saved in the project)
+    //
+    // The side panel (the Netlist / Blocks / Schematic / Grid tabs) can be hidden; a
+    // narrow strip then still switches between the four views. The bottom panel
+    // (Waveforms / Deck / Console) is "normal", "collapsed" to its tab row, "maximized"
+    // (the editors are hidden) or "detached" into its own window.
+    property bool sidePanelShown: true
+    property string bottomState: "normal"
+    property real bottomHeight: 280  // height of the bottom panel when it is normal
+
+    function setBottomState(state) {
+        if (state === bottomState)
+            return
+        if (bottomState === "normal" && bottomHolder.height > bottomHeader.height + 20)
+            bottomHeight = bottomHolder.height
+        if (bottomState === "detached") {
+            bottomPanel.parent = bottomHolder
+            detachedWindow.close()
+        }
+        bottomState = state
+        if (state === "detached") {
+            bottomPanel.parent = detachedWindow.contentItem
+            detachedWindow.show()
+            detachedWindow.raise()
+        } else {
+            bottomHolder.SplitView.preferredHeight = state === "collapsed"
+                    ? bottomHeader.height : bottomHeight
+        }
+    }
+    // Show a bottom tab, opening the panel if it is collapsed.
+    function showBottom(index) {
+        bottomTabs.currentIndex = index
+        if (bottomState === "collapsed")
+            setBottomState("normal")
+    }
+    // Layout presets: the bottom panel's share of the height and the side panel.
+    function applyLayout(name) {
+        const h = mainSplit.height
+        if (name === "plot") {
+            setBottomState("maximized")
+            return
+        }
+        if (name === "edit") {
+            sidePanelShown = true
+            setBottomState("collapsed")
+            return
+        }
+        if (bottomState === "detached")
+            setBottomState("normal")
+        sidePanelShown = name !== "results"
+        bottomHeight = Math.max(160, Math.round(h * (name === "results" ? 0.6 : 0.4)))
+        if (bottomState === "normal")
+            bottomHolder.SplitView.preferredHeight = bottomHeight
+        else
+            setBottomState("normal")
+    }
+
     Component.onCompleted: {
+        // fit the screen: the default size is taller than a 1366 x 768 laptop screen.
+        // Not on "offscreen" (tests): its 800 x 800 screen is not a real one.
+        if (Qt.platform.pluginName !== "offscreen"
+                && Screen.desktopAvailableWidth > 0 && Screen.desktopAvailableHeight > 0) {
+            width = Math.min(width, Screen.desktopAvailableWidth - 40)
+            height = Math.min(height, Screen.desktopAvailableHeight - 60)
+            x = Screen.virtualX + (Screen.desktopAvailableWidth - width) / 2
+            y = Screen.virtualY + Math.max(0, (Screen.desktopAvailableHeight - height) / 2 - 20)
+            bottomHeight = Math.max(160, Math.round(height * 0.38))
+            bottomHolder.SplitView.preferredHeight = bottomHeight
+        }
         Simulator.attachWaveforms(WaveformModel)
         DiagramController.attachWaveforms(WaveformModel)
         ProjectManager.attach(Simulator, DiagramController, WaveformModel)
@@ -34,6 +102,8 @@ ApplicationWindow {
         if (ProjectManager.modified && !quitting) {
             close.accepted = false
             whenSaved(() => { window.quitting = true; window.close() })
+        } else {
+            detachedWindow.close()
         }
     }
 
@@ -335,6 +405,29 @@ ApplicationWindow {
     Shortcut { sequences: [StandardKey.Open]; onActivated: openDialog.open() }
     Shortcut { sequences: [StandardKey.Save]; onActivated: window.saveProject(null) }
     Shortcut { sequences: [StandardKey.SaveAs]; onActivated: window.saveAs(null) }
+    Shortcut { sequence: "Ctrl+B"; onActivated: window.sidePanelShown = !window.sidePanelShown }
+    Shortcut {
+        sequence: "Ctrl+J"
+        onActivated: window.setBottomState(window.bottomState === "collapsed" ? "normal" : "collapsed")
+    }
+    Shortcut {
+        sequence: "Ctrl+M"
+        onActivated: window.setBottomState(window.bottomState === "maximized" ? "normal" : "maximized")
+    }
+
+    // The bottom panel in its own window (Detach); closing the window docks it again.
+    Window {
+        id: detachedWindow
+        objectName: "detachedBottomWindow"
+        title: qsTr("Waveforms — QtSpice")
+        width: 960
+        height: 560
+        color: window.palette.window
+        onClosing: {
+            if (window.bottomState === "detached")
+                window.setBottomState("normal")
+        }
+    }
 
     menuBar: MenuBar {
         Menu {
@@ -419,53 +512,53 @@ ApplicationWindow {
         if (GridController.openFile(url))
             leftTabs.currentIndex = 3
         else
-            bottomTabs.currentIndex = 2  // the reason is in the Console
+            window.showBottom(2)  // the reason is in the Console
     }
 
     function runSimulation() {
         if (gridShown) {
             GridController.run()
-            bottomTabs.currentIndex = 2  // Console while it runs, or why it did not start
+            window.showBottom(2)  // Console while it runs, or why it did not start
             return
         }
         const started = schematicShown ? SchematicController.run() : Simulator.run(netlistEditor.text)
         if (started)
-            bottomTabs.currentIndex = 2  // Console while it runs
+            window.showBottom(2)  // Console while it runs
     }
 
     Connections {
         target: Simulator
         function onResultReady() {
-            bottomTabs.currentIndex = WaveformModel.hasAxis ? 0 : 2
+            window.showBottom(WaveformModel.hasAxis ? 0 : 2)
         }
     }
 
     Connections {
         target: SchematicController
-        function onProbed(name) { bottomTabs.currentIndex = 0 }  // Waveforms
+        function onProbed(name) { window.showBottom(0) }  // Waveforms
     }
 
     Connections {
         target: GridController
-        function onResultReady() { bottomTabs.currentIndex = 0 }  // the voltage profile
-        function onLoadFailed() { bottomTabs.currentIndex = 2 }  // the Diagnostics
+        function onResultReady() { window.showBottom(0) }  // the voltage profile
+        function onLoadFailed() { window.showBottom(2) }  // the Diagnostics
     }
 
     Connections {
         target: DiagramController
         function onResultReady() {
-            bottomTabs.currentIndex = 0  // Waveforms
+            window.showBottom(0)  // Waveforms
         }
         // One Run button for every diagram (U3): the Console while it runs, and when
         // it does not start or fails (the reason and the network checks are there).
         function onRunningChanged() {
             if (DiagramController.running)
-                bottomTabs.currentIndex = 2
+                window.showBottom(2)
         }
         function onRunStatusChanged() {
             const s = DiagramController.runStatus
             if (s.startsWith("Not started") || s.startsWith("Failed"))
-                bottomTabs.currentIndex = 2
+                window.showBottom(2)
         }
     }
 
@@ -522,151 +615,311 @@ ApplicationWindow {
                 color: status.startsWith("Failed") || status.startsWith("Not started")
                        || status.startsWith("Not opened") ? "#d73a49" : palette.windowText
             }
+            ToolSeparator {}
+            Label {
+                text: qsTr("Layout")
+                color: palette.placeholderText
+            }
+            Repeater {
+                model: [
+                    { name: "edit", text: qsTr("Edit"),
+                      tip: qsTr("Editors only: the bottom panel shrinks to its tabs (Ctrl+J)") },
+                    { name: "balanced", text: qsTr("Balanced"),
+                      tip: qsTr("Editors and results side by side") },
+                    { name: "results", text: qsTr("Results"),
+                      tip: qsTr("A larger bottom panel; the side panel is hidden (Ctrl+B)") },
+                    { name: "plot", text: qsTr("Plot"),
+                      tip: qsTr("The bottom panel fills the window (Ctrl+M)") }
+                ]
+                delegate: ToolButton {
+                    required property var modelData
+                    objectName: "layout_" + modelData.name
+                    text: modelData.text
+                    onClicked: window.applyLayout(modelData.name)
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 600
+                    ToolTip.text: modelData.tip
+                }
+            }
         }
     }
 
     SplitView {
+        id: mainSplit
+        objectName: "mainSplit"
         anchors.fill: parent
         orientation: Qt.Vertical
 
-        SplitView {
+        RowLayout {
+            objectName: "topArea"
+            visible: window.bottomState !== "maximized"
             SplitView.fillHeight: true
-            SplitView.minimumHeight: 200
-            orientation: Qt.Horizontal
+            SplitView.minimumHeight: 160
+            spacing: 0
+
+            // With the side panel hidden, this strip still switches between the views.
+            Pane {
+                objectName: "sideStrip"
+                visible: !window.sidePanelShown
+                Layout.fillHeight: true
+                padding: 2
+                clip: true  // a short window cuts the strip instead of overlapping the bottom panel
+                ColumnLayout {
+                    spacing: 2
+                    ToolButton {
+                        objectName: "showSidePanelButton"
+                        Layout.preferredWidth: 28
+                        text: "»"
+                        onClicked: window.sidePanelShown = true
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 600
+                        ToolTip.text: qsTr("Show the side panel (Ctrl+B)")
+                    }
+                    Repeater {
+                        model: [qsTr("Netlist"), qsTr("Blocks"), qsTr("Schematic"), qsTr("Grid")]
+                        delegate: ToolButton {
+                            id: stripButton
+                            required property string modelData
+                            required property int index
+                            objectName: "sideStrip_" + index
+                            visible: index !== 3 || GridController.available
+                            Layout.preferredWidth: 28
+                            implicitHeight: stripLabel.implicitWidth + 20
+                            checkable: true
+                            checked: leftTabs.currentIndex === index
+                            onClicked: leftTabs.currentIndex = index
+                            contentItem: Item {
+                                Label {
+                                    id: stripLabel
+                                    anchors.centerIn: parent
+                                    rotation: -90
+                                    text: stripButton.modelData
+                                    font.bold: stripButton.checked
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            SplitView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                orientation: Qt.Horizontal
+
+                ColumnLayout {
+                    objectName: "sidePanel"
+                    visible: window.sidePanelShown
+                    SplitView.preferredWidth: 520
+                    SplitView.minimumWidth: 240
+                    spacing: 0
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 0
+                        TabBar {
+                            id: leftTabs
+                            objectName: "leftTabs"
+                            Layout.fillWidth: true
+                            TabButton { text: qsTr("Netlist") }
+                            TabButton { text: qsTr("Blocks") }
+                            TabButton { text: qsTr("Schematic") }
+                            TabButton {
+                                objectName: "gridTab"
+                                text: qsTr("Grid")
+                                visible: GridController.available
+                                width: GridController.available ? implicitWidth : 0
+                            }
+                        }
+                        ToolButton {
+                            objectName: "hideSidePanelButton"
+                            text: "«"
+                            onClicked: window.sidePanelShown = false
+                            ToolTip.visible: hovered
+                            ToolTip.delay: 600
+                            ToolTip.text: qsTr("Hide the side panel (Ctrl+B)")
+                        }
+                    }
+                    StackLayout {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        currentIndex: leftTabs.currentIndex
+                        NetlistEditor { id: netlistEditor }
+                        SplitView {
+                            orientation: Qt.Vertical
+                            BlockLibrary {
+                                SplitView.preferredHeight: 300
+                                SplitView.minimumHeight: 120
+                                onEditBlock: name => {
+                                    if (componentEditor.openComponent(name))
+                                        editorTabs.currentIndex = 1
+                                    else if (functionEditor.openBlock(name))
+                                        editorTabs.currentIndex = 0
+                                }
+                            }
+                            ColumnLayout {
+                                SplitView.fillHeight: true
+                                SplitView.minimumHeight: 120
+                                spacing: 0
+                                TabBar {
+                                    id: editorTabs
+                                    objectName: "editorTabs"
+                                    Layout.fillWidth: true
+                                    TabButton { text: qsTr("Functions") }
+                                    TabButton { text: qsTr("Components") }
+                                }
+                                StackLayout {
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    currentIndex: editorTabs.currentIndex
+                                    FunctionEditor { id: functionEditor }
+                                    ComponentEditor { id: componentEditor }
+                                }
+                            }
+                        }
+                        SplitView {
+                            orientation: Qt.Vertical
+                            PartPicker {
+                                id: partPicker
+                                SplitView.fillHeight: true
+                                SplitView.minimumHeight: 160
+                                onPlace: name => schematicCanvas.startPlace(name)
+                            }
+                            PortsPanel {
+                                id: portsPanel
+                                SplitView.preferredHeight: 150
+                                SplitView.minimumHeight: 100
+                                onEditPort: index => schematicCanvas.editPort(index)
+                                onMakeSymbolRequested: makeSymbolDialog.openWith("")
+                            }
+                        }
+                        GridPanel {
+                            onOpenRequested: gridOpenDialog.open()
+                            onViolationsRequested: gridResults.currentIndex = 2
+                        }
+                    }
+                }
+
+                // The right side follows the left tab: analysis settings for netlists,
+                // the block canvas and its properties for block diagrams.
+                StackLayout {
+                    objectName: "rightStack"
+                    SplitView.fillWidth: true
+                    SplitView.minimumWidth: 220
+                    currentIndex: leftTabs.currentIndex
+                    AnalysisPanel {}
+                    SplitView {
+                        orientation: Qt.Horizontal
+                        BlockCanvas {
+                            SplitView.fillWidth: true
+                            SplitView.minimumWidth: 300
+                        }
+                        PropertiesPanel {
+                            SplitView.preferredWidth: 220
+                            SplitView.minimumWidth: 160
+                        }
+                    }
+                    SchematicCanvas {
+                        id: schematicCanvas
+                        onPartPickerRequested: partPicker.focusSearch()
+                    }
+                    SplitView {
+                        orientation: Qt.Vertical
+                        GridView {
+                            SplitView.fillHeight: true
+                            SplitView.minimumHeight: 120
+                        }
+                        GridResultsTable {
+                            id: gridResults
+                            SplitView.preferredHeight: 260
+                            SplitView.minimumHeight: 100
+                        }
+                    }
+                }
+            }
+        }
+
+        // The bottom panel lives in this holder, or in detachedWindow when detached.
+        Item {
+            id: bottomHolder
+            objectName: "bottomHolder"
+            visible: window.bottomState !== "detached"
+            SplitView.fillHeight: window.bottomState === "maximized"
+            SplitView.preferredHeight: 280
+            SplitView.minimumHeight: window.bottomState === "collapsed" ? bottomHeader.height : 120
+            SplitView.maximumHeight: window.bottomState === "collapsed" ? bottomHeader.height
+                                                                         : Number.POSITIVE_INFINITY
 
             ColumnLayout {
-                SplitView.preferredWidth: 520
-                SplitView.minimumWidth: 240
+                id: bottomPanel
+                objectName: "bottomPanel"
+                anchors.fill: parent
                 spacing: 0
 
-                TabBar {
-                    id: leftTabs
-                    objectName: "leftTabs"
+                RowLayout {
+                    id: bottomHeader
                     Layout.fillWidth: true
-                    TabButton { text: qsTr("Netlist") }
-                    TabButton { text: qsTr("Blocks") }
-                    TabButton { text: qsTr("Schematic") }
-                    TabButton {
-                        objectName: "gridTab"
-                        text: qsTr("Grid")
-                        visible: GridController.available
-                        width: GridController.available ? implicitWidth : 0
+                    spacing: 0
+                    TabBar {
+                        id: bottomTabs
+                        objectName: "bottomTabs"
+                        Layout.fillWidth: true
+                        TabButton {
+                            text: qsTr("Waveforms")
+                            onClicked: window.showBottom(0)
+                        }
+                        TabButton {
+                            text: qsTr("Deck")
+                            onClicked: window.showBottom(1)
+                        }
+                        TabButton {
+                            text: qsTr("Console")
+                            onClicked: window.showBottom(2)
+                        }
+                    }
+                    ToolButton {
+                        objectName: "detachBottomButton"
+                        text: window.bottomState === "detached" ? qsTr("Dock") : qsTr("Detach")
+                        onClicked: window.setBottomState(window.bottomState === "detached"
+                                                         ? "normal" : "detached")
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 600
+                        ToolTip.text: window.bottomState === "detached"
+                                      ? qsTr("Put the panel back into the main window")
+                                      : qsTr("Move the panel into its own window")
+                    }
+                    ToolButton {
+                        objectName: "maximizeBottomButton"
+                        visible: window.bottomState !== "detached"
+                        text: window.bottomState === "maximized" ? qsTr("Restore") : qsTr("Maximize")
+                        onClicked: window.setBottomState(window.bottomState === "maximized"
+                                                         ? "normal" : "maximized")
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 600
+                        ToolTip.text: qsTr("Fill the window with this panel (Ctrl+M)")
+                    }
+                    ToolButton {
+                        objectName: "collapseBottomButton"
+                        visible: window.bottomState !== "detached"
+                        text: window.bottomState === "collapsed" ? "▴" : "▾"
+                        onClicked: window.setBottomState(window.bottomState === "collapsed"
+                                                         ? "normal" : "collapsed")
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 600
+                        ToolTip.text: window.bottomState === "collapsed"
+                                      ? qsTr("Show the panel (Ctrl+J)")
+                                      : qsTr("Shrink the panel to its tabs (Ctrl+J)")
                     }
                 }
                 StackLayout {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    currentIndex: leftTabs.currentIndex
-                    NetlistEditor { id: netlistEditor }
-                    SplitView {
-                        orientation: Qt.Vertical
-                        BlockLibrary {
-                            SplitView.preferredHeight: 300
-                            SplitView.minimumHeight: 120
-                            onEditBlock: name => {
-                                if (componentEditor.openComponent(name))
-                                    editorTabs.currentIndex = 1
-                                else if (functionEditor.openBlock(name))
-                                    editorTabs.currentIndex = 0
-                            }
-                        }
-                        ColumnLayout {
-                            SplitView.fillHeight: true
-                            SplitView.minimumHeight: 120
-                            spacing: 0
-                            TabBar {
-                                id: editorTabs
-                                objectName: "editorTabs"
-                                Layout.fillWidth: true
-                                TabButton { text: qsTr("Functions") }
-                                TabButton { text: qsTr("Components") }
-                            }
-                            StackLayout {
-                                Layout.fillWidth: true
-                                Layout.fillHeight: true
-                                currentIndex: editorTabs.currentIndex
-                                FunctionEditor { id: functionEditor }
-                                ComponentEditor { id: componentEditor }
-                            }
-                        }
-                    }
-                    SplitView {
-                        orientation: Qt.Vertical
-                        PartPicker {
-                            id: partPicker
-                            SplitView.fillHeight: true
-                            SplitView.minimumHeight: 160
-                            onPlace: name => schematicCanvas.startPlace(name)
-                        }
-                        PortsPanel {
-                            id: portsPanel
-                            SplitView.preferredHeight: 150
-                            SplitView.minimumHeight: 100
-                            onEditPort: index => schematicCanvas.editPort(index)
-                            onMakeSymbolRequested: makeSymbolDialog.openWith("")
-                        }
-                    }
-                    GridPanel { onOpenRequested: gridOpenDialog.open() }
+                    visible: window.bottomState !== "collapsed"
+                    currentIndex: bottomTabs.currentIndex
+                    WaveformView {}
+                    DeckView {}
+                    ConsoleView {}
                 }
-            }
-
-            // The right side follows the left tab: analysis settings for netlists,
-            // the block canvas and its properties for block diagrams.
-            StackLayout {
-                objectName: "rightStack"
-                SplitView.fillWidth: true
-                SplitView.minimumWidth: 220
-                currentIndex: leftTabs.currentIndex
-                AnalysisPanel {}
-                SplitView {
-                    orientation: Qt.Horizontal
-                    BlockCanvas {
-                        SplitView.fillWidth: true
-                        SplitView.minimumWidth: 300
-                    }
-                    PropertiesPanel {
-                        SplitView.preferredWidth: 220
-                        SplitView.minimumWidth: 160
-                    }
-                }
-                SchematicCanvas {
-                    id: schematicCanvas
-                    onPartPickerRequested: partPicker.focusSearch()
-                }
-                SplitView {
-                    orientation: Qt.Vertical
-                    GridView {
-                        SplitView.fillHeight: true
-                        SplitView.minimumHeight: 120
-                    }
-                    GridResultsTable {
-                        SplitView.preferredHeight: 260
-                        SplitView.minimumHeight: 100
-                    }
-                }
-            }
-        }
-
-        ColumnLayout {
-            SplitView.preferredHeight: 280
-            SplitView.minimumHeight: 120
-            spacing: 0
-
-            TabBar {
-                id: bottomTabs
-                objectName: "bottomTabs"
-                Layout.fillWidth: true
-                TabButton { text: qsTr("Waveforms") }
-                TabButton { text: qsTr("Deck") }
-                TabButton { text: qsTr("Console") }
-            }
-            StackLayout {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                currentIndex: bottomTabs.currentIndex
-                WaveformView {}
-                DeckView {}
-                ConsoleView {}
             }
         }
     }

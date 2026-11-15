@@ -9,7 +9,58 @@ ScrollView {
     id: root
     objectName: "gridPanel"
     signal openRequested()
+    signal violationsRequested()
     contentWidth: availableWidth
+
+    component SummaryCard: Rectangle {
+        id: card
+        property string title
+        property string value
+        property string detail
+        property string tip: ""
+        property bool alert: false
+        signal clicked()
+        Layout.fillWidth: true
+        Layout.preferredWidth: 1  // equal columns
+        implicitHeight: cardColumn.implicitHeight + 12
+        radius: 4
+        color: alert ? "#fde2e1" : palette.alternateBase
+        border.color: cardHover.hovered && tip !== "" ? palette.highlight : palette.mid
+        ColumnLayout {
+            id: cardColumn
+            anchors.fill: parent
+            anchors.margins: 6
+            spacing: 1
+            Label {
+                Layout.fillWidth: true
+                elide: Text.ElideRight
+                text: card.title
+                color: card.alert ? "#b31d28" : palette.placeholderText
+                font.pointSize: 8
+            }
+            Label {
+                Layout.fillWidth: true
+                elide: Text.ElideRight
+                text: card.value
+                font.pointSize: 12
+                font.bold: true
+                color: card.alert ? "#b31d28" : palette.text
+            }
+            Label {
+                Layout.fillWidth: true
+                elide: Text.ElideRight
+                text: card.detail
+                visible: text !== ""
+                font.pointSize: 8
+                color: card.alert ? "#b31d28" : palette.placeholderText
+            }
+        }
+        HoverHandler { id: cardHover; cursorShape: card.tip !== "" ? Qt.PointingHandCursor : Qt.ArrowCursor }
+        TapHandler { onTapped: card.clicked() }
+        ToolTip.visible: cardHover.hovered && tip !== ""
+        ToolTip.delay: 600
+        ToolTip.text: tip
+    }
 
     ColumnLayout {
         width: root.availableWidth
@@ -48,38 +99,63 @@ ScrollView {
             color: palette.placeholderText
         }
 
-        GroupBox {
+        // Totals of the last power flow as cards; Violations and the voltage range are
+        // clickable (the violation list, the bus with the lowest voltage).
+        GridLayout {
+            id: totals
             objectName: "gridTotals"
             Layout.fillWidth: true
             Layout.leftMargin: 8
             Layout.rightMargin: 8
-            title: qsTr("Power flow")
             visible: GridController.hasResult
-            GridLayout {
-                columns: 2
-                columnSpacing: 12
-                Label { text: qsTr("Iterations") }
-                Label {
-                    text: qsTr("%1 (%2 control)").arg(GridController.summary.iterations)
-                          .arg(GridController.summary.controlIterations)
-                }
-                Label { text: qsTr("Source power") }
-                Label {
-                    text: qsTr("%1 kW, %2 kvar").arg(GridController.summary.totalKw)
-                          .arg(GridController.summary.totalKvar)
-                }
-                Label { text: qsTr("Losses") }
-                Label {
-                    objectName: "gridLosses"
-                    text: qsTr("%1 kW, %2 kvar").arg(GridController.summary.lossesKw)
-                          .arg(GridController.summary.lossesKvar)
-                }
-                Label { text: qsTr("Violations") }
-                Label {
-                    text: GridController.summary.violationCount ?? ""
-                    color: GridController.summary.violationCount > 0 ? "#d73a49" : palette.text
-                }
+            columns: root.availableWidth > 430 ? 4 : 2
+            columnSpacing: 6
+            rowSpacing: 6
+            readonly property var s: GridController.summary
+
+            SummaryCard {
+                objectName: "cardSource"
+                title: qsTr("Source power")
+                value: qsTr("%1 kW").arg(totals.s.totalKw)
+                detail: qsTr("%1 kvar").arg(totals.s.totalKvar)
             }
+            SummaryCard {
+                objectName: "gridLosses"
+                title: qsTr("Losses")
+                value: qsTr("%1 kW").arg(totals.s.lossesKw)
+                detail: totals.s.lossesPct !== undefined
+                        ? qsTr("%1 % · %2 kvar").arg(totals.s.lossesPct).arg(totals.s.lossesKvar)
+                        : qsTr("%1 kvar").arg(totals.s.lossesKvar)
+            }
+            SummaryCard {
+                objectName: "cardVoltage"
+                title: qsTr("Min / max V (pu)")
+                value: totals.s.minPu !== undefined ? totals.s.minPu + " / " + totals.s.maxPu : "—"
+                detail: totals.s.minPu !== undefined
+                        ? qsTr("low %1 · high %2").arg(totals.s.minPuBus).arg(totals.s.maxPuBus) : ""
+                tip: qsTr("Select the bus with the lowest voltage")
+                onClicked: GridController.selectBus(totals.s.minPuBus ?? "")
+            }
+            SummaryCard {
+                objectName: "cardViolations"
+                readonly property int n: totals.s.violationCount ?? 0
+                title: qsTr("Violations")
+                value: String(n)
+                detail: n > 0 ? qsTr("show the list") : qsTr("none")
+                alert: n > 0
+                tip: qsTr("Show the violations in the results table")
+                onClicked: root.violationsRequested()
+            }
+        }
+
+        Label {
+            Layout.fillWidth: true
+            Layout.leftMargin: 8
+            visible: GridController.hasResult
+            color: palette.placeholderText
+            text: qsTr("Converged in %1 iterations (%2 control)")
+                  .arg(GridController.summary.iterations)
+                  .arg(GridController.summary.controlIterations)
         }
 
         GroupBox {
