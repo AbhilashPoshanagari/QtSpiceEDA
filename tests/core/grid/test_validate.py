@@ -244,3 +244,73 @@ def test_ieee_feeders_give_no_errors(feeder: str) -> None:
     diags = v.validate(model)
     assert [d for d in diags if d.severity == ERROR] == []
     assert {(d.code, d.block) for d in diags} == FEEDER_WARNINGS[feeder]
+
+
+# ---- D2: draft elements
+
+
+DRAFT_FIELDS = [
+    (lambda m: m.loads["ld3"], "kw", "load.ld3", "kW not set"),
+    (lambda m: m.loads["ld1"], "kvar", "load.ld1", "kvar not set"),
+    (lambda m: m.linecodes["lc3"], "r_matrix", "linecode.lc3", "R matrix not set"),
+    (lambda m: m.linecodes["lc3"], "x_matrix", "linecode.lc3", "X matrix not set"),
+    (lambda m: m.linecodes["lc1"], "c_matrix", "linecode.lc1", "C matrix not set"),
+    (lambda m: m.transformers["t1"].windings[0], "kva", "transformer.t1",
+     "winding 1 kVA not set"),
+    (lambda m: m.transformers["t1"].windings[1], "kv", "transformer.t1",
+     "winding 2 kV not set"),
+    (lambda m: m.transformers["t1"].windings[1], "pct_r", "transformer.t1",
+     "winding 2 %R not set"),
+    (lambda m: m.transformers["t1"], "xhl", "transformer.t1", "Xhl (%) not set"),
+    (lambda m: m.capacitors["cap1"], "kvar", "capacitor.cap1", "kvar not set"),
+]  # fmt: skip
+
+
+@pytest.mark.parametrize(("target", "attr", "element", "message"), DRAFT_FIELDS)
+def test_each_missing_field_is_one_error(
+    target: Callable[[GridModel], object], attr: str, element: str, message: str
+) -> None:
+    m = good_model()
+    setattr(target(m), attr, None)
+    diags = v.validate(m)
+    assert [(d.block, d.severity, d.message) for d in diags] == [(element, ERROR, message)]
+    assert diags[0].code == v.MISSING_VALUE
+
+
+def test_pv_pmpp_and_kva_are_required() -> None:
+    from core.grid.model import PVSystem
+
+    m = good_model()
+    m.pvsystems["pv1"] = PVSystem("pv1", T("b"), 3, WYE, 0.4, None, None, 1.0, 1.0)
+    found = [(d.block, d.message) for d in v.validate(m)]
+    assert found == [("pvsystem.pv1", "Pmpp not set"), ("pvsystem.pv1", "kVA not set")]
+
+
+def test_two_winding_transformer_needs_no_xht_xlt() -> None:
+    m = good_model()
+    m.transformers["t1"].xht = None
+    m.transformers["t1"].xlt = None
+    assert v.validate(m) == []
+
+
+def test_a_bare_draft_gives_one_error_per_field_and_no_failed_check() -> None:
+    m = good_model()
+    for ld in m.loads.values():
+        ld.kw = ld.kvar = None
+    for w in m.transformers["t1"].windings:
+        w.kv = w.kva = w.pct_r = None
+    diags = v.validate(m)
+    assert not _only(diags, v.VALIDATION_FAILED)
+    missing = _only(diags, v.MISSING_VALUE)
+    assert len(missing) == 2 * len(m.loads) + 3 * 2
+    assert all(d.severity == ERROR for d in missing)
+
+
+def test_derived_voltage_bases_count_as_bases() -> None:
+    m = good_model()
+    m.voltage_bases = []
+    m.derive_voltage_bases = True
+    assert v.validate(m) == []
+    m.sources.clear()
+    m.transformers.clear()
+    assert _only(v.validate(m), v.NO_VOLTAGE_BASES)

@@ -10,6 +10,11 @@ core/grid/engines/opendss/units.py, rule 17):
   wye elements; bus bases are line-to-neutral;
 - power in kW, kvar, kVA; transformer R and X in % on the winding / element base.
 
+Draft elements (v0.5 designs, CLAUDE.md "Grid model changes for designs"): the fields a
+user must type are ``X | None``; None means "not set yet". ``missing_fields`` lists
+them; validate.py reports each as an error and writer.py refuses the model. A model
+extracted from a .dss file is always complete.
+
 Names are lower case. Element ids are "<class>.<name>" with the OpenDSS class, so they
 match GridResult and the Diagnostics: a Switch is "line.<name>", a Regulator
 "regcontrol.<name>", a Source "vsource.<name>".
@@ -17,6 +22,7 @@ match GridResult and the Diagnostics: a Switch is "line.<name>", a Regulator
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import ClassVar
 
@@ -100,14 +106,16 @@ class Source:
 class LineCode:
     name: str
     phases: int
-    r_matrix: tuple[float, ...]
-    """Series resistance in ohm/km, row-major phases x phases."""
-    x_matrix: tuple[float, ...]
-    """Series reactance in ohm/km, row-major."""
-    c_matrix: tuple[float, ...]
-    """Shunt capacitance in nF/km, row-major."""
-    normal_amps: float
-    emergency_amps: float
+    r_matrix: tuple[float, ...] | None
+    """Series resistance in ohm/km, row-major phases x phases; None in a draft."""
+    x_matrix: tuple[float, ...] | None
+    """Series reactance in ohm/km, row-major; None in a draft."""
+    c_matrix: tuple[float, ...] | None
+    """Shunt capacitance in nF/km, row-major; None in a draft."""
+    norm_amps: float | None = None
+    """Normal rating in A; None = no rating (never a guessed value)."""
+    emerg_amps: float | None = None
+    """Emergency rating in A; None = no rating."""
     generated: bool = False
     """True for a code made from one line's own impedances ("_<line>")."""
 
@@ -128,6 +136,10 @@ class Line:
     linecode: str
     """Name of a LineCode in the same GridModel."""
     enabled: bool = True
+    norm_amps: float | None = None
+    """Normal rating in A of this line; None = its linecode's rating."""
+    emerg_amps: float | None = None
+    """Emergency rating in A of this line; None = its linecode's rating."""
 
     cls: ClassVar[str] = "line"
 
@@ -163,10 +175,11 @@ class Switch:
 class Winding:
     terminal: Terminal
     conn: str
-    kv: float
-    """Rated voltage in kV (LL for 3-phase and delta, as given for 1-phase wye)."""
-    kva: float
-    pct_r: float
+    kv: float | None
+    """Rated voltage in kV (LL for 3-phase and delta, as given for 1-phase wye);
+    None in a draft."""
+    kva: float | None
+    pct_r: float | None
     tap: float = 1.0
     """Tap in pu; for a regulated winding, the tap after the solve."""
     min_tap: float = 0.9
@@ -182,12 +195,12 @@ class Transformer:
     name: str
     phases: int
     windings: list[Winding]
-    xhl: float
+    xhl: float | None
     """Reactance winding 1-2 in %."""
-    xht: float
-    """Reactance winding 1-3 in % (3-winding transformers)."""
-    xlt: float
-    """Reactance winding 2-3 in % (3-winding transformers)."""
+    xht: float | None
+    """Reactance winding 1-3 in % (3-winding transformers; not needed for 2)."""
+    xlt: float | None
+    """Reactance winding 2-3 in % (3-winding transformers; not needed for 2)."""
     pct_noload_loss: float = 0.0
     pct_imag: float = 0.0
     ppm_antifloat: float = 1.0
@@ -244,8 +257,8 @@ class Load:
     phases: int
     conn: str
     kv: float
-    kw: float
-    kvar: float
+    kw: float | None
+    kvar: float | None
     model: str
     """One of LOAD_MODELS: constant power, impedance, current, or CVR."""
     vminpu: float = 0.95
@@ -269,7 +282,7 @@ class Capacitor:
     phases: int
     conn: str
     kv: float
-    kvar: float
+    kvar: float | None
     """Total rated kvar of the bank (all steps)."""
     states: tuple[int, ...] = (1,)
     """Step states, 1 = in service, one per step."""
@@ -289,9 +302,9 @@ class PVSystem:
     phases: int
     conn: str
     kv: float
-    kva: float
+    kva: float | None
     """Inverter rating in kVA."""
-    pmpp_kw: float
+    pmpp_kw: float | None
     """Panel power at 1 kW/m2 in kW."""
     irradiance: float
     """Irradiance in kW/m2 (pu of 1 kW/m2)."""
@@ -311,7 +324,11 @@ class GridModel:
     base_frequency: float
     """In Hz, always from the file; there is no default."""
     voltage_bases: list[float] = field(default_factory=list)
-    """kV LL, as in the file's Set VoltageBases."""
+    """kV LL, as in the file's Set VoltageBases (unused when derive_voltage_bases)."""
+    derive_voltage_bases: bool = False
+    """False: the bases are ``voltage_bases``, from the .dss file (also for a design
+    opened from a .dss file). True: a design made in the designer; the writer derives
+    the bases from topology.derived_voltage_bases() and ``voltage_bases`` is ignored."""
     buses: dict[str, Bus] = field(default_factory=dict)
     sources: dict[str, Source] = field(default_factory=dict)
     linecodes: dict[str, LineCode] = field(default_factory=dict)
@@ -337,3 +354,49 @@ class GridModel:
             "capacitors": len(self.capacitors),
             "pvsystems": len(self.pvsystems),
         }
+
+
+@dataclass(frozen=True)
+class MissingField:
+    """A user-entered field of a draft element that is not set (None)."""
+
+    element_id: str
+    label: str
+    """What is missing as the user knows it ("kW", "winding 2 kVA", "R matrix")."""
+
+    @property
+    def message(self) -> str:
+        return f"{self.label} not set"
+
+
+def missing_fields(model: GridModel) -> Iterator[MissingField]:
+    """Every user-entered field that is None, in model order (CLAUDE.md "Grid model
+    changes for designs": linecode impedances, load kW/kvar, transformer kVA/kV/%R/X,
+    capacitor kvar, PV Pmpp/kVA)."""
+    for c in model.linecodes.values():
+        for label, value in (("R matrix", c.r_matrix), ("X matrix", c.x_matrix),
+                             ("C matrix", c.c_matrix)):  # fmt: skip
+            if value is None:
+                yield MissingField(c.id, label)
+    for t in model.transformers.values():
+        for i, w in enumerate(t.windings, start=1):
+            for label, value in (("kV", w.kv), ("kVA", w.kva), ("%R", w.pct_r)):
+                if value is None:
+                    yield MissingField(t.id, f"winding {i} {label}")
+        reactances = [("Xhl", t.xhl)]
+        if len(t.windings) >= 3:
+            reactances += [("Xht", t.xht), ("Xlt", t.xlt)]
+        for label, value in reactances:
+            if value is None:
+                yield MissingField(t.id, f"{label} (%)")
+    for ld in model.loads.values():
+        for label, value in (("kW", ld.kw), ("kvar", ld.kvar)):
+            if value is None:
+                yield MissingField(ld.id, label)
+    for cap in model.capacitors.values():
+        if cap.kvar is None:
+            yield MissingField(cap.id, "kvar")
+    for pv in model.pvsystems.values():
+        for label, value in (("Pmpp", pv.pmpp_kw), ("kVA", pv.kva)):
+            if value is None:
+                yield MissingField(pv.id, label)

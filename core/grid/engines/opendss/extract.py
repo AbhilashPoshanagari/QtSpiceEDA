@@ -7,7 +7,11 @@ the typed interfaces; the few that have none (spike 4) come from
 - Line impedances are read from the line itself (``Lines.Rmatrix`` etc., given per
   LINE unit and already converted from its linecode) and converted with the line's
   own Units code (units.py, rule 17). A line without a linecode, or whose impedances
-  or ratings differ from its linecode's, gets a generated LineCode "_<line>".
+  differ from its linecode's, gets a generated LineCode "_<line>".
+- Ratings (NormAmps/EmergAmps, A) are read typed (spike S4): a linecode's from
+  ``LineCodes``, a line's from ``Lines``. A line keeps its own rating only when it
+  differs from its linecode's (``linecode=`` copies the code's rating); otherwise
+  ``Line.norm_amps`` is None. A generated "_<line>" code carries the line's rating.
 - Only linecodes used by a line are in the model; a LineCode is not a circuit element.
 - Lines with Switch=yes become Switch.
 - Taps are read as they are now: call this after the solve so regulator taps are the
@@ -234,16 +238,22 @@ class _Extractor:
             x = units.matrix_to_per_km(ln.Xmatrix, code)
             c = units.matrix_to_per_km(ln.Cmatrix, code)
             assert length_m is not None and r is not None and x is not None and c is not None
+            line_amps = (float(ln.NormAmps), float(ln.EmergAmps))
+            code_name = str(ln.LineCode).lower()
             own = LineCode(
-                name=str(ln.LineCode).lower(),
+                name=code_name,
                 phases=phases,
                 r_matrix=r,
                 x_matrix=x,
                 c_matrix=c,
-                normal_amps=float(ln.NormAmps),
-                emergency_amps=float(ln.EmergAmps),
+                norm_amps=line_amps[0],
+                emerg_amps=line_amps[1],
             )
+            if code_name and code_name not in model.linecodes:
+                own.norm_amps, own.emerg_amps = self._linecode_amps(code_name, line_amps)
             code_name = self._linecode_for(model, name, own)
+            code = model.linecodes[code_name]
+            same = (code.norm_amps, code.emerg_amps) == line_amps
             model.lines[name] = Line(
                 name=name,
                 bus1=terms[0],
@@ -252,7 +262,18 @@ class _Extractor:
                 length_m=length_m,
                 linecode=code_name,
                 enabled=enabled,
+                norm_amps=None if same else line_amps[0],
+                emerg_amps=None if same else line_amps[1],
             )
+
+    def _linecode_amps(self, code: str, fallback: tuple[float, float]) -> tuple[float, float]:
+        """NormAmps, EmergAmps of linecode ``code`` (typed, S4). Leaves the Lines
+        interface on its current line."""
+        lc = self.ckt.LineCodes
+        lc.Name = code
+        if str(lc.Name).lower() != code:
+            return fallback  # not found; cannot happen for a line's own code
+        return float(lc.NormAmps), float(lc.EmergAmps)
 
     def _linecode_for(self, model: GridModel, line: str, own: LineCode) -> str:
         """The name of a LineCode in ``model`` equal to the line's own values: its
@@ -267,8 +288,6 @@ class _Extractor:
                 and _same(known.r_matrix, own.r_matrix)
                 and _same(known.x_matrix, own.x_matrix)
                 and _same(known.c_matrix, own.c_matrix)
-                and math.isclose(known.normal_amps, own.normal_amps)
-                and math.isclose(known.emergency_amps, own.emergency_amps)
             ):
                 return own.name
         generated = f"_{line}"
@@ -278,8 +297,8 @@ class _Extractor:
             r_matrix=own.r_matrix,
             x_matrix=own.x_matrix,
             c_matrix=own.c_matrix,
-            normal_amps=own.normal_amps,
-            emergency_amps=own.emergency_amps,
+            norm_amps=own.norm_amps,
+            emerg_amps=own.emerg_amps,
             generated=True,
         )
         return generated

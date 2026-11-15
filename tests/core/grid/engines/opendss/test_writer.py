@@ -18,7 +18,7 @@ import pytest
 
 from core.grid.config import CONTROL_STATIC, PowerFlowConfig
 from core.grid.engines.opendss.engine import OpenDSSEngine
-from core.grid.engines.opendss.writer import main, num, script_commands, write_dss
+from core.grid.engines.opendss.writer import main, num, script_commands, write
 from core.grid.model import (
     LOAD_PQ,
     WYE,
@@ -31,6 +31,8 @@ from core.grid.model import (
     Source,
     Switch,
     Terminal,
+    Transformer,
+    Winding,
 )
 from core.grid.result import GridResult
 from core.netlist.model import ERROR
@@ -93,10 +95,96 @@ def test_round_trip_matches_the_original(feeder: str) -> None:
     ref_pu = dict(zip(ref["node_names"], ref["node_pu"], strict=True))
     pa = _pu_by_node(a)
     assert max(abs(pa[n] - ref_pu[n]) for n in ref_pu) < 1e-4  # S2: default-tolerance solve
-    engine, b, _ = _round_trip(original)
+    engine, b, model = _round_trip(original)
     _assert_same_solution(a, b)
     # Taps are already where the regulators want them: no tap moves.
     assert b.control_iterations == 1
+    back, _ = engine.extract_model()
+    assert back is not None
+    assert _ratings(back) == _ratings(model)
+
+
+def _ratings(model: GridModel) -> dict[str, tuple[float | None, float | None]]:
+    out = {c.id: (c.norm_amps, c.emerg_amps) for c in model.linecodes.values()}
+    out.update({ln.id: (ln.norm_amps, ln.emerg_amps) for ln in model.lines.values()})
+    return out
+
+
+@opendss
+def test_feeder_ratings_are_read_typed() -> None:
+    """No IEEE file sets a rating (S4): every linecode has OpenDSS's 400 / 600 A and
+    every line inherits it from its linecode."""
+    original, _ = _original("ieee13")
+    model, _ = original.extract_model()
+    assert model is not None
+    assert {(c.norm_amps, c.emerg_amps) for c in model.linecodes.values()} == {(400.0, 600.0)}
+    assert {(ln.norm_amps, ln.emerg_amps) for ln in model.lines.values()} == {(None, None)}
+
+
+@opendss
+def test_round_trip_with_typed_ratings() -> None:
+    """Ratings on a linecode, on a line (after linecode=, S4) and on lines whose
+    linecode was given a new rating after they copied the old one."""
+    original, a = _original(
+        "ieee13",
+        "Edit Linecode.mtx601 normamps=530 emergamps=700",  # lines keep the 400 / 600 they copied
+        "Edit Line.670671 normamps=611 emergamps=811",
+        "Edit Linecode.mtx606 normamps=250 emergamps=300",
+        "Edit Line.692675 linecode=mtx606",
+    )
+    model, _ = original.extract_model()
+    assert model is not None
+    code = model.linecodes["mtx601"]
+    assert (code.norm_amps, code.emerg_amps) == (530.0, 700.0)
+    assert (model.lines["650632"].norm_amps, model.lines["650632"].emerg_amps) == (400.0, 600.0)
+    assert (model.lines["670671"].norm_amps, model.lines["670671"].emerg_amps) == (611.0, 811.0)
+    assert (model.lines["692675"].norm_amps, model.lines["692675"].emerg_amps) == (None, None)
+    assert model.linecodes["mtx606"].norm_amps == 250.0
+    engine, b, model = _round_trip(original)
+    _assert_same_solution(a, b)
+    back, _ = engine.extract_model()
+    assert back is not None
+    assert _ratings(back) == _ratings(model)
+    assert engine.context is not None
+    lines = engine.context.ActiveCircuit.Lines
+    lines.Name = "670671"
+    assert (lines.NormAmps, lines.EmergAmps) == (611.0, 811.0)
+    lines.Name = "692675"
+    assert (lines.NormAmps, lines.EmergAmps) == (250.0, 300.0)
+
+
+@opendss
+def test_ieee13_with_derived_voltage_bases() -> None:
+    """IEEE 13 as a design: the writer derives the bases (115, 4.16, 0.48 kV) instead of
+    using the file's. Every bus gets the file's kV base and the solution is the
+    original's within 1e-6 pu and 0.1 % losses.
+
+    As in G3 the comparison is with the original solved the same way (Tolerance 1e-10):
+    opendss_reference.json is a default-tolerance solve, 1.4e-5 pu from any re-solve,
+    the original file included (S4 b). The original itself is checked against the
+    reference within 1e-4, as in test_round_trip_matches_the_original."""
+    original, a = _original("ieee13")
+    ref = reference("ieee13")
+    ref_pu = dict(zip(ref["node_names"], ref["node_pu"], strict=True))
+    pa = _pu_by_node(a)
+    assert max(abs(pa[n] - ref_pu[n]) for n in ref_pu) < 1e-4
+    model, _ = original.extract_model()
+    assert model is not None
+    file_bases = {name: bus.kv_base_ln for name, bus in model.buses.items()}
+    model.voltage_bases = []
+    model.derive_voltage_bases = True
+    text, diagnostics = write(model)
+    assert diagnostics == [] and text is not None
+    assert "Set VoltageBases=[0.48 4.16 115]" in text
+    engine = OpenDSSEngine()
+    assert engine.load_model(model) == []
+    b = engine.run(CONFIG)
+    assert b.converged and b.ok, b.diagnostics
+    _assert_same_solution(a, b)
+    back, _ = engine.extract_model()
+    assert back is not None
+    back_bases = {name: bus.kv_base_ln for name, bus in back.buses.items()}
+    assert back_bases == pytest.approx(file_bases, rel=1e-12)
 
 
 @opendss
@@ -250,12 +338,12 @@ def german_locale() -> Iterator[None]:
 
 
 def test_script_has_no_decimal_commas(german_locale: None) -> None:
-    text, _ = write_dss(_hand_model())
+    text, _ = write(_hand_model())
     assert "0,8" not in text and "irradiance=0.8" in text
 
 
 def test_script_order_and_properties() -> None:
-    text, diagnostics = write_dss(_hand_model())
+    text, diagnostics = write(_hand_model())
     assert diagnostics == []
     lines = [c for _, c in script_commands(text)]
     assert lines[0] == "Clear"
@@ -278,7 +366,7 @@ def test_script_order_and_properties() -> None:
 
 
 def test_units_come_after_the_impedances() -> None:
-    text, _ = write_dss(_hand_model())
+    text, _ = write(_hand_model())
     code = text[text.index("New Linecode.ug") :].split("\n")[:5]
     assert code[-1].endswith("units=km")
     line = next(c for _, c in script_commands(text) if c.startswith("New Line.feeder"))
@@ -288,7 +376,7 @@ def test_units_come_after_the_impedances() -> None:
 def test_switch_impedance_follows_switch_yes() -> None:
     model = _hand_model()
     model.switches["s1"].closed = False
-    text, _ = write_dss(model)
+    text, _ = write(model)
     switch = next(c for _, c in script_commands(text) if c.startswith("New Line.s1")).split()
     i = switch.index("switch=yes")
     assert switch[i + 1 :] == ["r1=0.0001", "x1=0", "r0=0.0001", "x0=0", "c1=0", "c0=0",
@@ -297,11 +385,97 @@ def test_switch_impedance_follows_switch_yes() -> None:
     assert lines.index("Open line.s1 1") > lines.index("CalcVoltageBases")
 
 
+def test_ratings_follow_the_linecode() -> None:
+    model = _hand_model()
+    model.lines["feeder"].norm_amps = 250.0
+    model.lines["feeder"].emerg_amps = 300.0
+    text, diagnostics = write(model)
+    assert diagnostics == [] and text is not None
+    code = text[text.index("New Linecode.ug") :].split("\n")[:5]
+    assert code[-1] == "~ normamps=400 emergamps=600 units=km"
+    line = next(c for _, c in script_commands(text) if c.startswith("New Line.feeder")).split()
+    i = line.index("linecode=ug")
+    assert line[i + 1 : i + 3] == ["normamps=250", "emergamps=300"]  # after linecode= (S4)
+
+
+def test_ratings_not_set_are_not_written() -> None:
+    model = _hand_model()
+    model.linecodes["ug"].norm_amps = None
+    model.linecodes["ug"].emerg_amps = None
+    text, diagnostics = write(model)
+    assert diagnostics == [] and text is not None
+    assert "normamps" not in text and "emergamps" not in text
+
+
+def test_a_draft_model_gives_no_script_and_one_error_per_missing_field() -> None:
+    model = _hand_model()
+    model.loads["ld1"].kw = None
+    model.loads["ld1"].kvar = None
+    model.linecodes["ug"].x_matrix = None
+    model.pvsystems["pv1"].pmpp_kw = None
+    text, diagnostics = write(model)
+    assert text is None
+    assert [(d.block, d.severity, d.message) for d in diagnostics] == [
+        ("linecode.ug", ERROR, "X matrix not set"),
+        ("load.ld1", ERROR, "kW not set"),
+        ("load.ld1", ERROR, "kvar not set"),
+        ("pvsystem.pv1", ERROR, "Pmpp not set"),
+    ]
+
+
+def test_a_draft_transformer_gives_no_script() -> None:
+    model = _hand_model()
+    model.transformers["t1"] = Transformer(
+        "t1", 3, [Winding(Terminal("a"), WYE, None, None, None),
+                  Winding(Terminal("b"), WYE, 0.4, 100.0, 1.0)], None, None, None,
+    )  # fmt: skip
+    text, diagnostics = write(model)
+    assert text is None
+    assert [d.message for d in diagnostics] == [
+        "winding 1 kV not set",
+        "winding 1 kVA not set",
+        "winding 1 %R not set",
+        "Xhl (%) not set",
+    ]
+    assert {d.block for d in diagnostics} == {"transformer.t1"}
+
+
+def test_write_never_raises_on_a_malformed_model() -> None:
+    model = _hand_model()
+    model.loads["ld1"] = None  # type: ignore[assignment]
+    text, diagnostics = write(model)
+    assert text is None
+    assert [d.severity for d in diagnostics] == [ERROR]
+
+
+def test_load_model_refuses_a_draft() -> None:
+    model = _hand_model()
+    model.loads["ld1"].kw = None
+    engine = OpenDSSEngine()
+    diagnostics = engine.load_model(model)
+    assert [(d.block, d.message) for d in diagnostics] == [("load.ld1", "kW not set")]
+    assert not engine.loaded and engine.script == ""
+
+
+def test_a_design_writes_derived_voltage_bases() -> None:
+    model = _hand_model()
+    model.voltage_bases = [99.0]  # ignored for a design
+    model.derive_voltage_bases = True
+    text, _ = write(model)
+    assert text is not None
+    lines = [c for _, c in script_commands(text)]
+    calcv = lines.index("CalcVoltageBases")
+    assert lines[calcv - 1] == "Set VoltageBases=[11]"
+    model.derive_voltage_bases = False
+    text, _ = write(model)
+    assert text is not None and "Set VoltageBases=[99]" in text
+
+
 def test_names_are_lower_case() -> None:
     model = _hand_model()
     model.loads["ld1"].name = "LD1"
     model.loads["ld1"].terminal = Terminal("A", (1, 2, 3))
-    text, _ = write_dss(model)
+    text, _ = write(model)
     assert "New Load.ld1 phases=3 bus1=a.1.2.3 " in text
 
 
@@ -309,7 +483,7 @@ def test_bad_elements_are_diagnostics_not_exceptions() -> None:
     model = _hand_model()
     model.linecodes["ug"].r_matrix = (1.0, 2.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
     model.loads["ld1"].kw = float("nan")
-    text, diagnostics = write_dss(model)
+    text, diagnostics = write(model)
     by_location = {d.block: d for d in diagnostics}
     assert "not symmetric" in by_location["linecode.ug"].message
     assert "nan" in by_location["load.ld1"].message
@@ -320,7 +494,7 @@ def test_bad_elements_are_diagnostics_not_exceptions() -> None:
 def test_names_that_break_the_script_are_diagnostics() -> None:
     model = _hand_model()
     model.loads["ld1"].name = "my load"
-    text, diagnostics = write_dss(model)
+    text, diagnostics = write(model)
     assert [d.block for d in diagnostics] == ["load.my load"]
     assert "cannot be written" in diagnostics[0].message
     assert "New Load." not in text
@@ -329,7 +503,7 @@ def test_names_that_break_the_script_are_diagnostics() -> None:
 def test_no_source_is_a_diagnostic() -> None:
     model = _hand_model()
     model.sources.clear()
-    text, diagnostics = write_dss(model)
+    text, diagnostics = write(model)
     assert [d.block for d in diagnostics] == ["circuit"]
     assert "New Circuit" not in text
 

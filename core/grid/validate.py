@@ -11,6 +11,10 @@ an unreachable bus with nothing but branches connected to it, which are warnings
 Every graph question (reachability, voltage zones, available nodes, loops) is asked of
 ``core.grid.topology.GridGraph`` (rule 25); this module never walks the graph itself.
 
+A draft element (v0.5 design) with a user-entered field not set gives one
+``MISSING_VALUE`` error per field ("load.l3: kW not set"), from
+``core.grid.model.missing_fields``; checks that need such a value skip it.
+
 ``incomplete=True`` says the model lacks elements the extractor does not support yet
 (it warned "unsupported element ..."). One of them may be a branch, so reachability
 findings are then reported as warnings instead of errors.
@@ -21,8 +25,8 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Iterable, Iterator
 
-from core.grid.model import DELTA, WYE, GridModel, Terminal
-from core.grid.topology import GridGraph, required_nodes
+from core.grid.model import DELTA, WYE, GridModel, Terminal, missing_fields
+from core.grid.topology import GridGraph, derived_voltage_bases, required_nodes
 from core.netlist.model import ERROR, INFO, WARNING
 from core.physical.component import NetworkDiagnostic
 
@@ -71,7 +75,12 @@ NODE_NOT_AVAILABLE = "node_not_available"
 LOOP = "loop"
 
 TOPOLOGY_CODES = (ZONE_MISMATCH, NODE_NOT_AVAILABLE, LOOP)
-ALL_CODES = CODES + TOPOLOGY_CODES
+
+# D2 (v0.5) draft elements.
+MISSING_VALUE = "missing_value"
+
+DRAFT_CODES = (MISSING_VALUE,)
+ALL_CODES = CODES + TOPOLOGY_CODES + DRAFT_CODES
 
 KV_TOLERANCE = 0.05
 """Largest relative difference between a rated kV and the bus voltage base."""
@@ -89,6 +98,7 @@ def _diag(location: str, severity: str, code: str, message: str) -> NetworkDiagn
 def validate(model: GridModel, *, incomplete: bool = False) -> list[NetworkDiagnostic]:
     """Run every check on ``model``; an exception inside a check becomes an error."""
     checks: list[Callable[[GridModel], Iterable[NetworkDiagnostic]]] = [
+        _check_missing_values,
         _check_source,
         _check_voltage_bases,
         _check_duplicates,
@@ -183,8 +193,14 @@ def _check_source(model: GridModel) -> Iterator[NetworkDiagnostic]:
         yield _diag(MODEL, ERROR, NO_SOURCE, "the circuit has no (enabled) source")
 
 
+def _check_missing_values(model: GridModel) -> Iterator[NetworkDiagnostic]:
+    for f in missing_fields(model):
+        yield _diag(f.element_id, ERROR, MISSING_VALUE, f.message)
+
+
 def _check_voltage_bases(model: GridModel) -> Iterator[NetworkDiagnostic]:
-    if not model.voltage_bases:
+    bases = derived_voltage_bases(model) if model.derive_voltage_bases else model.voltage_bases
+    if not bases:
         yield _diag(
             MODEL,
             WARNING,
@@ -385,11 +401,11 @@ def _check_lines(model: GridModel) -> Iterator[NetworkDiagnostic]:
 def _check_transformers(model: GridModel) -> Iterator[NetworkDiagnostic]:
     for t in model.transformers.values():
         for i, w in enumerate(t.windings, start=1):
-            if not w.kva > 0:
+            if w.kva is not None and not w.kva > 0:
                 yield _diag(t.id, ERROR, TRANSFORMER_KVA, f"winding {i} kVA {w.kva:g} is not > 0")
             bus = model.buses.get(w.terminal.bus)
-            if bus is None or bus.kv_base_ln <= 0:
-                continue
+            if w.kv is None or bus is None or bus.kv_base_ln <= 0:
+                continue  # a kV not set is MISSING_VALUE
             rated_ln, kind = _rated_ln(w.kv, t.phases, w.conn, w.terminal)
             if _kv_off(rated_ln, bus.kv_base_ln):
                 yield _diag(

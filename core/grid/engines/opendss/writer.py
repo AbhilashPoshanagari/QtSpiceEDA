@@ -10,6 +10,11 @@ self-contained: no redirects, bus coordinates as ``SetBusXY`` commands.
 - Linecodes are written in ohm/km and nF/km with ``units=km`` after the matrices,
   lines with ``length=<m> units=m``. OpenDSS resets Units when impedances are set
   after it (spike S4), so Units always comes last.
+- Ratings: a linecode's ``normamps``/``emergamps`` with its matrices; a line's own
+  rating after ``linecode=`` (which resets the line's rating to the code's, S4). A
+  rating that is None is not written.
+- Voltage bases: the model's ``voltage_bases`` (from its .dss file), or for a design
+  (``derive_voltage_bases``) topology.derived_voltage_bases(), then CalcVoltageBases.
 - A Switch is ``Line ... switch=yes`` followed by its impedance (switch=yes resets
   r1/x1/c1/length), written as the total impedance over ``length=1 units=none``.
 - Open switches are opened after CalcVoltageBases, so bus voltage bases are those
@@ -17,7 +22,9 @@ self-contained: no redirects, bus coordinates as ``SetBusXY`` commands.
 - Numbers use ``repr`` (shortest exact round trip, never locale-dependent); names
   are written in lower case.
 
-Never raises on odd models: what cannot be written becomes a Diagnostic (rule 6)
+``write(model)`` returns (script, diagnostics). It never raises (rule 6): an
+incomplete (draft) model gives (None, one error per missing field, as
+``model.missing_fields``); any other value that cannot be written becomes a Diagnostic
 and the element is left out of the script.
 
 Development CLI: ``python -m core.grid.engines.opendss.writer in.dss out.dss``.
@@ -44,7 +51,9 @@ from core.grid.model import (
     Switch,
     Terminal,
     Transformer,
+    missing_fields,
 )
+from core.grid.topology import derived_voltage_bases
 from core.netlist.model import ERROR, WARNING
 from core.physical.component import NetworkDiagnostic
 
@@ -57,9 +66,11 @@ class _BadValue(ValueError):
     """A number that cannot be written (NaN, infinite); becomes a Diagnostic."""
 
 
-def num(value: float | int) -> str:
+def num(value: float | int | None) -> str:
     """A number as OpenDSS text: ints as ints, floats with ``repr`` (full precision,
     "." as decimal mark whatever the locale)."""
+    if value is None:
+        raise _BadValue("value not set")
     if isinstance(value, bool):
         raise _BadValue(f"boolean {value} given where a number is expected")
     if isinstance(value, int):
@@ -106,6 +117,16 @@ def _name(text: str) -> str:
 
 def _term(terminal: Terminal) -> str:
     return str(Terminal(_name(terminal.bus), terminal.nodes))
+
+
+def _ratings(norm_amps: float | None, emerg_amps: float | None) -> list[str]:
+    """normamps=/emergamps= for the ratings that are set."""
+    out = []
+    if norm_amps is not None:
+        out.append(f"normamps={num(norm_amps)}")
+    if emerg_amps is not None:
+        out.append(f"emergamps={num(emerg_amps)}")
+    return out
 
 
 def _enabled(enabled: bool) -> list[str]:
@@ -164,10 +185,12 @@ class _Writer:
         self._group("Loads", m.loads.values(), self._load)
         self._group("Capacitors", m.capacitors.values(), self._capacitor)
         self._group("PV systems", m.pvsystems.values(), self._pvsystem)
-        self._section("Voltage bases (kV LL)")
-        if m.voltage_bases:
+        bases = derived_voltage_bases(m) if m.derive_voltage_bases else m.voltage_bases
+        self._section("Voltage bases (kV LL, derived)" if m.derive_voltage_bases
+                      else "Voltage bases (kV LL)")  # fmt: skip
+        if bases:
             try:
-                self.lines.append(f"Set VoltageBases={_array(m.voltage_bases)}")
+                self.lines.append(f"Set VoltageBases={_array(bases)}")
             except _BadValue as err:
                 self._error("circuit", f"voltage bases: {err}")
         else:
@@ -223,17 +246,22 @@ class _Writer:
 
     def _linecode(self, c: LineCode) -> list[str]:
         n = c.phases
+        matrices: list[Sequence[float]] = []
         for label, matrix in (("r", c.r_matrix), ("x", c.x_matrix), ("c", c.c_matrix)):
+            if matrix is None:
+                raise _BadValue(f"{label} matrix not set")
             if len(matrix) != n * n:
                 raise _BadValue(f"{label} matrix has {len(matrix)} values, not {n * n}")
             if not _symmetric(matrix, n):
                 raise _BadValue(f"{label} matrix is not symmetric")
+            matrices.append(matrix)
+        r, x, cap = matrices
         return [
             f"New Linecode.{_name(c.name)} nphases={num(n)}",
-            f"~ rmatrix={_lower_triangle(c.r_matrix, n)}",
-            f"~ xmatrix={_lower_triangle(c.x_matrix, n)}",
-            f"~ cmatrix={_lower_triangle(c.c_matrix, n)}",
-            f"~ normamps={num(c.normal_amps)} emergamps={num(c.emergency_amps)} units=km",
+            f"~ rmatrix={_lower_triangle(r, n)}",
+            f"~ xmatrix={_lower_triangle(x, n)}",
+            f"~ cmatrix={_lower_triangle(cap, n)}",
+            " ".join(["~", *_ratings(c.norm_amps, c.emerg_amps), "units=km"]),
         ]
 
     def _transformer(self, t: Transformer) -> list[str]:
@@ -303,6 +331,7 @@ class _Writer:
             f"bus1={_term(ln.bus1)}",
             f"bus2={_term(ln.bus2)}",
             f"linecode={_name(ln.linecode)}",
+            *_ratings(ln.norm_amps, ln.emerg_amps),  # after linecode= (S4)
             f"length={num(ln.length_m)}",
             "units=m",
             *_enabled(ln.enabled),
@@ -381,10 +410,26 @@ class _Writer:
         return [" ".join(parts)]
 
 
-def write_dss(model: GridModel) -> tuple[str, list[NetworkDiagnostic]]:
-    """The OpenDSS script of ``model`` plus what could not be written."""
+def write(model: GridModel) -> tuple[str | None, list[NetworkDiagnostic]]:
+    """The OpenDSS script of ``model`` plus what could not be written.
+
+    An incomplete (draft) model gives no script: (None, one error Diagnostic per missing
+    field, "load.l3: kW not set"). Never raises (rule 6).
+    """
+    try:
+        missing = [NetworkDiagnostic(f.element_id, ERROR, f.message) for f in missing_fields(model)]
+    except Exception as err:  # a malformed model; never raise
+        return None, [NetworkDiagnostic("circuit", ERROR, f"model cannot be written: {err!r}")]
+    if missing:
+        return None, missing
     writer = _Writer(model)
-    text = writer.run()
+    try:
+        text = writer.run()
+    except Exception as err:
+        return None, [
+            *writer.diagnostics,
+            NetworkDiagnostic("circuit", ERROR, f"model cannot be written: {err!r}"),
+        ]
     return text, writer.diagnostics
 
 
@@ -438,14 +483,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         diagnostics += engine.run(PowerFlowConfig()).diagnostics
     model, more = engine.extract_model()
     diagnostics += more
-    text = ""
+    text: str | None = None
     if model is not None:
-        text, more = write_dss(model)
+        text, more = write(model)
         diagnostics += more
     engine.close()
     for d in diagnostics:
         print(f"{d.severity}: {d.block}: {d.message}", file=sys.stderr)
-    if model is None:
+    if model is None or text is None:
         return 1
     with open(args.output, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(text)

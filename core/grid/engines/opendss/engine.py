@@ -142,13 +142,13 @@ class OpenDSSEngine:
         any error leaves no circuit
         loaded. The written script is kept in ``script`` for inspection.
         """
-        from core.grid.engines.opendss.writer import element_of, script_commands, write_dss
+        from core.grid.engines.opendss.writer import element_of, script_commands, write
 
         self._loaded = False
         self._validation = None
-        text, diagnostics = write_dss(model)
-        self.script = text
-        if any(d.severity == ERROR for d in diagnostics):
+        text, diagnostics = write(model)
+        self.script = text or ""
+        if text is None or any(d.severity == ERROR for d in diagnostics):
             return diagnostics
         ctx, more = self._context()
         if ctx is None:
