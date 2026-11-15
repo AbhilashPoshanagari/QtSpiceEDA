@@ -36,6 +36,26 @@ a second grid engine (pandapower, COM OpenDSS, OpenDSSDirect.py); writing result
 to GIS. Everything that was out of scope in v0.2 and v0.3 stays out.
 If a task seems to need one of these, stop and ask.
 
+## Next phase (after v0.4): schematic from netlist
+Branch `netlist-schematic`. Version number not chosen yet (v0.5 is reserved for GIS
+import, see the v0.4 out-of-scope list). Adds only:
+- N0 Library folder: one default folder for the user's .lib files and .asy symbols:
+  `library/` in the repository when run from source (its files are git-ignored),
+  Documents/QtSpice/library in the packaged app. Created at app start, changeable in
+  the Search paths dialog (SchematicController.defaultLibraryFolder). `.include <name>` / `.lib <name> [section]` look up an
+  absolute path as written, then next to the netlist (unchanged), then the default
+  folder and the library folders (`parse(text, base_dir, search_dirs)`).
+- N1 Converter: core/schematic/fromnetlist.py, netlist -> Schematic. Only for a netlist
+  with no errors (same check as the Check button). Symbols: a library symbol whose
+  SpiceModel/Value matches the model or subcircuit, else a built-in symbol by kind and
+  model type; elements without a symbol stay as SPICE text with a warning. Pins get a
+  stub and a net label (ground flag for 0). Re-netlisting the result must give the
+  same Circuit, or nothing is shown.
+- N2 Bridge: SchematicController.generateFromNetlist(text), one undo step.
+- N3 UI: "Schematic from Netlist" menu item; ask before replacing a non-empty sheet.
+- N4 Project and docs. The .qsp format does not change.
+Tests isolate the default folder (tests/conftest.py); never read the real one.
+
 ## Stack
 Python 3.12, PySide6 6.8 (Qt Quick / QML, QtGraphs), NumPy, ngspice shared library
 via ctypes, graphlib, multiprocessing, pytest, pytest-qt, ruff, PyInstaller.
@@ -174,6 +194,7 @@ bridge/           (v0.3 files) + grid_controller.py
 ui/qml/           (v0.3 files) + grid/{GridView.qml,GridResultsTable.qml}
 tests/core/physical/  tests/fixtures/physical/
 + tests/core/grid/    tests/fixtures/grid/{ieee13,ieee34,ieee123}/ + LICENSE file
+library/          README.md (user's .lib/.asy, git-ignored)
 examples/         dc_motor_speed.qsp heatsink_warmup.qsp battery_discharge.qsp
 +                 ieee13_powerflow.qsp (+ its .dss files)
 third_party/ngspice/

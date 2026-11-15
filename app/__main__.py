@@ -63,6 +63,10 @@ def main(argv: list[str] | None = None) -> int:
     app.setApplicationName("QtSpice")
     app.setOrganizationName("QtSpice")
     app.setApplicationVersion(__version__)
+    # N0: the folder for the user's .lib files and symbols (.include <name> finds them)
+    from bridge.schematic_controller import ensure_default_library_folder
+
+    ensure_default_library_folder()
     engine = create_engine()
     if not engine.rootObjects():
         return 1

@@ -11,6 +11,15 @@ searching models and subcircuits, and "Use with symbol..." which pairs a library
 with a symbol and fills SpiceModel/ModelFile. The result is kept as ``pendingPart``
 for the part picker of the schematic editor (S tasks) to place.
 
+N0: one default library folder (``defaultLibraryFolder``: ``library/`` in the
+repository when QtSpice runs from source, ``Documents/QtSpice/library`` in the
+packaged app, whose install folder is not writable; the app creates it at start-up)
+holds the user's
+``.lib`` files and ``.asy`` symbols. It is searched first among the user's symbol
+folders and library folders, and ``include_folders()`` (it, then the library folders)
+is where ``.include <name>`` looks after the netlist's own folder: the Simulator gets
+the list in ``attachSimulator`` and again whenever it changes.
+
 Search paths are per user, not per project, and live in QSettings (as JSON text, like
 ProjectManager's lists). Every folder is read-only: nothing here writes to it.
 Changing a path rescans what it affects and emits ``symbolsChanged`` or
@@ -22,14 +31,24 @@ from __future__ import annotations
 import copy
 import json
 import math
+import sys
 import weakref
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
-from PySide6.QtCore import Property, QModelIndex, QObject, QSettings, QUrl, Signal, Slot
-from PySide6.QtGui import QUndoCommand, QUndoStack
+from PySide6.QtCore import (
+    Property,
+    QModelIndex,
+    QObject,
+    QSettings,
+    QStandardPaths,
+    QUrl,
+    Signal,
+    Slot,
+)
+from PySide6.QtGui import QDesktopServices, QUndoCommand, QUndoStack
 from PySide6.QtQml import QmlElement, QmlSingleton
 
 from bridge.diagram_controller import RowModel
@@ -99,6 +118,33 @@ QML_IMPORT_MAJOR_VERSION = 1
 SYMBOL_PATHS_KEY = "library/symbolPaths"
 LIBRARY_PATHS_KEY = "library/libraryPaths"
 LTSPICE_FOLDER_KEY = "library/ltspiceFolder"
+DEFAULT_LIBRARY_KEY = "library/defaultFolder"
+
+
+REPO_LIBRARY = Path(__file__).resolve().parents[1] / "library"
+
+
+def default_library_folder() -> Path:
+    """Where the user keeps .lib files and symbols unless they chose another folder (N0):
+    ``library/`` in the repository when running from source, else (packaged app)
+    ``Documents/QtSpice/library``."""
+    if not getattr(sys, "frozen", False):
+        return REPO_LIBRARY
+    documents = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DocumentsLocation)
+    return Path(documents or Path.home()) / "QtSpice" / "library"
+
+
+def ensure_default_library_folder(settings: QSettings | None = None) -> Path | None:
+    """Create the chosen (or default) library folder if it is missing; called once at
+    app start-up. Returns the folder, or None when it cannot be made."""
+    settings = settings if settings is not None else QSettings()
+    folder = Path(str(settings.value(DEFAULT_LIBRARY_KEY, "") or default_library_folder()))
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None
+    return folder
+
 
 MAX_RESULTS = 500
 # LTspice keeps its standard models in lib/cmp as standard.bjt, standard.dio, ...
@@ -122,6 +168,7 @@ class SchematicController(QObject):
     symbolPathsChanged = Signal()
     libraryPathsChanged = Signal()
     ltspiceFolderChanged = Signal()
+    defaultLibraryFolderChanged = Signal()
     symbolsChanged = Signal()
     libraryChanged = Signal()
     pendingPartChanged = Signal()
@@ -133,7 +180,10 @@ class SchematicController(QObject):
         self._symbol_paths = self._read_list(SYMBOL_PATHS_KEY)
         self._library_paths = self._read_list(LIBRARY_PATHS_KEY)
         self._ltspice = str(self._settings.value(LTSPICE_FOLDER_KEY, "") or "")
-        self._symbols = SymbolLibrary(self._symbol_paths, self._ltspice or None)
+        self._default_library = str(
+            self._settings.value(DEFAULT_LIBRARY_KEY, "") or default_library_folder()
+        )
+        self._symbols = SymbolLibrary(self._user_symbol_dirs(), self._ltspice or None)
         self._index: LibraryIndex | None = None
         self._pending: dict[str, object] = {}
         self._init_editor()
@@ -184,6 +234,71 @@ class SchematicController(QObject):
         str, _get_ltspice_folder, _set_ltspice_folder, notify=ltspiceFolderChanged
     )
 
+    # ---- N0: the default library folder and where .include looks
+
+    def _get_default_library_folder(self) -> str:
+        return self._default_library
+
+    def _set_default_library_folder(self, folder: str) -> None:
+        folder = _local(folder).strip() or str(default_library_folder())
+        if folder != self._default_library:
+            self._default_library = folder
+            self._write(DEFAULT_LIBRARY_KEY, folder)
+            self.defaultLibraryFolderChanged.emit()
+            self._rescan_symbols()
+            self._rescan_library()
+
+    defaultLibraryFolder = Property(  # noqa: N815
+        str,
+        _get_default_library_folder,
+        _set_default_library_folder,
+        notify=defaultLibraryFolderChanged,
+    )
+
+    @Slot(result=bool)
+    def openDefaultLibraryFolder(self) -> bool:  # noqa: N802
+        """Show the library folder in the file manager, creating it if it is missing."""
+        folder = Path(self._default_library)
+        existed = folder.is_dir()
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return False
+        if not existed:  # it exists now: start searching it
+            self._rescan_symbols()
+            self._rescan_library()
+        return bool(QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder))))
+
+    @Slot()
+    def resetDefaultLibraryFolder(self) -> None:  # noqa: N802
+        """Back to the default location (forget a chosen folder)."""
+        self._settings.remove(DEFAULT_LIBRARY_KEY)
+        self._settings.sync()
+        folder = str(default_library_folder())
+        if folder != self._default_library:
+            self._default_library = folder
+            self.defaultLibraryFolderChanged.emit()
+            self._rescan_symbols()
+            self._rescan_library()
+
+    def _default_dirs(self) -> list[str]:
+        """The default library folder when it exists (a missing one is no error)."""
+        return [self._default_library] if Path(self._default_library).is_dir() else []
+
+    def _user_symbol_dirs(self) -> list[str]:
+        return _clean(self._default_dirs() + self._symbol_paths)
+
+    def include_folders(self) -> list[Path]:
+        """Where ``.include <name>`` looks after the netlist's folder: the default
+        library folder, then the library folders, in order."""
+        return [Path(p) for p in _clean([self._default_library, *self._library_paths])]
+
+    def _push_include_folders(self) -> None:
+        sim = self._simulator
+        setter = getattr(sim, "set_include_folders", None) if sim is not None else None
+        if setter is not None:
+            setter(self.include_folders())
+
     @Slot(str, str)
     def addFolder(self, kind: str, folder: str) -> None:  # noqa: N802
         """Append a folder (path or file:// URL) to "symbols" or "libraries"."""
@@ -229,7 +344,7 @@ class SchematicController(QObject):
         return [{"name": p.name, "order": p.spice_order or 0} for p in symbol.pins]
 
     def _rescan_symbols(self) -> None:
-        self._symbols.set_paths(self._symbol_paths, self._ltspice or None)
+        self._symbols.set_paths(self._user_symbol_dirs(), self._ltspice or None)
         self._symbols.refresh()
         self.symbolsChanged.emit()
 
@@ -237,7 +352,7 @@ class SchematicController(QObject):
 
     def index(self) -> LibraryIndex:
         if self._index is None:
-            index = LibraryIndex.scan(self._library_paths)
+            index = LibraryIndex.scan(self._default_dirs() + self._library_paths)
             lt = self._ltspice_library_folders()
             if lt:
                 extra = LibraryIndex.scan(lt, LTSPICE_SUFFIXES)
@@ -257,6 +372,7 @@ class SchematicController(QObject):
 
     def _rescan_library(self) -> None:
         self._index = None
+        self._push_include_folders()
         self.libraryChanged.emit()
 
     def _get_library_status(self) -> str:
@@ -418,7 +534,9 @@ class SchematicController(QObject):
         without touching ``problems``. "" for an empty sheet."""
         if self.is_empty():
             return ""
-        return netlist_schematic(self._schematic, self.lookup, self._base_dir()).text
+        return netlist_schematic(
+            self._schematic, self.lookup, self._base_dir(), self.include_folders()
+        ).text
 
     def load_schematic(self, schematic: Schematic | None) -> None:
         """Replace the sheet (opening a project). Clears the undo stack and selection."""
@@ -994,7 +1112,7 @@ class SchematicController(QObject):
     @Slot(str, result="QStringList")
     def netlistNodes(self, text: str) -> list[str]:  # noqa: N802
         """The netlist's top-level nodes that can be ports (ground left out)."""
-        nodes = parse(text, self._base_dir()).circuit.nodes()
+        nodes = parse(text, self._base_dir(), self.include_folders()).circuit.nodes()
         return [n for n in nodes if n.casefold() not in GROUND_NAMES]
 
     @Slot(str, "QVariantList", result="QVariantList")
@@ -1396,6 +1514,7 @@ class SchematicController(QObject):
     def attachSimulator(self, simulator: QObject) -> None:  # noqa: N802
         self._simulator = simulator
         simulator.resultReady.connect(self._on_sim_result)  # type: ignore[attr-defined]
+        self._push_include_folders()
 
     def _get_problems(self) -> list[dict[str, object]]:
         return list(self._problems)
@@ -1408,7 +1527,9 @@ class SchematicController(QObject):
         return Path(path).parent if path else None
 
     def _netlist(self) -> NetlistedSchematic:
-        result = netlist_schematic(self._schematic, self.lookup, self._base_dir())
+        result = netlist_schematic(
+            self._schematic, self.lookup, self._base_dir(), self.include_folders()
+        )
         self._problems = [
             {"severity": d.severity, "message": d.message} for d in result.diagnostics
         ]

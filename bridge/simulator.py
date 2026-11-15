@@ -114,6 +114,9 @@ class Simulator(QObject):
         self._result: SimulationResult | None = None
         self._last_text: str | None = None
         self._waveforms: QObject | None = None
+        # N0: library folders a relative .include is looked up in after the netlist's
+        # own folder (set by SchematicController.attachSimulator from its settings)
+        self._include_folders: tuple[Path, ...] = ()
         app = QCoreApplication.instance()
         if app is not None:
             app.aboutToQuit.connect(self.shutdown)
@@ -262,6 +265,19 @@ class Simulator(QObject):
             self._sent_deck = deck
             self.sentDeckChanged.emit()
 
+    def include_folders(self) -> tuple[Path, ...]:
+        return self._include_folders
+
+    def set_include_folders(self, folders: list[str | Path] | tuple[str | Path, ...]) -> None:
+        """Set the library folders for ``.include <name>`` (N0). Re-checks the netlist
+        editor's text so its diagnostics follow a folder change."""
+        cleaned = tuple(Path(f) for f in folders if str(f).strip())
+        if cleaned == self._include_folders:
+            return
+        self._include_folders = cleaned
+        if self._last_text is not None:
+            self.check(self._last_text)
+
     # ---- slots
 
     @Slot(str, result=bool)
@@ -289,7 +305,7 @@ class Simulator(QObject):
         result becomes ``diagnostics``, ``deck`` and ``netlistAnalysis``; a schematic
         run checks without touching what the netlist editor shows."""
         base_dir = Path(self._file_path).parent if self._file_path else None
-        result = parse(text, base_dir)
+        result = parse(text, base_dir, self._include_folders)
         found: list[Diagnostic] = sorted(
             result.diagnostics + validate(result.circuit, require_analysis=not self._analysis_card),
             key=lambda d: (d.line, d.col),

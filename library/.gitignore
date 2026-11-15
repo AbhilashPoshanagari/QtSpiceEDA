@@ -1,0 +1,4 @@
+# The user's own model files and symbols stay out of git.
+*
+!.gitignore
+!README.md

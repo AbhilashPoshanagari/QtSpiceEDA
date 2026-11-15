@@ -198,6 +198,8 @@ Item {
         onAccepted: {
             if (kind === "ltspice")
                 SchematicController.setLtspiceFolderUrl(selectedFolder.toString())
+            else if (kind === "default")
+                SchematicController.defaultLibraryFolder = selectedFolder.toString()
             else
                 SchematicController.addFolder(kind, selectedFolder.toString())
         }
@@ -246,6 +248,32 @@ Item {
                 opacity: 0.7
                 text: qsTr("Built-in symbols come first, then your folders in order, then the "
                            + "LTspice folder. All folders are read-only.")
+            }
+            // N0: the one folder for the user's .lib files and symbols; searched first,
+            // and where ".include name" (no path) finds a file
+            Label { text: qsTr("Your library folder (.lib and .asy)"); font.bold: true }
+            Label {
+                objectName: "defaultLibraryFolderLabel"
+                Layout.fillWidth: true
+                wrapMode: Text.WrapAnywhere
+                text: SchematicController.defaultLibraryFolder
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Button {
+                    objectName: "openLibraryFolderButton"
+                    text: qsTr("Open folder")
+                    onClicked: SchematicController.openDefaultLibraryFolder()
+                }
+                Button {
+                    text: qsTr("Change…")
+                    onClicked: { folderDialog.kind = "default"; folderDialog.open() }
+                }
+                Button {
+                    objectName: "resetLibraryFolderButton"
+                    text: qsTr("Reset")
+                    onClicked: SchematicController.resetDefaultLibraryFolder()
+                }
             }
             FolderList {
                 kind: "symbols"

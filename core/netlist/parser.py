@@ -12,10 +12,20 @@ Libraries: ``.lib file`` is the include form (as in LTspice). ``.lib file sectio
 reads only the ``.lib section`` ... ``.endl`` block of that file. Inside an included
 file a one-word ``.lib name`` followed by ``.endl`` is a section header; such sections
 are skipped (with a warning) when the file is included without naming a section.
+
+Finding an include file (``.include``/``.inc``/``.lib``): an absolute path is used as
+written. A relative name is looked up next to the including file first (``base_dir``,
+the netlist's folder for the top level), so existing netlists keep working unchanged.
+If it is not there, the library folders (``search_dirs``, in order) are tried: first
+``<folder>/<name>`` in each folder, then a recursive search of each folder by file
+name. So ``.include tsmc018.lib`` works with the file anywhere in a library folder,
+also for a pasted netlist. When several folders hold ``<folder>/<name>``, the first
+one wins and a warning names it.
 """
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -180,12 +190,28 @@ def _section_end(lines: list[_Line], start: int) -> int | None:
 FIX_INSERT_TITLE = "insert_title"
 
 
+def _find_file(folder: Path, name: str) -> Path | None:
+    """The first file called ``name`` (any case) below ``folder``, walking the folders
+    in sorted order so the answer does not depend on the file system. None if absent."""
+    wanted = name.casefold()
+    try:
+        for root, dirs, files in os.walk(folder):
+            dirs.sort()
+            for file in sorted(files):
+                if file.casefold() == wanted:
+                    return Path(root) / file
+    except OSError:
+        return None
+    return None
+
+
 # ---------------------------------------------------------------- parser
 
 
 class _Parser:
-    def __init__(self, base_dir: Path | None) -> None:
+    def __init__(self, base_dir: Path | None, search_dirs: tuple[Path, ...] = ()) -> None:
         self.base_dir = base_dir
+        self.search_dirs = search_dirs
         self.diagnostics: list[Diagnostic] = []
         self.model_names: set[str] = set()
         self.param_names: set[str] = set()
@@ -304,15 +330,14 @@ class _Parser:
         name = line.tokens[1].text.strip("'\"")
         path = Path(name)
         if not path.is_absolute():
-            if base_dir is None:
-                self.error(
-                    line,
-                    line.tokens[1],
-                    f"cannot find '{name}': relative .include needs the netlist to be "
-                    "opened from a file",
-                )
-                return []
-            path = base_dir / path
+            local = base_dir / path if base_dir is not None else None
+            if local is not None and (local.is_file() or not self.search_dirs):
+                path = local  # next to the netlist (also the old error when missing)
+            else:
+                found = self.find_in_library(line, name)
+                if found is None:
+                    return []
+                path = found
         try:
             resolved = path.resolve()
         except OSError:
@@ -737,20 +762,60 @@ class _Parser:
             numbers(values)
         return True
 
+    def find_in_library(self, line: _Line, name: str) -> Path | None:
+        """``name`` in the library folders (see the module docstring), or None after
+        reporting an error."""
+        if self.search_dirs:
+            direct = [d / name for d in self.search_dirs if (d / name).is_file()]
+            if len(direct) > 1:
+                others = ", ".join(str(p) for p in direct[1:])
+                self.warning(
+                    line,
+                    line.tokens[1],
+                    f"'{name}' found more than once; using {direct[0]} (not {others})",
+                )
+            if direct:
+                return direct[0]
+            for folder in self.search_dirs:
+                nested = _find_file(folder, Path(name).name)
+                if nested is not None:
+                    return nested
+            folders = ", ".join(str(d) for d in self.search_dirs)
+            where = "next to the netlist or " if self.base_dir is not None else ""
+            self.error(
+                line,
+                line.tokens[1],
+                f"cannot find '{name}' {where}in the library folders ({folders})",
+            )
+            return None
+        self.error(
+            line,
+            line.tokens[1],
+            f"cannot find '{name}': relative .include needs the netlist to be opened from "
+            "a file, or the file in a library folder",
+        )
+        return None
+
     def end_card(self, line: _Line) -> None:
         self.state.circuit.end_line = self.pos(line, line.tokens[0])[0]
         self.finish()
         self.state.ended = True
 
 
-def parse(text: str, base_dir: str | Path | None = None) -> ParseResult:
+def parse(
+    text: str,
+    base_dir: str | Path | None = None,
+    search_dirs: list[str | Path] | tuple[str | Path, ...] = (),
+) -> ParseResult:
     """Parse a SPICE netlist. The first line is the title. Never raises.
 
-    ``base_dir`` is the directory relative ``.include`` paths are resolved against;
-    with None, only absolute include paths work.
+    ``base_dir`` is the directory relative ``.include`` paths are resolved against
+    first; ``search_dirs`` are the library folders tried after it (module docstring).
+    With neither, only absolute include paths work.
     """
     base = Path(base_dir) if base_dir is not None else None
-    parser = _Parser(base)
+    folders = tuple(Path(d) for d in search_dirs if str(d).strip())
+    parser = _Parser(base, folders)
     try:
         circuit = parser.run(text if isinstance(text, str) else str(text))
     except Exception as exc:  # parse() must never raise

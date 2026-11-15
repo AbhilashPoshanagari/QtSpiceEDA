@@ -163,12 +163,14 @@ def netlist_schematic(
     schematic: Schematic,
     lookup: Callable[[str], Symbol | None],
     base_dir: str | Path | None = None,
+    search_dirs: list[str | Path] | tuple[str | Path, ...] = (),
 ) -> NetlistedSchematic:
     """Netlist ``schematic``. ``lookup`` gives the Symbol for a symbol name; ``base_dir``
-    resolves relative include paths. Never raises."""
+    resolves relative include paths, then the library folders ``search_dirs`` (N0, as
+    in ``parse``). Never raises."""
     out = NetlistedSchematic()
     try:
-        _netlist(schematic, lookup, base_dir, out)
+        _netlist(schematic, lookup, base_dir, out, tuple(search_dirs))
     except Exception as exc:  # never raise on a bad schematic
         out.diagnostics.append(Diagnostic(0, 0, ERROR, f"internal netlister error: {exc!r}"))
         out.deck = ""
@@ -180,6 +182,7 @@ def _netlist(
     lookup: Callable[[str], Symbol | None],
     base_dir: str | Path | None,
     out: NetlistedSchematic,
+    search_dirs: tuple[str | Path, ...] = (),
 ) -> None:
     out.nets = connect(schematic, lookup)
     out.diagnostics += out.nets.diagnostics
@@ -217,7 +220,7 @@ def _netlist(
     origin.append("end")
     out.text = "\n".join(lines) + "\n"
 
-    result = parse(out.text, base_dir)
+    result = parse(out.text, base_dir, search_dirs)
     out.circuit = result.circuit
     found = result.diagnostics + validate(result.circuit, require_analysis=False)
     for d in sorted(found, key=lambda d: (d.line, d.col)):

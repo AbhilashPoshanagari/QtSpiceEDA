@@ -75,3 +75,18 @@ def test_main_window_opens_the_library_browser(qapp: object, qtbot, private_sett
     finally:
         for name in ("Simulator", "DiagramController"):
             engine.singletonInstance("QtSpice", name).shutdown()
+
+
+def test_search_paths_dialog_shows_the_library_folder(
+    qapp: object, qtbot, tmp_path: Path, private_settings
+) -> None:
+    """N0: the dialog shows the user's library folder and can reset it."""
+    with qml_window(tmp_path, "LibraryBrowser") as (engine, _window, browser):
+        ctrl = engine.singletonInstance("QtSpice", "SchematicController")
+        label = _child(browser, "defaultLibraryFolderLabel")
+        assert label.property("text") == ctrl.property("defaultLibraryFolder")
+        ctrl.setProperty("defaultLibraryFolder", str(tmp_path / "mine"))
+        assert label.property("text") == str(tmp_path / "mine")
+        _child(browser, "resetLibraryFolderButton").clicked.emit()
+        qtbot.waitUntil(lambda: label.property("text") != str(tmp_path / "mine"))
+        assert label.property("text") == ctrl.property("defaultLibraryFolder")

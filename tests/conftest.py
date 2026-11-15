@@ -15,6 +15,14 @@ from core.sim.ngspice_adapter import NgspiceAdapter  # noqa: E402
 QQuickStyle.setStyle("Fusion")
 
 
+@pytest.fixture(autouse=True)
+def _isolated_library_folder(monkeypatch: pytest.MonkeyPatch, tmp_path_factory) -> None:
+    """Tests never see the user's real Documents/QtSpice/library (N0): the default
+    library folder is a folder that does not exist, unless a test sets its own."""
+    missing = tmp_path_factory.getbasetemp() / "no-default-library"
+    monkeypatch.setattr("bridge.schematic_controller.default_library_folder", lambda: missing)
+
+
 def _ngspice_status() -> tuple[bool, str]:
     adapter = NgspiceAdapter()
     return adapter.available(), adapter.last_error
