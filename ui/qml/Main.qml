@@ -303,6 +303,17 @@ ApplicationWindow {
         onRejected: ProjectManager.chooseNetlistSource(false)
     }
 
+    // N3: Tools > Schematic from Netlist draws the Netlist tab's text on the sheet.
+    SchematicFromNetlist {
+        id: schematicFromNetlist
+        objectName: "schematicFromNetlist"
+        onDrawn: {
+            leftTabs.currentIndex = 2
+            Qt.callLater(schematicCanvas.zoomToFit)  // once the tab has its size
+        }
+        onFailed: netlistEditor.check()
+    }
+
     Connections {
         target: ProjectManager
         function onNetlistChoiceRequested(source) {
@@ -381,6 +392,12 @@ ApplicationWindow {
                 objectName: "makeSymbolNetlistMenu"
                 text: qsTr("Make Symbol from &Netlist…")
                 onTriggered: netlistPortsDialog.openFor(netlistEditor.text)
+            }
+            MenuSeparator {}
+            MenuItem {
+                objectName: "schematicFromNetlistMenu"
+                text: qsTr("Schematic from Ne&tlist")
+                onTriggered: schematicFromNetlist.start(netlistEditor.text)
             }
         }
     }
