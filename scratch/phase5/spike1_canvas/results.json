@@ -1,0 +1,1015 @@
+{
+ "meta": {
+  "python": "3.12.2",
+  "pyside6": "6.8.3",
+  "platform": "Windows-11-10.0.26100-SP0",
+  "processor": "Intel64 Family 6 Model 140 Stepping 1, GenuineIntel",
+  "qt_log": [
+   "qt.scenegraph.general: threaded render loop",
+   "qt.scenegraph.general: Creating QRhi with backend D3D11 for window 0x1ae9846bcd0 (wflags 0x1)",
+   "qt.rhi.general: Adapter 0: 'Intel(R) Iris(R) Xe Graphics' (vendor 0x8086 device 0x9A49 flags 0x0)",
+   "qt.rhi.general:   using this adapter"
+  ],
+  "screen": {
+   "refresh_hz": 60.0,
+   "dpr": 1.0,
+   "window": [
+    1370,
+    749
+   ]
+  },
+  "dss_python": "0.15.7"
+ },
+ "runs": [
+  {
+   "variant": "a",
+   "copies": 1,
+   "vsync": true,
+   "counts": {
+    "buses": 132,
+    "branches": 134,
+    "branch_symbols": 16,
+    "shunts": 96
+   },
+   "startup_s": {
+    "python_and_qt": 0.318,
+    "opendss_load_extract": 0.19,
+    "scene": 0.0004,
+    "controller_models": 0.0018
+   },
+   "memory_mb": {
+    "before_qml": {
+     "ws": 82.8,
+     "peak_ws": 83.3,
+     "private": 271.9
+    },
+    "after_first_frame": {
+     "ws": 172.6,
+     "peak_ws": 177.3,
+     "private": 405.5
+    },
+    "end": {
+     "ws": 188.0,
+     "peak_ws": 188.0,
+     "private": 417.1
+    }
+   },
+   "screen": {
+    "refresh_hz": 60.0,
+    "dpr": 1.0,
+    "window": [
+     1370,
+     749
+    ]
+   },
+   "first_frame_s": {
+    "qml_load": 0.398,
+    "load_to_first_frame": 0.503,
+    "process_start_to_first_frame": 1.174
+   },
+   "quick_items": 1599,
+   "quick_items_content": 1322,
+   "panzoom": {
+    "frames": 301,
+    "fps": 60.1,
+    "p50_ms": 16.57,
+    "p95_ms": 21.07,
+    "max_ms": 27.14,
+    "sg_ms_p50": 0.85,
+    "sg_ms_p95": 1.49,
+    "sg_ms_max": 2.07
+   },
+   "drag": {
+    "frames": 181,
+    "fps": 60.1,
+    "p50_ms": 16.47,
+    "p95_ms": 20.14,
+    "max_ms": 21.35,
+    "sg_ms_p50": 0.3,
+    "sg_ms_p95": 0.75,
+    "sg_ms_max": 1.31,
+    "moved_bus": "1",
+    "bus_branches": 4,
+    "slot_ms_mean": 0.769
+   },
+   "settle_ms": {
+    "to_4x_fit": 55.97,
+    "back_to_fit": 44.04
+   },
+   "hit_test": {
+    "points": 10000,
+    "hits": 1496,
+    "index_vs_linear_mismatches": 0,
+    "index_us": 6.1,
+    "linear_us": 555.0,
+    "index_build_ms": 1.96
+   },
+   "click": {
+    "clicks": 30,
+    "selected_the_clicked_bus": 29,
+    "event_handled_ms_median": 2.24,
+    "event_handled_ms_max": 3.53,
+    "to_next_frame_ms_median": 17.36,
+    "to_next_frame_ms_max": 19.98,
+    "misses": [
+     {
+      "clicked": "150r",
+      "got": [
+       [
+        "bus",
+        "150"
+       ]
+      ]
+     }
+    ]
+   },
+   "qt_log": [
+    "qt.scenegraph.general: threaded render loop",
+    "qt.scenegraph.general: Creating QRhi with backend D3D11 for window 0x1ae9846bcd0 (wflags 0x1)",
+    "qt.rhi.general: Adapter 0: 'Intel(R) Iris(R) Xe Graphics' (vendor 0x8086 device 0x9A49 flags 0x0)",
+    "qt.rhi.general:   using this adapter"
+   ]
+  },
+  {
+   "variant": "a",
+   "copies": 4,
+   "vsync": true,
+   "counts": {
+    "buses": 528,
+    "branches": 536,
+    "branch_symbols": 64,
+    "shunts": 384
+   },
+   "startup_s": {
+    "python_and_qt": 0.407,
+    "opendss_load_extract": 0.173,
+    "scene": 0.0019,
+    "controller_models": 0.0165
+   },
+   "memory_mb": {
+    "before_qml": {
+     "ws": 84.1,
+     "peak_ws": 84.1,
+     "private": 273.2
+    },
+    "after_first_frame": {
+     "ws": 201.3,
+     "peak_ws": 206.0,
+     "private": 434.2
+    },
+    "end": {
+     "ws": 224.8,
+     "peak_ws": 224.8,
+     "private": 454.7
+    }
+   },
+   "screen": {
+    "refresh_hz": 60.0,
+    "dpr": 1.0,
+    "window": [
+     1370,
+     749
+    ]
+   },
+   "first_frame_s": {
+    "qml_load": 0.663,
+    "load_to_first_frame": 0.787,
+    "process_start_to_first_frame": 1.537
+   },
+   "quick_items": 5547,
+   "quick_items_content": 5270,
+   "panzoom": {
+    "frames": 301,
+    "fps": 60.0,
+    "p50_ms": 16.57,
+    "p95_ms": 20.47,
+    "max_ms": 31.37,
+    "sg_ms_p50": 0.35,
+    "sg_ms_p95": 3.28,
+    "sg_ms_max": 4.95
+   },
+   "drag": {
+    "frames": 181,
+    "fps": 60.0,
+    "p50_ms": 16.59,
+    "p95_ms": 20.46,
+    "max_ms": 23.96,
+    "sg_ms_p50": 0.28,
+    "sg_ms_p95": 1.6,
+    "sg_ms_max": 1.82,
+    "moved_bus": "1",
+    "bus_branches": 4,
+    "slot_ms_mean": 0.893
+   },
+   "settle_ms": {
+    "to_4x_fit": 5.57,
+    "back_to_fit": 4.59
+   },
+   "hit_test": {
+    "points": 10000,
+    "hits": 3784,
+    "index_vs_linear_mismatches": 0,
+    "index_us": 18.5,
+    "linear_us": 2236.3,
+    "index_build_ms": 8.75
+   },
+   "click": {
+    "clicks": 30,
+    "selected_the_clicked_bus": 30,
+    "event_handled_ms_median": 5.23,
+    "event_handled_ms_max": 9.8,
+    "to_next_frame_ms_median": 18.97,
+    "to_next_frame_ms_max": 22.69,
+    "misses": []
+   },
+   "qt_log": [
+    "qt.scenegraph.general: threaded render loop",
+    "qt.scenegraph.general: Creating QRhi with backend D3D11 for window 0x16888e206a0 (wflags 0x1)",
+    "qt.rhi.general: Adapter 0: 'Intel(R) Iris(R) Xe Graphics' (vendor 0x8086 device 0x9A49 flags 0x0)",
+    "qt.rhi.general:   using this adapter"
+   ]
+  },
+  {
+   "variant": "a",
+   "copies": 8,
+   "vsync": true,
+   "counts": {
+    "buses": 1056,
+    "branches": 1072,
+    "branch_symbols": 128,
+    "shunts": 768
+   },
+   "startup_s": {
+    "python_and_qt": 0.373,
+    "opendss_load_extract": 0.204,
+    "scene": 0.0031,
+    "controller_models": 0.0308
+   },
+   "memory_mb": {
+    "before_qml": {
+     "ws": 86.4,
+     "peak_ws": 86.4,
+     "private": 275.7
+    },
+    "after_first_frame": {
+     "ws": 241.3,
+     "peak_ws": 244.8,
+     "private": 474.7
+    },
+    "end": {
+     "ws": 274.0,
+     "peak_ws": 274.0,
+     "private": 505.8
+    }
+   },
+   "screen": {
+    "refresh_hz": 60.0,
+    "dpr": 1.0,
+    "window": [
+     1370,
+     749
+    ]
+   },
+   "first_frame_s": {
+    "qml_load": 1.122,
+    "load_to_first_frame": 1.308,
+    "process_start_to_first_frame": 2.13
+   },
+   "quick_items": 10811,
+   "quick_items_content": 10534,
+   "panzoom": {
+    "frames": 285,
+    "fps": 56.8,
+    "p50_ms": 16.54,
+    "p95_ms": 26.8,
+    "max_ms": 47.79,
+    "sg_ms_p50": 0.31,
+    "sg_ms_p95": 5.81,
+    "sg_ms_max": 13.46
+   },
+   "drag": {
+    "frames": 180,
+    "fps": 59.8,
+    "p50_ms": 16.61,
+    "p95_ms": 22.1,
+    "max_ms": 39.3,
+    "sg_ms_p50": 0.39,
+    "sg_ms_p95": 3.56,
+    "sg_ms_max": 9.27,
+    "moved_bus": "1",
+    "bus_branches": 4,
+    "slot_ms_mean": 1.182
+   },
+   "settle_ms": {
+    "to_4x_fit": 7.91,
+    "back_to_fit": 10.19
+   },
+   "hit_test": {
+    "points": 10000,
+    "hits": 5865,
+    "index_vs_linear_mismatches": 0,
+    "index_us": 27.1,
+    "linear_us": 5528.0,
+    "index_build_ms": 24.76
+   },
+   "click": {
+    "clicks": 30,
+    "selected_the_clicked_bus": 28,
+    "event_handled_ms_median": 11.09,
+    "event_handled_ms_max": 15.83,
+    "to_next_frame_ms_median": 21.76,
+    "to_next_frame_ms_max": 23.54,
+    "misses": [
+     {
+      "clicked": "150r_c5",
+      "got": [
+       [
+        "bus",
+        "150_c5"
+       ]
+      ]
+     },
+     {
+      "clicked": "150r_c7",
+      "got": [
+       [
+        "bus",
+        "150_c7"
+       ]
+      ]
+     }
+    ]
+   },
+   "qt_log": [
+    "qt.scenegraph.general: threaded render loop",
+    "qt.scenegraph.general: Creating QRhi with backend D3D11 for window 0x1a823346b90 (wflags 0x1)",
+    "qt.rhi.general: Adapter 0: 'Intel(R) Iris(R) Xe Graphics' (vendor 0x8086 device 0x9A49 flags 0x0)",
+    "qt.rhi.general:   using this adapter"
+   ]
+  },
+  {
+   "variant": "b",
+   "copies": 1,
+   "vsync": true,
+   "counts": {
+    "buses": 132,
+    "branches": 134,
+    "branch_symbols": 16,
+    "shunts": 96
+   },
+   "startup_s": {
+    "python_and_qt": 0.375,
+    "opendss_load_extract": 0.21,
+    "scene": 0.0006,
+    "controller_models": 0.0019
+   },
+   "memory_mb": {
+    "before_qml": {
+     "ws": 82.5,
+     "peak_ws": 83.1,
+     "private": 271.6
+    },
+    "after_first_frame": {
+     "ws": 178.3,
+     "peak_ws": 182.8,
+     "private": 410.9
+    },
+    "end": {
+     "ws": 185.8,
+     "peak_ws": 185.8,
+     "private": 414.3
+    }
+   },
+   "screen": {
+    "refresh_hz": 60.0,
+    "dpr": 1.0,
+    "window": [
+     1370,
+     749
+    ]
+   },
+   "first_frame_s": {
+    "qml_load": 0.406,
+    "load_to_first_frame": 0.518,
+    "process_start_to_first_frame": 1.292
+   },
+   "quick_items": 1112,
+   "quick_items_content": 835,
+   "panzoom": {
+    "frames": 297,
+    "fps": 59.1,
+    "p50_ms": 16.53,
+    "p95_ms": 21.11,
+    "max_ms": 45.66,
+    "sg_ms_p50": 0.88,
+    "sg_ms_p95": 1.49,
+    "sg_ms_max": 1.82
+   },
+   "drag": {
+    "frames": 181,
+    "fps": 59.9,
+    "p50_ms": 16.58,
+    "p95_ms": 20.66,
+    "max_ms": 21.72,
+    "sg_ms_p50": 0.3,
+    "sg_ms_p95": 0.75,
+    "sg_ms_max": 1.74,
+    "moved_bus": "1",
+    "bus_branches": 4,
+    "slot_ms_mean": 0.69,
+    "shape_polish_ms_mean": 0.039,
+    "shape_polish_ms_max": 0.312
+   },
+   "settle_ms": {
+    "to_4x_fit": 56.76,
+    "back_to_fit": 43.47
+   },
+   "hit_test": {
+    "points": 10000,
+    "hits": 1496,
+    "index_vs_linear_mismatches": 0,
+    "index_us": 6.9,
+    "linear_us": 597.6,
+    "index_build_ms": 1.79
+   },
+   "click": {
+    "clicks": 30,
+    "selected_the_clicked_bus": 29,
+    "event_handled_ms_median": 2.01,
+    "event_handled_ms_max": 4.06,
+    "to_next_frame_ms_median": 17.39,
+    "to_next_frame_ms_max": 18.41,
+    "misses": [
+     {
+      "clicked": "150r",
+      "got": [
+       [
+        "bus",
+        "150"
+       ]
+      ]
+     }
+    ]
+   },
+   "qt_log": [
+    "qt.scenegraph.general: threaded render loop",
+    "qt.scenegraph.general: Creating QRhi with backend D3D11 for window 0x2e932021f20 (wflags 0x1)",
+    "qt.rhi.general: Adapter 0: 'Intel(R) Iris(R) Xe Graphics' (vendor 0x8086 device 0x9A49 flags 0x0)",
+    "qt.rhi.general:   using this adapter"
+   ]
+  },
+  {
+   "variant": "b",
+   "copies": 4,
+   "vsync": true,
+   "counts": {
+    "buses": 528,
+    "branches": 536,
+    "branch_symbols": 64,
+    "shunts": 384
+   },
+   "startup_s": {
+    "python_and_qt": 0.358,
+    "opendss_load_extract": 0.22,
+    "scene": 0.0029,
+    "controller_models": 0.0258
+   },
+   "memory_mb": {
+    "before_qml": {
+     "ws": 84.2,
+     "peak_ws": 84.2,
+     "private": 273.2
+    },
+    "after_first_frame": {
+     "ws": 203.6,
+     "peak_ws": 208.0,
+     "private": 436.2
+    },
+    "end": {
+     "ws": 216.4,
+     "peak_ws": 216.4,
+     "private": 445.9
+    }
+   },
+   "screen": {
+    "refresh_hz": 60.0,
+    "dpr": 1.0,
+    "window": [
+     1370,
+     749
+    ]
+   },
+   "first_frame_s": {
+    "qml_load": 0.603,
+    "load_to_first_frame": 0.744,
+    "process_start_to_first_frame": 1.539
+   },
+   "quick_items": 3596,
+   "quick_items_content": 3319,
+   "panzoom": {
+    "frames": 302,
+    "fps": 60.2,
+    "p50_ms": 16.58,
+    "p95_ms": 20.3,
+    "max_ms": 24.62,
+    "sg_ms_p50": 0.34,
+    "sg_ms_p95": 2.74,
+    "sg_ms_max": 7.11
+   },
+   "drag": {
+    "frames": 181,
+    "fps": 60.0,
+    "p50_ms": 16.39,
+    "p95_ms": 20.63,
+    "max_ms": 24.02,
+    "sg_ms_p50": 0.32,
+    "sg_ms_p95": 1.63,
+    "sg_ms_max": 1.85,
+    "moved_bus": "1",
+    "bus_branches": 4,
+    "slot_ms_mean": 1.427,
+    "shape_polish_ms_mean": 0.079,
+    "shape_polish_ms_max": 0.318
+   },
+   "settle_ms": {
+    "to_4x_fit": 1.73,
+    "back_to_fit": 2.45
+   },
+   "hit_test": {
+    "points": 10000,
+    "hits": 3784,
+    "index_vs_linear_mismatches": 0,
+    "index_us": 14.9,
+    "linear_us": 2344.3,
+    "index_build_ms": 7.05
+   },
+   "click": {
+    "clicks": 30,
+    "selected_the_clicked_bus": 30,
+    "event_handled_ms_median": 4.59,
+    "event_handled_ms_max": 7.41,
+    "to_next_frame_ms_median": 18.47,
+    "to_next_frame_ms_max": 26.83,
+    "misses": []
+   },
+   "qt_log": [
+    "qt.scenegraph.general: threaded render loop",
+    "qt.scenegraph.general: Creating QRhi with backend D3D11 for window 0x2fc277a28f0 (wflags 0x1)",
+    "qt.rhi.general: Adapter 0: 'Intel(R) Iris(R) Xe Graphics' (vendor 0x8086 device 0x9A49 flags 0x0)",
+    "qt.rhi.general:   using this adapter"
+   ]
+  },
+  {
+   "variant": "b",
+   "copies": 8,
+   "vsync": true,
+   "counts": {
+    "buses": 1056,
+    "branches": 1072,
+    "branch_symbols": 128,
+    "shunts": 768
+   },
+   "startup_s": {
+    "python_and_qt": 0.318,
+    "opendss_load_extract": 0.183,
+    "scene": 0.0031,
+    "controller_models": 0.0242
+   },
+   "memory_mb": {
+    "before_qml": {
+     "ws": 86.6,
+     "peak_ws": 86.6,
+     "private": 275.6
+    },
+    "after_first_frame": {
+     "ws": 235.1,
+     "peak_ws": 238.4,
+     "private": 468.4
+    },
+    "end": {
+     "ws": 257.0,
+     "peak_ws": 257.0,
+     "private": 488.3
+    }
+   },
+   "screen": {
+    "refresh_hz": 60.0,
+    "dpr": 1.0,
+    "window": [
+     1370,
+     749
+    ]
+   },
+   "first_frame_s": {
+    "qml_load": 0.806,
+    "load_to_first_frame": 0.949,
+    "process_start_to_first_frame": 1.639
+   },
+   "quick_items": 6908,
+   "quick_items_content": 6631,
+   "panzoom": {
+    "frames": 298,
+    "fps": 59.5,
+    "p50_ms": 16.57,
+    "p95_ms": 21.38,
+    "max_ms": 48.28,
+    "sg_ms_p50": 0.38,
+    "sg_ms_p95": 4.89,
+    "sg_ms_max": 10.66
+   },
+   "drag": {
+    "frames": 180,
+    "fps": 60.0,
+    "p50_ms": 16.64,
+    "p95_ms": 20.92,
+    "max_ms": 25.58,
+    "sg_ms_p50": 0.34,
+    "sg_ms_p95": 3.15,
+    "sg_ms_max": 4.61,
+    "moved_bus": "1",
+    "bus_branches": 4,
+    "slot_ms_mean": 3.996,
+    "shape_polish_ms_mean": 0.135,
+    "shape_polish_ms_max": 0.503
+   },
+   "settle_ms": {
+    "to_4x_fit": 3.47,
+    "back_to_fit": 3.71
+   },
+   "hit_test": {
+    "points": 10000,
+    "hits": 5865,
+    "index_vs_linear_mismatches": 0,
+    "index_us": 33.7,
+    "linear_us": 5962.3,
+    "index_build_ms": 21.72
+   },
+   "click": {
+    "clicks": 30,
+    "selected_the_clicked_bus": 28,
+    "event_handled_ms_median": 7.25,
+    "event_handled_ms_max": 9.89,
+    "to_next_frame_ms_median": 20.55,
+    "to_next_frame_ms_max": 26.25,
+    "misses": [
+     {
+      "clicked": "150r_c5",
+      "got": [
+       [
+        "bus",
+        "150_c5"
+       ]
+      ]
+     },
+     {
+      "clicked": "150r_c7",
+      "got": [
+       [
+        "bus",
+        "150_c7"
+       ]
+      ]
+     }
+    ]
+   },
+   "qt_log": [
+    "qt.scenegraph.general: threaded render loop",
+    "qt.scenegraph.general: Creating QRhi with backend D3D11 for window 0x188e160e8f0 (wflags 0x1)",
+    "qt.rhi.general: Adapter 0: 'Intel(R) Iris(R) Xe Graphics' (vendor 0x8086 device 0x9A49 flags 0x0)",
+    "qt.rhi.general:   using this adapter"
+   ]
+  },
+  {
+   "variant": "b-curve",
+   "copies": 1,
+   "vsync": true,
+   "counts": {
+    "buses": 132,
+    "branches": 134,
+    "branch_symbols": 16,
+    "shunts": 96
+   },
+   "startup_s": {
+    "python_and_qt": 0.317,
+    "opendss_load_extract": 0.176,
+    "scene": 0.0004,
+    "controller_models": 0.0018
+   },
+   "memory_mb": {
+    "before_qml": {
+     "ws": 83.0,
+     "peak_ws": 83.5,
+     "private": 271.9
+    },
+    "after_first_frame": {
+     "ws": 171.8,
+     "peak_ws": 176.2,
+     "private": 404.3
+    },
+    "end": {
+     "ws": 190.1,
+     "peak_ws": 190.1,
+     "private": 418.1
+    }
+   },
+   "screen": {
+    "refresh_hz": 60.0,
+    "dpr": 1.0,
+    "window": [
+     1370,
+     749
+    ]
+   },
+   "first_frame_s": {
+    "qml_load": 0.381,
+    "load_to_first_frame": 0.499,
+    "process_start_to_first_frame": 1.163
+   },
+   "quick_items": 1112,
+   "quick_items_content": 835,
+   "panzoom": {
+    "frames": 299,
+    "fps": 59.7,
+    "p50_ms": 16.44,
+    "p95_ms": 21.12,
+    "max_ms": 49.09,
+    "sg_ms_p50": 0.87,
+    "sg_ms_p95": 1.45,
+    "sg_ms_max": 2.35
+   },
+   "drag": {
+    "frames": 181,
+    "fps": 60.0,
+    "p50_ms": 16.54,
+    "p95_ms": 20.36,
+    "max_ms": 22.79,
+    "sg_ms_p50": 0.31,
+    "sg_ms_p95": 1.14,
+    "sg_ms_max": 1.63,
+    "moved_bus": "1",
+    "bus_branches": 4,
+    "slot_ms_mean": 0.574,
+    "shape_polish_ms_mean": 0.202,
+    "shape_polish_ms_max": 0.974
+   },
+   "settle_ms": {
+    "to_4x_fit": 52.69,
+    "back_to_fit": 46.48
+   },
+   "hit_test": {
+    "points": 10000,
+    "hits": 1496,
+    "index_vs_linear_mismatches": 0,
+    "index_us": 7.4,
+    "linear_us": 588.2,
+    "index_build_ms": 2.2
+   },
+   "click": {
+    "clicks": 30,
+    "selected_the_clicked_bus": 29,
+    "event_handled_ms_median": 1.93,
+    "event_handled_ms_max": 3.43,
+    "to_next_frame_ms_median": 18.1,
+    "to_next_frame_ms_max": 24.47,
+    "misses": [
+     {
+      "clicked": "150r",
+      "got": [
+       [
+        "bus",
+        "150"
+       ]
+      ]
+     }
+    ]
+   },
+   "qt_log": [
+    "qt.scenegraph.general: threaded render loop",
+    "qt.scenegraph.general: Creating QRhi with backend D3D11 for window 0x1c45d6c5870 (wflags 0x1)",
+    "qt.rhi.general: Adapter 0: 'Intel(R) Iris(R) Xe Graphics' (vendor 0x8086 device 0x9A49 flags 0x0)",
+    "qt.rhi.general:   using this adapter"
+   ]
+  },
+  {
+   "variant": "b-curve",
+   "copies": 4,
+   "vsync": true,
+   "counts": {
+    "buses": 528,
+    "branches": 536,
+    "branch_symbols": 64,
+    "shunts": 384
+   },
+   "startup_s": {
+    "python_and_qt": 0.322,
+    "opendss_load_extract": 0.178,
+    "scene": 0.0016,
+    "controller_models": 0.017
+   },
+   "memory_mb": {
+    "before_qml": {
+     "ws": 84.2,
+     "peak_ws": 84.2,
+     "private": 272.9
+    },
+    "after_first_frame": {
+     "ws": 195.8,
+     "peak_ws": 199.3,
+     "private": 428.7
+    },
+    "end": {
+     "ws": 221.8,
+     "peak_ws": 221.8,
+     "private": 452.5
+    }
+   },
+   "screen": {
+    "refresh_hz": 60.0,
+    "dpr": 1.0,
+    "window": [
+     1370,
+     749
+    ]
+   },
+   "first_frame_s": {
+    "qml_load": 0.647,
+    "load_to_first_frame": 0.79,
+    "process_start_to_first_frame": 1.476
+   },
+   "quick_items": 3596,
+   "quick_items_content": 3319,
+   "panzoom": {
+    "frames": 298,
+    "fps": 59.4,
+    "p50_ms": 16.52,
+    "p95_ms": 21.01,
+    "max_ms": 50.11,
+    "sg_ms_p50": 0.38,
+    "sg_ms_p95": 3.2,
+    "sg_ms_max": 10.65
+   },
+   "drag": {
+    "frames": 181,
+    "fps": 59.9,
+    "p50_ms": 16.77,
+    "p95_ms": 20.42,
+    "max_ms": 24.39,
+    "sg_ms_p50": 0.33,
+    "sg_ms_p95": 2.92,
+    "sg_ms_max": 3.26,
+    "moved_bus": "1",
+    "bus_branches": 4,
+    "slot_ms_mean": 1.532,
+    "shape_polish_ms_mean": 0.855,
+    "shape_polish_ms_max": 4.308
+   },
+   "settle_ms": {
+    "to_4x_fit": 3.12,
+    "back_to_fit": 2.62
+   },
+   "hit_test": {
+    "points": 10000,
+    "hits": 3784,
+    "index_vs_linear_mismatches": 0,
+    "index_us": 13.8,
+    "linear_us": 2389.9,
+    "index_build_ms": 8.98
+   },
+   "click": {
+    "clicks": 30,
+    "selected_the_clicked_bus": 30,
+    "event_handled_ms_median": 3.92,
+    "event_handled_ms_max": 6.35,
+    "to_next_frame_ms_median": 19.08,
+    "to_next_frame_ms_max": 22.22,
+    "misses": []
+   },
+   "qt_log": [
+    "qt.scenegraph.general: threaded render loop",
+    "qt.scenegraph.general: Creating QRhi with backend D3D11 for window 0x235ff265090 (wflags 0x1)",
+    "qt.rhi.general: Adapter 0: 'Intel(R) Iris(R) Xe Graphics' (vendor 0x8086 device 0x9A49 flags 0x0)",
+    "qt.rhi.general:   using this adapter"
+   ]
+  },
+  {
+   "variant": "b-curve",
+   "copies": 8,
+   "vsync": true,
+   "counts": {
+    "buses": 1056,
+    "branches": 1072,
+    "branch_symbols": 128,
+    "shunts": 768
+   },
+   "startup_s": {
+    "python_and_qt": 0.35,
+    "opendss_load_extract": 0.193,
+    "scene": 0.0028,
+    "controller_models": 0.0223
+   },
+   "memory_mb": {
+    "before_qml": {
+     "ws": 86.3,
+     "peak_ws": 86.3,
+     "private": 275.4
+    },
+    "after_first_frame": {
+     "ws": 231.1,
+     "peak_ws": 235.5,
+     "private": 466.0
+    },
+    "end": {
+     "ws": 278.1,
+     "peak_ws": 278.1,
+     "private": 506.0
+    }
+   },
+   "screen": {
+    "refresh_hz": 60.0,
+    "dpr": 1.0,
+    "window": [
+     1370,
+     749
+    ]
+   },
+   "first_frame_s": {
+    "qml_load": 0.907,
+    "load_to_first_frame": 1.089,
+    "process_start_to_first_frame": 1.834
+   },
+   "quick_items": 6908,
+   "quick_items_content": 6631,
+   "panzoom": {
+    "frames": 298,
+    "fps": 59.6,
+    "p50_ms": 16.56,
+    "p95_ms": 21.39,
+    "max_ms": 45.94,
+    "sg_ms_p50": 0.41,
+    "sg_ms_p95": 5.52,
+    "sg_ms_max": 8.76
+   },
+   "drag": {
+    "frames": 178,
+    "fps": 59.3,
+    "p50_ms": 17.36,
+    "p95_ms": 24.73,
+    "max_ms": 28.55,
+    "sg_ms_p50": 0.47,
+    "sg_ms_p95": 5.82,
+    "sg_ms_max": 7.16,
+    "moved_bus": "1",
+    "bus_branches": 4,
+    "slot_ms_mean": 3.699,
+    "shape_polish_ms_mean": 1.842,
+    "shape_polish_ms_max": 6.212
+   },
+   "settle_ms": {
+    "to_4x_fit": 6.35,
+    "back_to_fit": 3.67
+   },
+   "hit_test": {
+    "points": 10000,
+    "hits": 5865,
+    "index_vs_linear_mismatches": 0,
+    "index_us": 32.4,
+    "linear_us": 5238.1,
+    "index_build_ms": 21.57
+   },
+   "click": {
+    "clicks": 30,
+    "selected_the_clicked_bus": 28,
+    "event_handled_ms_median": 7.36,
+    "event_handled_ms_max": 12.39,
+    "to_next_frame_ms_median": 22.74,
+    "to_next_frame_ms_max": 28.1,
+    "misses": [
+     {
+      "clicked": "150r_c5",
+      "got": [
+       [
+        "bus",
+        "150_c5"
+       ]
+      ]
+     },
+     {
+      "clicked": "150r_c7",
+      "got": [
+       [
+        "bus",
+        "150_c7"
+       ]
+      ]
+     }
+    ]
+   },
+   "qt_log": [
+    "qt.scenegraph.general: threaded render loop",
+    "qt.scenegraph.general: Creating QRhi with backend D3D11 for window 0x2d3363f2d90 (wflags 0x1)",
+    "qt.rhi.general: Adapter 0: 'Intel(R) Iris(R) Xe Graphics' (vendor 0x8086 device 0x9A49 flags 0x0)",
+    "qt.rhi.general:   using this adapter"
+   ]
+  }
+ ]
+}

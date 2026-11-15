@@ -1,0 +1,114 @@
+{
+ "variant": "b-msaa4",
+ "copies": 8,
+ "vsync": true,
+ "counts": {
+  "buses": 1056,
+  "branches": 1072,
+  "branch_symbols": 128,
+  "shunts": 768
+ },
+ "startup_s": {
+  "python_and_qt": 0.31,
+  "opendss_load_extract": 0.177,
+  "scene": 0.0053,
+  "controller_models": 0.0239
+ },
+ "memory_mb": {
+  "before_qml": {
+   "ws": 86.6,
+   "peak_ws": 86.6,
+   "private": 275.7
+  },
+  "after_first_frame": {
+   "ws": 285.9,
+   "peak_ws": 285.9,
+   "private": 519.3
+  },
+  "end": {
+   "ws": 309.1,
+   "peak_ws": 309.1,
+   "private": 539.3
+  }
+ },
+ "screen": {
+  "refresh_hz": 60.0,
+  "dpr": 1.0,
+  "window": [
+   1370,
+   749
+  ]
+ },
+ "first_frame_s": {
+  "qml_load": 0.761,
+  "load_to_first_frame": 0.908,
+  "process_start_to_first_frame": 1.609
+ },
+ "quick_items": 6908,
+ "quick_items_content": 6631,
+ "panzoom": {
+  "frames": 295,
+  "fps": 58.7,
+  "p50_ms": 16.65,
+  "p95_ms": 22.99,
+  "max_ms": 34.89,
+  "sg_ms_p50": 0.4,
+  "sg_ms_p95": 4.48,
+  "sg_ms_max": 7.91
+ },
+ "drag": {
+  "frames": 180,
+  "fps": 60.0,
+  "p50_ms": 16.81,
+  "p95_ms": 20.53,
+  "max_ms": 25.49,
+  "sg_ms_p50": 0.33,
+  "sg_ms_p95": 2.88,
+  "sg_ms_max": 3.3,
+  "moved_bus": "1",
+  "bus_branches": 4,
+  "slot_ms_mean": 3.766,
+  "shape_polish_ms_mean": 0.132,
+  "shape_polish_ms_max": 0.605
+ },
+ "settle_ms": {
+  "to_4x_fit": 2.47,
+  "back_to_fit": 4.86
+ },
+ "hit_test": {
+  "points": 10000,
+  "hits": 5865,
+  "index_vs_linear_mismatches": 0,
+  "index_us": 33.0,
+  "linear_us": 5427.3,
+  "index_build_ms": 14.6
+ },
+ "click": {
+  "clicks": 30,
+  "selected_the_clicked_bus": 28,
+  "event_handled_ms_median": 7.06,
+  "event_handled_ms_max": 10.24,
+  "to_next_frame_ms_median": 21.13,
+  "to_next_frame_ms_max": 27.21,
+  "misses": [
+   {
+    "clicked": "150r_c5",
+    "got": [
+     [
+      "bus",
+      "150_c5"
+     ]
+    ]
+   },
+   {
+    "clicked": "150r_c7",
+    "got": [
+     [
+      "bus",
+      "150_c7"
+     ]
+    ]
+   }
+  ]
+ }
+}
