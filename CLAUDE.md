@@ -14,15 +14,13 @@
   graphical feeder editor backed by GridModel and solved by OpenDSS, with Level 1
   (topology) and Level 2 (electrical, one snapshot) feasibility checks.
   Every v0.1-v0.4 and netlist-schematic test must keep passing.
+  Week-1 spikes S1-S6 done; next: D1-D9.
 - Roadmap change (decided for v0.5): GIS import moves from v0.5 to v0.6.
   v0.6 GIS import + catalogs, v0.7 feeder planning (scenarios, before/after),
   v0.8+ advanced studies (QSTS, DER/EV impact, hosting capacity, faults, protection).
 
 ## What v0.5 adds (only these - nothing else)
-- S1-S6 Spikes (week 1, scratch/phase5/ only): canvas performance on IEEE 123, undo
-  command pattern, auto-layout for buses without coordinates, draft models and engine
-  checks (NormAmps, voltage bases, sequence impedances), design-file format, edit-run
-  latency.
+- S1-S6 Spikes: DONE (see "Spike results (v0.5)").
 - D1 Topology: core/grid/topology.py builds the electrical graph from a GridModel
   (buses, branches, open switches, transformers), finds islands, source reachability,
   voltage zones and per-bus available phases. G4 validate.py is moved onto it with the
@@ -359,275 +357,137 @@ ruff check . && ruff format --check .
   block-runner child starts. Tests pass; the app does not enable faulthandler.
   Do not try to "fix" this.
 
-## Spike results (v0.5)
-Week-1 spikes S1-S6 in scratch/phase5/ (code, tests, README). Fill this section with
-MEASURED results only (machine, versions, numbers, decision) when each spike is done;
-until then, every item below is an open question, not a fact.
-- S1 Canvas: measured (i7-1185G7, Intel Iris Xe via D3D11, threaded loop, 60 Hz, PySide6
-  6.8.3; scratch/phase5/spike1_canvas/README.md). IEEE 123 (132 buses) and 8 copies (1056):
-  both variants hold 60 fps pan/zoom/drag; render-thread time per frame p95 1.5 ms (1x),
-  4.9-5.8 ms (8x). First frame 0.5 s (1x), 0.95 s (b) / 1.31 s (a) at 8x. (a) Repeater item
-  per glyph: 10 534 items at 8x, 56.8 fps pan/zoom, 274 MB; (b) branches as ShapePaths +
-  glyph Items: 6 631 items, 59.5 fps, 257 MB, but each edit rebuilds all path strings
-  (0.7 ms -> 4.0 ms per drag step 1x -> 8x). GeometryRenderer re-tessellates in 0.04-0.14 ms per
-  edit; CurveRenderer 0.2-1.8 ms (max 6.2). GeometryRenderer is aliased: 4x window MSAA fixes
-  it at 60 fps, +50 MB. Hit-test in Python: spatial index 6-34 us, linear scan 0.6-5.5 ms;
-  click -> next frame 17-23 ms. Reusable from SchematicCanvas (inline, model-free, copy):
-  pan/zoom with one transformed content Item, settledZoom pen width, grid layer, rubber-band
-  rectangle. Tied to the schematic model: hit_test, snapPoint, selection/move, SymbolItem.
-  Decision: variant (b), GeometryRenderer + MSAA 4x, a separate "live" ShapePath for what is
-  dragged; glyph SVG Images with power-of-two sourceSize and asynchronous loading;
-  hit-testing in core/grid/diagram with a spatial index, nearest glyph within 6 px/zoom
-  wins (kind only breaks ties). IEEE 123 buses 150r/9r share coordinates with 150/9: layout
-  (S3) must separate coincident buses.
-- S2 Undo: core command + QUndoCommand wrapper; mergeWith for drags (one undo step per
-  drag); macro for compound delete; memory for 1000 steps. Decision: TBD.
-- S3 Layout: measured (i7-1185G7, Python 3.12.2, PySide6 6.8.3; scratch/phase5/spike3_layout/
-  README.md). Our own layered tree (BFS from the source over closed branches, open switches
-  are non-tree edges, transformer = extra column, rows from subtree leaf order; dicts + deque
-  only). All coordinates removed: every variant 0 crossings, 0 glyph overlaps on IEEE 13/34/123;
-  0.09 / 0.27 / 0.9 ms, 8x IEEE 123 (1057 buses) < 10 ms. "Trunk" rows (bus on its first
-  child's row) give long steep fan edges (IEEE 123 max branch 164 units against 21 in the file);
-  "packed-mid" (per-column contour packing, bus midway between first and last child) max 24,
-  1 fan edge grazing a load glyph. Mixed (keep coordinates, place the rest next to the nearest
-  placed neighbour at the free grid point with fewest overlaps/crossings): IEEE 123 places
-  300_open, 94_open and the coincident 150r/9r/25r/160r (the bus nearer the source keeps the
-  spot); the file's 4 crossings -> 0, no overlap added; 107 ms (pure-Python candidate scan,
-  10-35 ms per placed bus). File coordinates scaled so the median branch is 6 units, snapped.
-  Decision: D3 auto_layout = packed-mid when no bus has coordinates, else scale + separate
-  coincident buses + place_missing; topology.py supplies the tree (rule 25); D4 uses
-  place_missing for one new bus. Not needed for v0.5: orthogonal routing, label collision
-  avoidance, crossing reduction for loops.
-- S4 Engine checks: measured (Windows 11, Python 3.12.2, dss-python 0.15.7;
-  scratch/phase5/spike4_engine/README.md). Ratings: Lines/LineCodes NormAmps, EmergAmps
-  are typed (= Properties()); every IEEE 13/34/123 line and linecode has the OpenDSS
-  defaults 400/600 A (no file sets one); ToJSON(0) lists NormAmps only when set (0 of 94
-  linecodes). Ratings survive save circuit. linecode= resets a line's ratings: the writer
-  emits normamps/emergamps after linecode=. Voltage bases: source kV + 3-phase winding kV
-  (LL), then a 1-phase winding (wye: kV*sqrt(3)) only if no base is within 1 %; gives
-  every bus the file's kVBase on all three feeders, 2.6e-9 pu from the original solved
-  the same way (vs opendss_reference.json 1.4e-5, which the re-solved file shows too:
-  compare same-solve, as in G3). Converting all 1-phase windings to LL gives 4.16039 on
-  IEEE 123 and CalcVoltageBases moves 130 buses by 1e-4 pu: never let near-duplicates in.
-  Sequence: tests/fixtures/grid/sequence_reference.json (26 inputs x 1/2/3 phases, made
-  by scratch/phase5/make_sequence_reference.py; never edit by hand). Textbook
-  self=(2s1+s0)/3, mutual=(s0-s1)/3 matches to 6e-14 for n=2,3 and for LineCodes; a
-  1-phase LINE uses z1 only (also with a 1-phase sequence linecode, whose own Rmatrix is
-  the textbook one). sequence.py: textbook for n>=2, z1 for n=1. Line matrices are
-  recalculated only by a solve. Loading: line = max |Currents| of terminal 1 / NormAmps
-  (= PDElements.AllPctNorm to 3e-14); transformer = max over windings of |sum of Powers
-  at terminal k| / kVA. CktElement.NormalAmps of a transformer is from NormHkVA =
-  1.1 kVA, so OpenDSS % and v0.4 loading_pct are not our transformer loading (IEEE 13
-  xfm1: 100.9 % |S|/kVA, 107.3 % OpenDSS). Signs as in "Grid model". Compile: only a
-  missing linecode is an error (#401); a missing kW (10 kW, PF 0.88), kV, impedance, kVA,
-  kvar (1200) or Pmpp (500) gets a silent default; phase override by linecode=, nodes
-  missing at a bus, islands and lines between voltage zones all converge silently.
-  validate.py must catch all of them before writing. writer.write_dss raises TypeError on
-  a None field today (D2 fixes).
-- S5 Design file: .qgrid JSON size and save/load time for IEEE 123; equality after
-  load/save/load. Results: TBD.
-- S6 Edit-run loop: measured (i7-1185G7, Windows 11, Python 3.12.2, dss-python 0.15.7;
-  scratch/phase5/spike6_runloop/README.md). Loop: pickle GridModel -> child -> writer.py
-  -> script file in a temp folder -> load_native (clear + compile) -> validation ->
-  solve -> pickled GridResult -> overlay input; 10 runs, median, each run a different
-  edit. New child per run (ChildProcess): IEEE 13 733 ms, IEEE 123 777 ms, of which
-  690-720 ms is the process (spawn + Python 310, numpy + core.grid 170-190, import dss
-  170, first context 40); the work is 18 / 39 ms. Warm child (spawn + duplex Pipe +
-  daemon, serves runs until STOP or EOF): 35 / 54 ms with a new OpenDSSEngine per run
-  (new context 16-17 ms), 28 / 42 ms reusing one context (its clear + compile is
-  14-15 ms instead of 5-8). Warm results equal cold ones bit for bit in both variants.
-  Model pickle 10 / 52 KB, result 5 / 39 KB, about 4 ms both ways on IEEE 123: send the
-  whole model, no incremental protocol. load_model (no file) saves about 5-10 ms: not
-  worth it, the script is kept in name_results anyway. Validation in the child 2-13 ms:
-  keep it. Warm child idle 54-74 MB. Stop: STOP, join 2 s, terminate; 57-106 ms, exit
-  code 0; parent gone -> EOF -> exit 0. Any failed run (ERROR, TIMEOUT, CANCELLED) ends
-  the child, nothing is retried; the next Run spawns a new one (cold, 0.9-1.1 s); a
-  child dead while idle is replaced before sending. On Windows a large Pipe send blocks
-  until the child reads it: send only to an idle child, one request in flight, replies
-  carry the run id. Decision: warm child with a new OpenDSSEngine per run, spawned when
-  a design is created or opened (only if OpenDSSEngine.available()), stopped when the
-  last design closes and at quit; state only in the instance owned by GridController,
-  none in module globals. D5 moves ChildProcess's spawn/Pipe/daemon/terminate code into
-  one function in core/blocks/process.py and adds the warm class next to it (reuse,
-  don't copy); GridRunner keeps the one-shot path for .dss files.
+## Spike results (v0.5) - S1-S6 DONE
+Measured on i7-1185G7, Windows 11, Python 3.12.2, PySide6 6.8.3, dss-python 0.15.7.
+Numbers, tables and code: scratch/phase5/spike<N>_*/README.md. Below: decisions only.
+- S1 Canvas (done): IEEE 123 and 8x copies hold 60 fps. Branches as ShapePaths
+  (GeometryRenderer + MSAA 4x) plus glyph Items; a separate "live" ShapePath for what is
+  dragged; glyph SVG Images with power-of-two sourceSize, async loading. Hit-testing in
+  core/grid/diagram with a spatial index: nearest glyph within 6 px/zoom wins (kind only
+  breaks ties). Reuse from SchematicCanvas (copy, model-free): pan/zoom content Item,
+  settledZoom pen width, grid layer, rubber band.
+- S2 Undo (done): delta commands (store only what changes; Qt-free core commands wrapped
+  1:1 in a QUndoCommand). 1000 random commands on IEEE 123 undo/redo exactly; ~0.3 KB and
+  microseconds per command (snapshots: 7-60 ms and 161-658 MB per 1000 steps - rejected).
+  Rules for D4: apply = do and redo; revert assumes the exact post-apply state; values are
+  captured on first apply; remove keeps the objects and their dict positions and
+  re-inserts there (key order is part of "exact"); every command reports affected() ids.
+  Merge: MoveGlyph (merge_id 1) on (glyph id, gesture id), a no-op drag becomes obsolete;
+  SetProperty (merge_id 2) only with an explicit merge key; others never merge. Remove bus
+  and library Regulator are ONE compound core command, not a QUndoStack macro. No undo
+  limit needed. Open for D3: Switch ids are line.<name> (resolve against both dicts);
+  decide whether LineCode/RegControl get glyphs (rule 21).
+- S3 Layout (done): our own layered tree from topology.py (rule 25). auto_layout =
+  "packed-mid" when no bus has coordinates; otherwise scale file coordinates (median
+  branch 6 units, snapped), separate coincident buses (IEEE 123 150r/9r/25r/160r; the bus
+  nearer the source keeps the spot) and place_missing. D4 uses place_missing for one new
+  bus. 0 crossings/overlaps on IEEE 13/34/123. Not in v0.5: orthogonal routing, label
+  collision avoidance, loop crossing reduction.
+- S4 Engine checks (done):
+  Ratings: NormAmps/EmergAmps are typed; IEEE files set none (OpenDSS defaults 400/600 A).
+  linecode= resets ratings, so the writer emits normamps/emergamps AFTER linecode=.
+  Voltage bases: source kV + 3-phase winding kV (LL), then a 1-phase wye winding
+  (kV*sqrt(3)) only if no base is within 1 % - never let near-duplicates in.
+  Sequence: sequence.py uses self=(2s1+s0)/3, mutual=(s0-s1)/3 for n>=2 and z1 only for
+  n=1; reference tests/fixtures/grid/sequence_reference.json (made by
+  scratch/phase5/make_sequence_reference.py; never edit by hand).
+  Loading: line = max |I| at terminal 1 / NormAmps; transformer = max over windings of
+  |S| at terminal k / kVA (NOT OpenDSS's %, which uses NormHkVA = 1.1 kVA).
+  Compile silently defaults missing kW/kV/impedance/kVA/kvar/Pmpp and converges with
+  phase mismatches, islands and cross-zone lines: validate.py must catch all of them.
+  Compare solutions made the same way (same-solve, as in G3).
+- S5 Design file (done): plain JSON from a dataclass-to-dict converter (json + typing
+  hints, no new dependency). IEEE 13/34/123 + diagram: load(save(m)) == m, every float
+  bit-identical (shortest repr), same key order, same bytes on re-save; 26 / 64 / 133 KB
+  at indent 1 (write indent 1: one line per value for git); save <= 45 ms, load <= 26 ms
+  on IEEE 123 (UI thread is fine). Encoding: GridModel class dicts -> arrays in dict
+  order (key = name); base_frequency only at the top level; Terminal {"bus","nodes"};
+  matrices flat row-major (loader checks phases^2); complex [re, im]; NaN/inf refused at
+  save; write <name>.qgrid.tmp then rename. Reading: never raises, NetworkDiagnostic at the
+  element id; unknown field (any level) -> warning, ignored; missing field with a dataclass
+  default -> default; missing without default (base_frequency, names, kV, glyph x/y) ->
+  error; wrong type / duplicate name / bad matrix -> error; int read as float allowed;
+  null only for X | None. Any error -> nothing loaded. "version" is one integer bumped
+  only for incompatible changes (new fields with defaults stay version 1); newer version
+  -> error, nothing loaded; older -> migrate step by step. Open for D3: keep or clear
+  Bus.x/y in a design (rule 20); bus glyph key = bus name vs "bus.671" (rule 21);
+  LineCode/RegControl glyphs; lines and switches share "line.<name>", so names must be
+  unique across both; run check_consistency() after load.
+- S6 Edit-run loop (done): warm child (spawn + duplex Pipe + daemon) with a NEW
+  OpenDSSEngine per run: 35 / 54 ms per run on IEEE 13 / 123 (cold child ~0.75 s).
+  Send the whole pickled model (no incremental protocol); keep validation in the child.
+  Spawn when a design is created or opened (only if OpenDSSEngine.available()), stop when
+  the last design closes and at quit (STOP, join 2 s, terminate). One request in flight,
+  only to an idle child, replies carry the run id. A failed run (ERROR, TIMEOUT,
+  CANCELLED) ends the child, no retry; next Run spawns a new one; a dead idle child is
+  replaced before sending. State lives only in the GridController-owned instance. D5 moves
+  the spawn/Pipe/daemon/terminate code into one function in core/blocks/process.py with the
+  warm class next to it; GridRunner keeps the one-shot path for .dss files.
 
-## G5 benchmarks (v0.4)
+## G5 benchmarks (v0.4, done)
 tests/core/grid/test_benchmarks.py compares every node with the published IEEE PES
-solution: tests/fixtures/grid/<feeder>/reference/published.json, made from the report
-(.doc, from feederNN.zip at cmte.ieee.org/pes-testfeeders/resources) by
-scratch/phase4/make_published_reference.py with antiword (Git for Windows ships it).
-Never edit published.json by hand. Tolerance 0.5 % on |V| pu, 0.5 deg on angle.
-- Engine used: dss-python 0.15.7, dss-python-backend 0.14.5, "DSS C-API Library
-  version 0.14.5 revision 87d85c2622c8281b92255335bc7c09b11191b21d based on OpenDSS SVN
-  3723 [FPC 3.2.2] (64-bit build) MVMULT INCREMENTAL_Y CONTEXT_API PM 20240329033747";
-  Python 3.12.2, Windows 11.
-- Result: IEEE 13 35 nodes, max 0.135 % / 0.06 deg; IEEE 34 92 nodes, 0.141 % /
-  0.06 deg; IEEE 123 271 values, 0.136 % / 0.10 deg. All within tolerance.
-- Regulator taps: OpenDSS RegControl settles 1-2 steps away from the published taps
-  on all three feeders (e.g. IEEE 13 RG60 +9/+6/+9 against +10/+8/+11), which puts
-  up to 2.2 % between the two solutions. The benchmark therefore sets the published
-  taps (from published.json) and solves with ControlMode OFF. OpenDSS's own
-  controlled solution stays tested against opendss_reference.json.
-- Published transformer pseudo-nodes XFXFM1 (13), XF10 (34), XF1 (123) have no
-  OpenDSS bus; they are skipped by name. Any other unmatched node fails.
-- IEEE 123 bus 610 (secondary of the delta-delta XFM1, ungrounded) has no defined
-  line-to-neutral voltage; the report repeats bus 61's values there. Such buses
-  (only delta windings, no other element) are compared line-to-line.
-- Published regulator output nodes map to OpenDSS by the regulator transformer:
-  RG10 -> 814r, RG11 -> 852r, RG1 -> 150r, RG2 -> 9r, RG3 -> 25r, RG4 -> 160r.
+solution in tests/fixtures/grid/<feeder>/reference/published.json (made from the report
+by scratch/phase4/make_published_reference.py; never edit by hand). Tolerance 0.5 % on
+|V| pu, 0.5 deg; IEEE 13/34/123 all pass (max 0.141 % / 0.10 deg; dss-python 0.15.7,
+backend 0.14.5, OpenDSS SVN 3723).
+- RegControl settles 1-2 taps from the published ones, so the benchmark sets the
+  published taps and solves with ControlMode OFF; OpenDSS's own controlled solution is
+  tested against opendss_reference.json.
+- Pseudo-nodes XFXFM1 (13), XF10 (34), XF1 (123) are skipped by name; any other
+  unmatched node fails. Buses with only delta windings (IEEE 123 610) compare LL.
+- Regulator nodes: RG10 -> 814r, RG11 -> 852r, RG1 -> 150r, RG2 -> 9r, RG3 -> 25r,
+  RG4 -> 160r.
 
-## Spike results (v0.4)
-Week-1 spikes S1-S6 in scratch/phase4/ (code, tests, README). Measured on Windows 11,
-Python 3.12.2; the CI `spikes-grid` job repeats them on Windows, macOS and Linux (job
-log). Feeders: tests/fixtures/grid/ (electricdss-tst commit 3b20839, BSD-3). Reference
-results: tests/fixtures/grid/<feeder>/opendss_reference.json, the OpenDSS result of the
-original files (scratch/phase4/make_reference.py; never edit by hand).
-- Versions (S1): dss-python 0.15.7 pulls dss-python-backend 0.14.5 and cffi. Engine
-  string: "DSS C-API Library version 0.14.5 revision 87d85c2... based on OpenDSS SVN
-  3723 [FPC 3.2.2] (64-bit build) MVMULT INCREMENTAL_Y CONTEXT_API ...". pip wheels on
-  all three OSes; no compiler needed.
-- IEEE 13 (S1): `compile` of IEEE13Nodeckt.dss solves itself (the file ends in Solve):
-  converged in 11 iterations, 3 control iterations; voltage bases [115, 4.16, 0.48];
-  base frequency 60 Hz read from the file (`get DefaultBaseFrequency`). Total power
-  -3567.2 kW / -1736.6 kvar (OpenDSS sign: negative = supplied by the source; our
-  GridResult must flip it); losses 112.4 kW. 671.1 = 0.98280 pu. IEEE 34 and 123 need an
-  explicit Solve (34: 25 iterations, 6 control; 123 with its Run-file RegControl
-  settings and MaxControlIter=30: 45 iterations, 15 control).
-- Contexts (S2): two DSS.NewContext() engines (13 + 34) solved interleaved do not
-  affect each other: changing a load in one leaves the other bit-identical.
-- `compile` CHANGES THE PROCESS WORKING DIRECTORY to the folder of the compiled file
-  unless the context has AllowChangeDir = False. Redirects and BusCoords still resolve
-  relative to the compiled file with it off. OpenDSSEngine must set AllowChangeDir =
-  False (and AllowForms = False) on every new context, and pass absolute paths.
-- A second Solve of an already solved circuit moves it by up to 5e-6 pu (IEEE 34;
-  default Solution.Tolerance 1e-4). The G3 round trip (1e-6 pu) must compare
-  solutions made the same way (same number of solves), or tighten the tolerance.
-- Child process (S2): spawn + one-way Pipe + daemon Process (BlockRunner pattern) works;
-  results are bit-identical to in-process. Start-up about 0.55 s until the child has
-  imported dss and made a context (of that, `import dss` about 0.29 s); the IEEE 13 work
-  is then about 10 ms. A child terminated during IEEE 123 solves exits with -15 within
-  about 10 ms; the parent never hung, and a new child works afterwards.
-  core/blocks/runner.py has no separate process helper today (spawn/Pipe/terminate is
-  inside BlockRunner): G1 has to factor one out to "reuse, don't copy".
-- pytest on Windows prints "Windows fatal exception: code 0xe0465043" when `dss` is first
-  imported. It is a Free Pascal exception ("FPC") that the engine raises and handles
-  itself while loading; only faulthandler prints it. Tests pass, exit code 0. Same
-  rule as the ngspice message: do not try to "fix" it.
-- PyInstaller (S3, 6.22, --onefile): no hook exists in pyinstaller-hooks-contrib.
-  Without options the build succeeds and the DLLs are found, but the exe fails with
-  "No module named '_cffi_backend'" (the compiled _dss_capi module imports it from C).
-  `--collect-binaries dss_python_backend` alone fails the same way.
-  `--hidden-import _cffi_backend` alone works (38.9 MB, also bundles the debug engine
-  _dss_capid / dss_capid). Chosen: our hook scratch/phase4/spike3_pyinstaller/hooks/
-  hook-dss_python_backend.py (collect_dynamic_libs minus the debug build, hidden imports
-  _dss_capi and _cffi_backend, excludes _dss_capid): 30.2 MB, prints the reference
-  671.1 voltage. Windows bundle: _cffi_backend.pyd, dss_python_backend/_dss_capi.pyd,
-  dss_capi.dll, libklusolvex.dll, libwinpthread-1.dll. macOS/Linux file lists: CI
-  `spikes-grid` job log. G7 adds the hook to packaging/.
-- API coverage (S4): every element of IEEE 13, 34 and 123 is read back through the API
-  (no unsupported classes in these feeders). Typed interfaces give buses
-  (ActiveCktElement.BusNames), phases, enabled, open state (IsOpen(terminal, 0)),
-  linecode/line matrices, units, lengths, IsSwitch, transformer windings (Wdg = i, then
-  kV, kVA, R (= %r), IsDelta, Tap, Min/MaxTap, NumTaps, Rneut, Xneut), Xhl/Xht/Xlt,
-  all RegControl settings, load kV/kW/kvar/PF/Model/IsDelta/Vminpu/Vmaxpu/Status/ZIPV,
-  capacitor kV/kvar/IsDelta/NumSteps/States, bus x/y/Coorddefined, kVBase and
-  Settings.VoltageBases.
-  Values that need ActiveDSSElement.Properties("<name>").Val (scalar strings, read with
-  float()): Vsource R1, X1, R0, X0, MVAsc3, MVAsc1, Isc3, Isc1, BaseFreq;
-  LineCode BaseFreq, Kron; Line BaseFreq; Transformer %NoLoadLoss, %IMag, %LoadLoss,
-  Bank, BaseFreq; RegControl PTPhase; Load VLowpu.
-  Correction to the pre-spike notes: transformer taps (Transformers.Tap per winding) and
-  load Vminpu/Vmaxpu ARE typed in 0.15.7.
-- Units (S4): unit codes 0 none, 1 mi, 2 kft, 3 km, 4 m, 5 ft, 6 in, 7 cm, 8 mm. IEEE 13
-  local linecodes mtx601-607 are mi (1); the shared IEEELineCodes.DSS ones are kft (2)
-  or none (0); all IEEE 13 lines are in ft (5). Lines.Rmatrix/Xmatrix/Cmatrix are
-  reported per LINE unit, already converted from the linecode (650632: 0.3465 ohm/mi ->
-  6.5625e-05 ohm/ft). units.py must convert from the line's own Units code.
-- Property order matters: a line given `length=1.5 units=km r1=0.25` ends with Units 0
-  (none), because R1/X1/matrices set after Units reset it; `r1=0.25 length=1.5
-  units=km` keeps 3 (km). The total impedance is the same. writer.py must emit Units=
-  after the impedances (or write everything in one consistent unit).
-- Switch (S4): line.671692 has IsSwitch true, linecode "", Units 0 (none), Length 0.001
-  (the OpenDSS default) and r1 = r0 = 1e-4: the writer must keep length, units and
-  impedance.
-- Vsource bus2 reads back as "sourcebus.0.0.0" (grounded) through BusNames.
-- Regulator taps (S4): before the solve all taps are 1.0 (no feeder sets them). After:
-  IEEE 13 reg1 = 1.05625, reg2 = 1.0375, reg3 = 1.05625 (winding 2); IEEE 34 and 123 in
-  their reference files. IEEE 13 solves inside `compile`, so its "before" state was
-  rebuilt with ControlMode=OFF and Taps=[1 1].
-- Bus coordinates (S4): all buses of IEEE 13 and 34 have them; IEEE 123 has two buses
-  without (300_open, 94_open, the open-switch buses). The single-line view (G6) must
-  handle buses with no coordinates.
-- save circuit (S5) writes one file per class with quoted names (New "Load.l1" ...).
-- Locale (S5, Windows): with de_DE (decimal comma), with or without
-  setlocale(LC_NUMERIC, "C"), DSS-Python reads "1.5" correctly (typed, Properties(),
-  `?`), `save circuit` writes "kW=1.5" with no decimal commas, and IEEE 13 matches its
-  reference exactly. The engine (Free Pascal) does its own number formatting.
-  macOS/Linux: CI `spikes-grid` job log. Keep setlocale(LC_NUMERIC, "C") before
-  compiling anyway (rule 4 style, cheap).
-- Timing (S6, Windows, median of 10, new context each run; IEEE 13 solves in compile):
-  IEEE 13 (41 nodes) compile 7.5 ms; IEEE 34 (95) compile 7.8 + solve 1.5 ms;
-  IEEE 123 (278) compile 8.9 + solve 6.4 ms. Reading all node voltages < 0.5 ms;
-  reading every element back (S4) 2.6 / 4.8 / 7.3 ms. In the child process: start-up
-  0.49-0.55 s, then 11 / 12 / 19 ms of work; total about 0.5-0.56 s. The child's
-  start-up, not OpenDSS, is what the UI waits for: a busy indicator is enough, no
-  progress reporting needed for these feeders.
+## Spike results (v0.4, done)
+Details: scratch/phase4/ READMEs. Feeders: tests/fixtures/grid/ (electricdss-tst 3b20839,
+BSD-3). Reference: tests/fixtures/grid/<feeder>/opendss_reference.json
+(scratch/phase4/make_reference.py; never edit by hand).
+- Solve: IEEE 13 solves inside `compile`; IEEE 34 and 123 need an explicit Solve
+  (123: MaxControlIter=30). OpenDSS power sign is negative = supplied by the source;
+  GridResult flips it. A second Solve moves a solution by up to 5e-6 pu: the G3 round
+  trip compares solutions made the same way.
+- Contexts: separate DSS.NewContext() engines do not affect each other. Every context
+  sets AllowChangeDir = False (compile otherwise changes the process cwd) and
+  AllowForms = False; pass absolute paths.
+- Child process: spawn + Pipe + daemon works, bit-identical to in-process; start-up
+  ~0.5 s dominates (work 10-20 ms), so a busy indicator is enough.
+- pytest on Windows prints "Windows fatal exception: code 0xe0465043" on first
+  `import dss` (Free Pascal, handled by the engine). Do not try to "fix" it.
+- PyInstaller: use our hook scratch/phase4/spike3_pyinstaller/hooks/
+  hook-dss_python_backend.py (hidden imports _dss_capi and _cffi_backend, no debug build).
+- API: every IEEE 13/34/123 element reads back through the API. Read through
+  ActiveDSSElement.Properties("<name>").Val (float()): Vsource R1, X1, R0, X0, MVAsc3,
+  MVAsc1, Isc3, Isc1, BaseFreq; LineCode BaseFreq, Kron; Line BaseFreq; Transformer
+  %NoLoadLoss, %IMag, %LoadLoss, Bank, BaseFreq; RegControl PTPhase; Load VLowpu.
+  Transformer taps and load Vminpu/Vmaxpu are typed.
+- Units: codes 0 none, 1 mi, 2 kft, 3 km, 4 m, 5 ft, 6 in, 7 cm, 8 mm. Line matrices are
+  per LINE unit: units.py converts from the line's own Units. R1/X1/matrices set after
+  Units reset it to none: writer.py emits Units= after the impedances.
+- Switch: keep length (default 0.001), units and impedance (IEEE 13 r1 = r0 = 1e-4).
+  Vsource bus2 reads back as "sourcebus.0.0.0".
+- Regulator taps are 1.0 before the solve; store the solved taps (rule "Grid model").
+- IEEE 123 buses 300_open and 94_open have no coordinates.
+- save circuit writes one file per class with quoted names (New "Load.l1" ...).
+- Locale: a decimal-comma locale changes nothing in OpenDSS; keep
+  setlocale(LC_NUMERIC, "C") before compiling anyway.
 
-## Spike results (v0.3, kept)
-Week-1 spikes in scratch/phase3/ (code, tests, README). Measured on Windows 11, ngspice 46,
-Python 3.12; the CI `spikes` job repeats them on Windows (ngspice 44.2), macOS and Linux.
-- Timing, 1 s simulated, RC with an external source, one breakpoint set per tick from the
-  controller ("rolling"): Ts = 100 us 0.55 s (55 us/tick); 50 us 1.0 s; 20 us 2.7 s;
-  10 us 5.4 s (54 us/tick). The same RC with a built-in PWL source and no callbacks takes
-  0.06 s at 100 us and 0.65 s at 10 us. About 5 accepted points per tick, because ngspice
-  restarts with small steps after every breakpoint. Error against 1 - exp(-t/RC) is
-  below 4e-5 V.
+## Spike results (v0.3, done)
+Details: scratch/phase3/ READMEs. Combined-run facts that the code relies on:
 - Set breakpoints one at a time from the tick (ngSpice_SetBkpt(next tick)), never all up
-  front: setting all of them up front grows faster than linear (10 us: 13.6 s; 5 us: 95 s
-  against 12 s).
-- SetBkpt is required. Landing on the ticks only by shortening delta in GetSyncData
-  costs 11 us/tick but gives about 1 % error at the source edge, because ngspice does not
-  restart integration there.
-- Smallest workable Ts: 10 us works (5.4x slower than real time on this PC). 5 us also
-  runs (12 s for 1 s), but it is below the v0.3 limit.
-- SendData is called only if a SendInitData callback is also passed to ngSpice_Init (a
-  NULL SendInitData gives no SendData calls at all).
-- Ending a run: with GetSyncData registered, ngspice often fails to finish at the deck's
-  tstop. It either aborts with "Timestep too small" or loops forever about 127 ulp short
-  of tstop, and a delta returned from GetSyncData does not help. Fix: make the .tran run
-  2*Ts past the last tick and send `stop when time > t_stop + Ts/2` before `run`
-  (ngspice_sync.run_ticks).
-- How a redo is reported: GetSyncData(location=0) comes before each step;
-  GetSyncData(location=1, redostep=0) means the step was accepted, and SendData for that
-  point follows immediately. A rejected step gives GetSyncData(location=1, redostep=1),
-  with time already reset to the last accepted point (to 1 ulp) and delta cut.
-  GetVSRCData is called for every trial point, rejected ones included.
-- Keeping rejected steps away from the controller: run the tick only from SendData (the
-  accepted points; its times equal the final time vector exactly). GetVSRCData only
-  returns the held value. ngspice's own rejections came right after its breakpoints,
-  never on a tick step. When a redo on a tick step was forced, a controller driven by
-  GetVSRCData ran on the rejected step, and the SendData-driven one did not.
-- Never return nonzero from GetSyncData. It makes ngspice redo the step, but the redo
-  steps over the tick breakpoint, so that tick runs late.
-- Child process: spawn + Pipe + daemon Process (as in BlockRunner) works on Windows, with
-  results identical to an in-process run and about 0.35 s of start-up. A second child
-  works, and a terminated child exits with -15 without hanging the parent. The known
-  "Windows fatal exception: access violation" message appears under pytest only. macOS
-  and Linux: see the CI `spikes` job log.
-- Mapping: a mass-spring-damper as C = m, R = 1/b, L = 1/k, with F as a current source and
-  x = integral of v (G source into a 1 F capacitor), matches the analytic x(t) and v(t)
-  to within 0.0005 %.
-- Locale: on Windows a de_DE locale changes nothing, because ngspice.dll links its C
-  runtime statically and Python's setlocale cannot reach it. On Linux and macOS ngspice
-  shares the process libc: see the CI `spikes` job log for the result without the fix.
-  Note: core/sim/ngspice_adapter.py does not call setlocale(LC_NUMERIC, "C") today,
-  although rule 4 requires it.
-- M4 PWM edges (scratch/phase3/spike6*_pwm.py): a comparator of a held duty and a
-  `pulse` sawtooth switches exactly at the carrier corners (ngspice breakpoints) but
-  steps over the duty crossing: up to 4.5 us late at 20 kHz. Smooth comparators, an RC
-  after it, a curvature "precursor" and the S switch do not help; no XSPICE code models
-  are shipped. Capping the step costs: 1 us -> 390 ns error, 500 ns -> 177 ns, at
-  15-25x the points. Chosen: the `Crossing` primitive; the CoSimulator sets a pair of
-  breakpoints at edge +- 1e-4*Ts from each tick (one on the edge alone is not enough:
-  the comparator is undecided there and ngspice's next step is long). Edges then land
-  within 20 ns. The edge is still made by the comparator inside ngspice.
+  front. SetBkpt is required (shortening delta in GetSyncData gives ~1 % error).
+  ~55 us per tick; smallest supported Ts 10 us.
+- SendData is called only if a SendInitData callback is also passed to ngSpice_Init.
+- End of run: make the .tran run 2*Ts past the last tick and send
+  `stop when time > t_stop + Ts/2` before `run` (ngspice_sync.run_ticks); otherwise
+  ngspice aborts or loops just short of tstop.
+- Redo: GetSyncData(location=1, redostep=1) marks a rejected step. Run the tick only from
+  SendData (accepted points); GetVSRCData only returns the held value. Never return
+  nonzero from GetSyncData (the redo steps over the tick).
+- Child process: spawn + Pipe + daemon works on Windows (~0.35 s start-up).
+- Mapping check: mass-spring-damper as C = m, R = 1/b, L = 1/k matches analytic x, v to
+  0.0005 %.
+- Locale: on Windows ngspice.dll links its C runtime statically (setlocale cannot reach
+  it); on Linux/macOS it shares libc, so rule 4's setlocale matters there.
+- PWM (M4): use the `Crossing` primitive; the CoSimulator sets a pair of breakpoints at
+  edge +- 1e-4*Ts from each tick, so edges land within 20 ns. The edge is still made by
+  the comparator inside ngspice.
