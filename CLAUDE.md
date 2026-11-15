@@ -53,7 +53,9 @@ import, see the v0.4 out-of-scope list). Adds only:
   same Circuit, or nothing is shown.
 - N2 Bridge: SchematicController.generateFromNetlist(text), one undo step.
 - N3 UI: "Schematic from Netlist" menu item; ask before replacing a non-empty sheet.
-- N4 Project and docs. The .qsp format does not change.
+- N4 Project and docs: README sections (library folder, Schematic from Netlist, its
+  known limits), CHANGELOG, a schematic check in --smoke-test. The .qsp format does
+  not change; a freshly drawn sheet does not ask Replace/Keep (done in N2).
 Tests isolate the default folder (tests/conftest.py); never read the real one.
 
 ## Stack

@@ -206,6 +206,38 @@ click will plot:
 
 Editing the sheet ends probe mode until the next run.
 
+### Schematic from a netlist (new after 0.4)
+
+**Tools → Schematic from Netlist** draws the Netlist tab's text on the schematic sheet
+and opens the Schematic tab. The netlist text is not changed.
+
+- Only a netlist **without errors** is drawn: the same check as **Check**, including
+  finding every `.include` file. Otherwise a dialog lists the errors with their line
+  numbers, and nothing is drawn.
+- If the sheet is not empty, QtSpice asks before replacing it. Drawing is one undo
+  step: **Ctrl+Z** brings the old sheet back.
+- **Symbols.** For each element QtSpice uses, in this order: a symbol named after its
+  model or subcircuit (`.model CMOSN …` → `cmosn.asy`, `X1 … opamp2` → `opamp2.asy`) in
+  any symbol folder; a symbol in your library or symbol folders whose `SpiceModel` (or
+  `Value`) is that name; a built-in symbol (R C L V I D, and npn/pnp or nmos/pmos by the
+  `.model` type). The symbol's Prefix and pin count must fit the element.
+- **No symbol?** The element stays on the sheet as a SPICE line in the directive text,
+  with a warning, so the circuit does not change. This is the case for E F G H sources,
+  a subcircuit without a symbol (put one in your library folder, or make one with
+  **Make Symbol**), and a Q with a substrate node.
+- **How it is drawn.** Each pin gets a short wire and a net label named after its node
+  (a ground flag for `0`/`gnd`): labels with the same name are one net, so no wires
+  are routed between parts. Sources are in the first column (supplies on top), the
+  other parts follow in signal order, at most four to a column. `.include`, `.model`,
+  `.param`, `.subckt` and analysis lines are copied unchanged into one directive text
+  below the parts, and your comments into a comment text.
+- Before the sheet is shown, QtSpice netlists it again and checks that it gives the same
+  elements, models, subcircuits and analyses as your netlist. If not, it reports an
+  error instead of showing a wrong sheet.
+
+The project keeps your typed netlist. As usual, the first real edit of the sheet asks
+whether the schematic should **Replace** the netlist or **Keep** it.
+
 ### Circuit symbols (one level)
 
 Put **port flags** on a schematic (port tool; direction in, out or bidir) and choose
@@ -219,8 +251,22 @@ circuit symbol may not itself contain circuit symbols.
 
 **Netlist cards** (new in 0.2): `.lib file` includes a whole library, `.lib file
 section` includes only the part between `.lib section` and `.endl`, and `.param` may be
-used inside `.subckt`. Relative paths are resolved from the netlist's (or project's)
-folder.
+used inside `.subckt`. A relative path is looked up next to the netlist (or project)
+first, then in your library folder and library folders (below), so `.include
+tsmc018.lib` needs no path. An absolute path is used as written.
+
+**Your library folder** (new after 0.4). Keep your model files (`.lib .sub .mod …`) and
+symbols (`.asy`) in one folder; subfolders are fine:
+
+- running from source it is `library/` in the repository (what you put there is
+  ignored by git, as vendor model files often have their own license);
+- the installed app uses `Documents/QtSpice/library`.
+
+QtSpice creates it at start-up and searches it first among your symbol folders and
+library folders. **Search paths…** shows where it is, with **Open folder**,
+**Change…** and **Reset**. A file named in `.include` / `.lib` is found directly in a
+folder or in its subfolders; if two folders have the same file name, the first one is
+used and a warning says which. A symbol's `ModelFile` is found the same way.
 
 **Search paths.** **Tools → Library Browser… → Search paths…** sets:
 
@@ -230,7 +276,7 @@ folder.
   for symbols). QtSpice does not ship Analog Devices' symbols or models.
 
 Symbols are looked up in this order: QtSpice's built-in symbols, the project's own
-circuit symbols, your symbol folders, then the LTspice folder. The first match wins.
+circuit symbols, your library folder, your symbol folders, then the LTspice folder. The first match wins.
 Every folder is read-only: QtSpice never writes to it. The paths belong to you, not to
 the project, and are kept in the app settings.
 
@@ -260,6 +306,9 @@ ngspice". The mode is stored in the project as `simulation.compat_mode`.
   wheel zooms X around the pointer, middle-drag pans, and double-click auto-ranges.
   **Zoom back** walks the zoom history, and zooms can be undone. The status bar shows
   the pointer position and, while you drag, the box size with 1/Δx.
+- **After a run** the window starts empty, as in LTspice: add the traces you want
+  (**Add trace…**, or probe the schematic). They stay plotted on the next run. A
+  project you open shows the traces it was saved with.
 - **Traces.** Drag a trace name to another pane to move it, Ctrl+drop to copy it, or
   drop it outside the panes to remove it. Double-click a trace name to show only that
   trace.
@@ -644,6 +693,19 @@ For this comparison the regulator taps are set to the published ones, with contr
 off. OpenDSS's own RegControl settles one or two tap steps away from the published
 taps, which moves voltages by up to 2.2 %. The controlled OpenDSS solution is tested
 separately, against the OpenDSS result of the original files.
+
+## Known limitations (schematic from netlist)
+
+- Parts are joined by net labels, not drawn wires; there is no wire routing. Move parts
+  and draw wires yourself if you want a classic drawing.
+- Elements without a fitting symbol (E F G H, a subcircuit without a symbol, a Q with
+  a substrate node) stay as SPICE text on the sheet.
+- A symbol is matched by name, `SpiceModel` or `Value` and by its pin count, in
+  SpiceOrder. If your symbol's pins are in a different order from the `.subckt`
+  ports, the labels are still right (they follow the netlist), but the pin names on the
+  drawing will not match.
+- Only the top level is drawn; `.subckt` blocks stay as text. The layout is simple
+  columns, not an optimised placement.
 
 ## Known limitations (v0.4)
 

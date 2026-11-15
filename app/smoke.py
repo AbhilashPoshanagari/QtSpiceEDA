@@ -80,11 +80,13 @@ def _run_checks(netlist: Path, work: Path, log: Log) -> bool:
     diagram = engine.singletonInstance("QtSpice", "DiagramController")
     projects = engine.singletonInstance("QtSpice", "ProjectManager")
     grid = engine.singletonInstance("QtSpice", "GridController")
+    schematic = engine.singletonInstance("QtSpice", "SchematicController")
     try:
         ok = (
             _check_netlist(sim, netlist, log)
             and _check_diagram(diagram, log)
             and _check_project(sim, projects, work, log)
+            and _check_schematic(schematic, netlist, log)
             and _check_grid(grid, log)
         )
     finally:
@@ -182,6 +184,19 @@ def _check_project(sim: QObject, projects: QObject, work: Path, log: Log) -> boo
         log("FAIL: the reopened project differs from the saved one")
         return False
     log(f"ok: project saved and reopened ({path.name})")
+    return True
+
+
+def _check_schematic(schematic: QObject, netlist: Path, log: Log) -> bool:
+    """Tools > Schematic from Netlist: the built-in symbols are in the bundle and the
+    drawn sheet netlists again (N1-N3)."""
+    result = schematic.generateFromNetlist(netlist.read_text(encoding="utf-8"))  # type: ignore[attr-defined]
+    if not result["ok"] or not schematic.check():  # type: ignore[attr-defined]
+        problems = "; ".join(p["message"] for p in schematic.property("problems"))
+        log(f"FAIL: schematic from {netlist.name}: {problems or 'not drawn'}")
+        return False
+    log(f"ok: schematic drawn from {netlist.name} ({result['placed']} parts)")
+    schematic.load_schematic(None)  # type: ignore[attr-defined]
     return True
 
 

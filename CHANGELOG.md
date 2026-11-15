@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased (after 0.4): schematic from netlist
+
+- **Library folder and `.include` by name (N0).** One folder for your model files and
+  symbols: `library/` in the repository when running from source (its contents are
+  git-ignored), `Documents/QtSpice/library` in the installed app. A relative
+  `.include` / `.lib` name is looked up next to the netlist first (as before), then in
+  that folder and your library folders, also in subfolders: `.include tsmc018.lib`
+  needs no path. Search paths shows the folder with Open folder, Change and Reset.
+  Make Symbol finds such includes too.
+- **Schematic from Netlist (N1-N3).** Tools → Schematic from Netlist draws an
+  error-free netlist on the schematic sheet: library symbols first (by model or
+  subcircuit name, or `SpiceModel`), else built-in ones; a net label on every pin;
+  elements without a symbol kept as SPICE text with a warning. The drawn sheet is
+  netlisted again and must give the same circuit. One undo step; asks before
+  replacing a sheet; a freshly drawn sheet does not ask which netlist the project
+  keeps.
+- **Fix:** after a netlist run the waveform window starts empty instead of plotting
+  every node; you add the traces you want, and they stay on the next run.
+
 ## 0.4.0 (unreleased)
 
 QtSpice 0.4 adds distribution-grid analysis. You can open a feeder written for OpenDSS
