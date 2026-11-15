@@ -426,8 +426,30 @@ until then, every item below is an open question, not a fact.
   a None field today (D2 fixes).
 - S5 Design file: .qgrid JSON size and save/load time for IEEE 123; equality after
   load/save/load. Results: TBD.
-- S6 Edit-run loop: edit -> GridModel to GridRunner -> writer -> compile -> GridResult ->
-  overlay, IEEE 13 and 123; decide whether a warm child process is needed. Decision: TBD.
+- S6 Edit-run loop: measured (i7-1185G7, Windows 11, Python 3.12.2, dss-python 0.15.7;
+  scratch/phase5/spike6_runloop/README.md). Loop: pickle GridModel -> child -> writer.py
+  -> script file in a temp folder -> load_native (clear + compile) -> validation ->
+  solve -> pickled GridResult -> overlay input; 10 runs, median, each run a different
+  edit. New child per run (ChildProcess): IEEE 13 733 ms, IEEE 123 777 ms, of which
+  690-720 ms is the process (spawn + Python 310, numpy + core.grid 170-190, import dss
+  170, first context 40); the work is 18 / 39 ms. Warm child (spawn + duplex Pipe +
+  daemon, serves runs until STOP or EOF): 35 / 54 ms with a new OpenDSSEngine per run
+  (new context 16-17 ms), 28 / 42 ms reusing one context (its clear + compile is
+  14-15 ms instead of 5-8). Warm results equal cold ones bit for bit in both variants.
+  Model pickle 10 / 52 KB, result 5 / 39 KB, about 4 ms both ways on IEEE 123: send the
+  whole model, no incremental protocol. load_model (no file) saves about 5-10 ms: not
+  worth it, the script is kept in name_results anyway. Validation in the child 2-13 ms:
+  keep it. Warm child idle 54-74 MB. Stop: STOP, join 2 s, terminate; 57-106 ms, exit
+  code 0; parent gone -> EOF -> exit 0. Any failed run (ERROR, TIMEOUT, CANCELLED) ends
+  the child, nothing is retried; the next Run spawns a new one (cold, 0.9-1.1 s); a
+  child dead while idle is replaced before sending. On Windows a large Pipe send blocks
+  until the child reads it: send only to an idle child, one request in flight, replies
+  carry the run id. Decision: warm child with a new OpenDSSEngine per run, spawned when
+  a design is created or opened (only if OpenDSSEngine.available()), stopped when the
+  last design closes and at quit; state only in the instance owned by GridController,
+  none in module globals. D5 moves ChildProcess's spawn/Pipe/daemon/terminate code into
+  one function in core/blocks/process.py and adds the warm class next to it (reuse,
+  don't copy); GridRunner keeps the one-shot path for .dss files.
 
 ## G5 benchmarks (v0.4)
 tests/core/grid/test_benchmarks.py compares every node with the published IEEE PES
