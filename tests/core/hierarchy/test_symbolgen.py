@@ -200,3 +200,16 @@ def test_a_body_without_ground_and_single_connection_ports_is_fine() -> None:
     made = SymbolGenerator.from_schematic("series2", sheet, lookup)
     assert made.ok, made.diagnostics
     assert ".subckt series2 A B" in made.sub_text.splitlines()
+
+
+def test_from_netlist_finds_a_bare_include_in_the_library_folders(tmp_path: Path) -> None:
+    """N0: a netlist with `.include name` and the file only in a library folder."""
+    folder = tmp_path / "library"
+    folder.mkdir()
+    (folder / "diodes.lib").write_text(".model DCLIP D (IS=1e-14)\n", encoding="utf-8")
+    text = "clip\n.include diodes.lib\nR1 in out 1k\nD1 out 0 DCLIP\n.op\n.end\n"
+    chosen = [("in", "in"), ("out", "out")]
+    assert not SymbolGenerator.from_netlist("clip", text, chosen).sub_text  # not found
+    made = SymbolGenerator.from_netlist("clip", text, chosen, None, [folder])
+    assert made.sub_text, [d.message for d in made.diagnostics]
+    assert ".include diodes.lib" in made.sub_text

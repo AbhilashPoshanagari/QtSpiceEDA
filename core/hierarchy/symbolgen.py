@@ -120,10 +120,11 @@ class SymbolGenerator:
         schematic: Schematic,
         lookup: Callable[[str], Symbol | None],
         base_dir: str | Path | None = None,
+        search_dirs: list[str | Path] | tuple[str | Path, ...] = (),
     ) -> GeneratedSymbol:
         out = GeneratedSymbol(name)
         try:
-            _from_schematic(out, schematic, lookup, base_dir)
+            _from_schematic(out, schematic, lookup, base_dir, tuple(search_dirs))
         except Exception as exc:  # never raise on a bad sheet
             _fail(out, f"internal symbol generator error: {exc!r}")
         return out
@@ -134,11 +135,13 @@ class SymbolGenerator:
         text: str,
         chosen: list[tuple[str, str]],
         base_dir: str | Path | None = None,
+        search_dirs: list[str | Path] | tuple[str | Path, ...] = (),
     ) -> GeneratedSymbol:
-        """``chosen`` is (node, direction) for each ticked node."""
+        """``chosen`` is (node, direction) for each ticked node. ``search_dirs`` are the
+        library folders ``.include <name>`` is looked up in (N0)."""
         out = GeneratedSymbol(name)
         try:
-            _from_netlist(out, text, chosen, base_dir)
+            _from_netlist(out, text, chosen, base_dir, tuple(search_dirs))
         except Exception as exc:
             _fail(out, f"internal symbol generator error: {exc!r}")
         return out
@@ -157,6 +160,7 @@ def _from_schematic(
     schematic: Schematic,
     lookup: Callable[[str], Symbol | None],
     base_dir: str | Path | None,
+    search_dirs: tuple[str | Path, ...] = (),
 ) -> None:
     if problem := symbol_name_problem(out.name):
         return _fail(out, problem)
@@ -168,14 +172,14 @@ def _from_schematic(
                 f"{inst.name} is the circuit symbol {inst.symbol}; a circuit that uses a "
                 "circuit symbol cannot become one (one level only)",
             )
-    netlisted = netlist_schematic(schematic, lookup, base_dir)
+    netlisted = netlist_schematic(schematic, lookup, base_dir, search_dirs)
     # Connectivity, part and syntax problems count; the whole-circuit checks
     # (validate) do not, because a port node is connected outside the symbol and the
     # body need not have a ground. The .sub is validated as a subcircuit in _finish.
     found_here = netlisted.nets.diagnostics + [d for p in netlisted.parts for d in p.diagnostics]
     part_lines = {p.line for p in netlisted.parts if p.line}
     text_lines = netlisted.text.splitlines()
-    for d in parse(netlisted.text, base_dir).diagnostics:
+    for d in parse(netlisted.text, base_dir, search_dirs).diagnostics:
         line = text_lines[d.line - 1].strip() if 0 < d.line <= len(text_lines) else ""
         if d.fix != FIX_INSERT_TITLE and line not in part_lines:
             found_here.append(Diagnostic(0, 0, d.severity, f"{line or 'schematic'}: {d.message}"))
@@ -191,7 +195,14 @@ def _from_schematic(
             out, "no ports: place port flags (in, out or bidir) on the nets that become pins"
         )
     title = " ".join(schematic.title.split()) or "a schematic"
-    _finish(out, found.ordered(), netlisted.text, f"from the schematic {title}", base_dir)
+    _finish(
+        out,
+        found.ordered(),
+        netlisted.text,
+        f"from the schematic {title}",
+        base_dir,
+        search_dirs,
+    )
 
 
 def _from_netlist(
@@ -199,10 +210,11 @@ def _from_netlist(
     text: str,
     chosen: list[tuple[str, str]],
     base_dir: str | Path | None,
+    search_dirs: tuple[str | Path, ...] = (),
 ) -> None:
     if problem := symbol_name_problem(out.name):
         return _fail(out, problem)
-    result = parse(text, base_dir)
+    result = parse(text, base_dir, search_dirs)
     errors = [d for d in result.diagnostics if d.severity == ERROR]
     if errors:
         out.diagnostics += [
@@ -222,7 +234,8 @@ def _from_netlist(
     if not found.ports:
         return _fail(out, "no ports: tick the nodes that become pins")
     title = text.splitlines()[0].strip().lstrip("*").strip() if text.strip() else ""
-    _finish(out, found.ordered(), text, f"from the netlist {title or '(untitled)'}", base_dir)
+    source = f"from the netlist {title or '(untitled)'}"
+    _finish(out, found.ordered(), text, source, base_dir, search_dirs)
 
 
 def _uses_generated_sub(text: str, base_dir: str | Path | None) -> bool:
@@ -297,7 +310,12 @@ def _split(out: GeneratedSymbol, text: str) -> tuple[list[str], list[str]]:
 
 
 def _finish(
-    out: GeneratedSymbol, ports: list[Port], text: str, source: str, base_dir: str | Path | None
+    out: GeneratedSymbol,
+    ports: list[Port],
+    text: str,
+    source: str,
+    base_dir: str | Path | None,
+    search_dirs: tuple[str | Path, ...] = (),
 ) -> None:
     for port in ports:
         try:
@@ -316,7 +334,7 @@ def _finish(
     # Validate the .sub as a subcircuit: only problems inside our .subckt block count
     # (whole-netlist checks such as "no ground" do not apply to a symbol's body).
     check_text = f"* check\n{out.sub_text}.end\n"
-    check = parse(check_text, base_dir)
+    check = parse(check_text, base_dir, search_dirs)
     numbered = check_text.splitlines()
     first = numbered.index(f".subckt {out.name} {' '.join(p.node for p in ports)}") + 1
     last = len(numbered) - 1  # the .ends line; .end follows it

@@ -1191,7 +1191,11 @@ class SchematicController(QObject):
             name,
             overwrite,
             lambda folder: SymbolGenerator.from_schematic(
-                name, self._schematic, self.lookup, self._base_dir() or folder
+                name,
+                self._schematic,
+                self.lookup,
+                self._base_dir() or folder,
+                self.include_folders(),
             ),
         )
 
@@ -1206,7 +1210,7 @@ class SchematicController(QObject):
             name,
             overwrite,
             lambda folder: SymbolGenerator.from_netlist(
-                name, text, chosen, self._base_dir() or folder
+                name, text, chosen, self._base_dir() or folder, self.include_folders()
             ),
         )
 
