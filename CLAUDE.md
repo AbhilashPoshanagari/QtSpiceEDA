@@ -382,8 +382,22 @@ until then, every item below is an open question, not a fact.
   (S3) must separate coincident buses.
 - S2 Undo: core command + QUndoCommand wrapper; mergeWith for drags (one undo step per
   drag); macro for compound delete; memory for 1000 steps. Decision: TBD.
-- S3 Layout: auto_layout on IEEE 34 with coordinates removed, and on the two IEEE 123
-  buses without coordinates; crossings, run time. Decision: TBD.
+- S3 Layout: measured (i7-1185G7, Python 3.12.2, PySide6 6.8.3; scratch/phase5/spike3_layout/
+  README.md). Our own layered tree (BFS from the source over closed branches, open switches
+  are non-tree edges, transformer = extra column, rows from subtree leaf order; dicts + deque
+  only). All coordinates removed: every variant 0 crossings, 0 glyph overlaps on IEEE 13/34/123;
+  0.09 / 0.27 / 0.9 ms, 8x IEEE 123 (1057 buses) < 10 ms. "Trunk" rows (bus on its first
+  child's row) give long steep fan edges (IEEE 123 max branch 164 units against 21 in the file);
+  "packed-mid" (per-column contour packing, bus midway between first and last child) max 24,
+  1 fan edge grazing a load glyph. Mixed (keep coordinates, place the rest next to the nearest
+  placed neighbour at the free grid point with fewest overlaps/crossings): IEEE 123 places
+  300_open, 94_open and the coincident 150r/9r/25r/160r (the bus nearer the source keeps the
+  spot); the file's 4 crossings -> 0, no overlap added; 107 ms (pure-Python candidate scan,
+  10-35 ms per placed bus). File coordinates scaled so the median branch is 6 units, snapped.
+  Decision: D3 auto_layout = packed-mid when no bus has coordinates, else scale + separate
+  coincident buses + place_missing; topology.py supplies the tree (rule 25); D4 uses
+  place_missing for one new bus. Not needed for v0.5: orthogonal routing, label collision
+  avoidance, crossing reduction for loops.
 - S4 Engine checks: Lines/LineCodes NormAmps and EmergAmps typed or Properties();
   writer design with derived VoltageBases + CalcVoltageBases solves like the original;
   sequence -> phase matrices vs OpenDSS for linecodes given r1/x1/r0/x0/c1/c0 (make
