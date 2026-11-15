@@ -1,0 +1,1754 @@
+{
+ "versions": {
+  "dss_python": "0.15.7",
+  "engine": "DSS C-API Library version 0.14.5 revision 87d85c2622c8281b92255335bc7c09b11191b21d based on OpenDSS SVN 3723 [FPC 3.2.2] (64-bit build) MVMULT INCREMENTAL_Y CONTEXT_API PM 20240329033747; License Status: Open",
+  "python": "3.12.2"
+ },
+ "a_amps": {
+  "feeders": {
+   "ieee13": {
+    "linecodes": 36,
+    "lines": 12,
+    "values": {
+     "line 400/600": 12,
+     "linecode 400/600": 36
+    },
+    "typed_equals_properties": true,
+    "typed_equals_cktelement": true,
+    "survive_save_circuit": true,
+    "saved_files": [
+     "BusCoords.dss",
+     "BusVoltageBases.dss",
+     "Capacitor.dss",
+     "GrowthShape.dss",
+     "Line.dss",
+     "LineCode.dss",
+     "Load.dss",
+     "LoadShape.dss",
+     "Master.dss",
+     "RegControl.dss",
+     "Spectrum.dss",
+     "TCC_Curve.dss",
+     "Transformer.dss",
+     "Vsource.dss"
+    ],
+    "linecodes_with_normamps_set": 0,
+    "lines_with_normamps_set": 11,
+    "normamps_words_in_saved_files": 11
+   },
+   "ieee34": {
+    "linecodes": 29,
+    "lines": 32,
+    "values": {
+     "line 400/600": 32,
+     "linecode 400/600": 29
+    },
+    "typed_equals_properties": true,
+    "typed_equals_cktelement": true,
+    "survive_save_circuit": true,
+    "saved_files": [
+     "BusCoords.dss",
+     "BusVoltageBases.dss",
+     "Capacitor.dss",
+     "GrowthShape.dss",
+     "Line.dss",
+     "LineCode.dss",
+     "Load.dss",
+     "LoadShape.dss",
+     "Master.dss",
+     "RegControl.dss",
+     "Spectrum.dss",
+     "TCC_Curve.dss",
+     "Transformer.dss",
+     "Vsource.dss"
+    ],
+    "linecodes_with_normamps_set": 0,
+    "lines_with_normamps_set": 32,
+    "normamps_words_in_saved_files": 32
+   },
+   "ieee123": {
+    "linecodes": 29,
+    "lines": 126,
+    "values": {
+     "line 400/600": 126,
+     "linecode 400/600": 29
+    },
+    "typed_equals_properties": true,
+    "typed_equals_cktelement": true,
+    "survive_save_circuit": true,
+    "saved_files": [
+     "BusCoords.dss",
+     "BusVoltageBases.dss",
+     "Capacitor.dss",
+     "GrowthShape.dss",
+     "Line.dss",
+     "LineCode.dss",
+     "Load.dss",
+     "LoadShape.dss",
+     "Master.dss",
+     "RegControl.dss",
+     "Spectrum.dss",
+     "TCC_Curve.dss",
+     "Transformer.dss",
+     "Vsource.dss"
+    ],
+    "linecodes_with_normamps_set": 0,
+    "lines_with_normamps_set": 118,
+    "normamps_words_in_saved_files": 118
+   }
+  },
+  "non_default": {
+   "linecode.lc_typed": {
+    "typed": [
+     250.0,
+     350.0
+    ],
+    "props": [
+     250.0,
+     350.0
+    ],
+    "after_save": [
+     250.0,
+     350.0
+    ],
+    "set_per_tojson": true
+   },
+   "linecode.lc_default": {
+    "typed": [
+     400.0,
+     600.0
+    ],
+    "props": [
+     400.0,
+     600.0
+    ],
+    "after_save": [
+     400.0,
+     600.0
+    ],
+    "set_per_tojson": false
+   },
+   "line.inherit": {
+    "typed": [
+     250.0,
+     350.0
+    ],
+    "props": [
+     250.0,
+     350.0
+    ],
+    "after_save": [
+     250.0,
+     350.0
+    ],
+    "set_per_tojson": true
+   },
+   "line.after": {
+    "typed": [
+     111.0,
+     222.0
+    ],
+    "props": [
+     111.0,
+     222.0
+    ],
+    "after_save": [
+     111.0,
+     222.0
+    ],
+    "set_per_tojson": true
+   },
+   "line.before": {
+    "typed": [
+     250.0,
+     350.0
+    ],
+    "props": [
+     250.0,
+     350.0
+    ],
+    "after_save": [
+     250.0,
+     350.0
+    ],
+    "set_per_tojson": true
+   },
+   "line.nocode": {
+    "typed": [
+     400.0,
+     600.0
+    ],
+    "props": [
+     400.0,
+     600.0
+    ],
+    "after_save": [
+     400.0,
+     600.0
+    ],
+    "set_per_tojson": false
+   },
+   "line.nocode_typed": {
+    "typed": [
+     77.0,
+     88.0
+    ],
+    "props": [
+     77.0,
+     88.0
+    ],
+    "after_save": [
+     77.0,
+     88.0
+    ],
+    "set_per_tojson": true
+   },
+   "line.api": {
+    "typed": [
+     123.0,
+     456.0
+    ],
+    "props": [
+     123.0,
+     456.0
+    ],
+    "after_save": [
+     123.0,
+     456.0
+    ],
+    "set_per_tojson": true
+   }
+  }
+ },
+ "b_voltage_bases": {
+  "feeders": {
+   "ieee13": {
+    "file_voltage_bases": [
+     115.0,
+     4.16,
+     0.48
+    ],
+    "original_tight_vs_reference_max_pu": 1.3657328534089075e-05,
+    "variants": {
+     "as_stored": {
+      "bases": [
+       0.48,
+       2.4,
+       4.16,
+       115.0
+      ],
+      "tight": {
+       "converged": true,
+       "buses": 16,
+       "buses_with_other_kvbase": 0,
+       "examples": {},
+       "max_pu_vs_reference": 1.3659515154085256e-05,
+       "worst_node": "675.3",
+       "max_rel_volts_vs_reference": 1.5650855502089625e-05,
+       "max_pu_vs_original_same_solve": 2.1866199961806387e-09,
+       "losses_rel_vs_reference": 0.00012303079479565672,
+       "taps": true
+      },
+      "default_tol": {
+       "converged": true,
+       "buses": 16,
+       "buses_with_other_kvbase": 0,
+       "examples": {},
+       "max_pu_vs_reference": 1.753617383482009e-05,
+       "worst_node": "675.3",
+       "max_rel_volts_vs_reference": 2.0489024558024705e-05,
+       "max_pu_vs_original_same_solve": 3.878845300731015e-06,
+       "losses_rel_vs_reference": 0.00014486912930658367,
+       "taps": true
+      }
+     },
+     "ll": {
+      "bases": [
+       0.48,
+       4.156921938165,
+       4.16,
+       115.0
+      ],
+      "tight": {
+       "converged": true,
+       "buses": 16,
+       "buses_with_other_kvbase": 0,
+       "examples": {},
+       "max_pu_vs_reference": 1.3659515154085256e-05,
+       "worst_node": "675.3",
+       "max_rel_volts_vs_reference": 1.5650855502089625e-05,
+       "max_pu_vs_original_same_solve": 2.1866199961806387e-09,
+       "losses_rel_vs_reference": 0.00012303079479565672,
+       "taps": true
+      },
+      "default_tol": {
+       "converged": true,
+       "buses": 16,
+       "buses_with_other_kvbase": 0,
+       "examples": {},
+       "max_pu_vs_reference": 1.753617383482009e-05,
+       "worst_node": "675.3",
+       "max_rel_volts_vs_reference": 2.0489024558024705e-05,
+       "max_pu_vs_original_same_solve": 3.878845300731015e-06,
+       "losses_rel_vs_reference": 0.00014486912930658367,
+       "taps": true
+      }
+     },
+     "ll_merged": {
+      "bases": [
+       0.48,
+       4.16,
+       115.0
+      ],
+      "tight": {
+       "converged": true,
+       "buses": 16,
+       "buses_with_other_kvbase": 0,
+       "examples": {},
+       "max_pu_vs_reference": 1.3659515154085256e-05,
+       "worst_node": "675.3",
+       "max_rel_volts_vs_reference": 1.5650855502089625e-05,
+       "max_pu_vs_original_same_solve": 2.1866199961806387e-09,
+       "losses_rel_vs_reference": 0.00012303079479565672,
+       "taps": true
+      },
+      "default_tol": {
+       "converged": true,
+       "buses": 16,
+       "buses_with_other_kvbase": 0,
+       "examples": {},
+       "max_pu_vs_reference": 1.753617383482009e-05,
+       "worst_node": "675.3",
+       "max_rel_volts_vs_reference": 2.0489024558024705e-05,
+       "max_pu_vs_original_same_solve": 3.878845300731015e-06,
+       "losses_rel_vs_reference": 0.00014486912930658367,
+       "taps": true
+      }
+     },
+     "three_phase_only": {
+      "bases": [
+       0.48,
+       4.16,
+       115.0
+      ],
+      "tight": {
+       "converged": true,
+       "buses": 16,
+       "buses_with_other_kvbase": 0,
+       "examples": {},
+       "max_pu_vs_reference": 1.3659515154085256e-05,
+       "worst_node": "675.3",
+       "max_rel_volts_vs_reference": 1.5650855502089625e-05,
+       "max_pu_vs_original_same_solve": 2.1866199961806387e-09,
+       "losses_rel_vs_reference": 0.00012303079479565672,
+       "taps": true
+      },
+      "default_tol": {
+       "converged": true,
+       "buses": 16,
+       "buses_with_other_kvbase": 0,
+       "examples": {},
+       "max_pu_vs_reference": 1.753617383482009e-05,
+       "worst_node": "675.3",
+       "max_rel_volts_vs_reference": 2.0489024558024705e-05,
+       "max_pu_vs_original_same_solve": 3.878845300731015e-06,
+       "losses_rel_vs_reference": 0.00014486912930658367,
+       "taps": true
+      }
+     },
+     "ll_3ph_first": {
+      "bases": [
+       0.48,
+       4.16,
+       115.0
+      ],
+      "tight": {
+       "converged": true,
+       "buses": 16,
+       "buses_with_other_kvbase": 0,
+       "examples": {},
+       "max_pu_vs_reference": 1.3659515154085256e-05,
+       "worst_node": "675.3",
+       "max_rel_volts_vs_reference": 1.5650855502089625e-05,
+       "max_pu_vs_original_same_solve": 2.1866199961806387e-09,
+       "losses_rel_vs_reference": 0.00012303079479565672,
+       "taps": true
+      },
+      "default_tol": {
+       "converged": true,
+       "buses": 16,
+       "buses_with_other_kvbase": 0,
+       "examples": {},
+       "max_pu_vs_reference": 1.753617383482009e-05,
+       "worst_node": "675.3",
+       "max_rel_volts_vs_reference": 2.0489024558024705e-05,
+       "max_pu_vs_original_same_solve": 3.878845300731015e-06,
+       "losses_rel_vs_reference": 0.00014486912930658367,
+       "taps": true
+      }
+     }
+    }
+   },
+   "ieee34": {
+    "file_voltage_bases": [
+     69.0,
+     24.9,
+     4.16,
+     0.48
+    ],
+    "original_tight_vs_reference_max_pu": 4.96569398278357e-06,
+    "variants": {
+     "as_stored": {
+      "bases": [
+       4.16,
+       14.376,
+       24.9,
+       69.0
+      ],
+      "tight": {
+       "converged": true,
+       "buses": 37,
+       "buses_with_other_kvbase": 0,
+       "examples": {},
+       "max_pu_vs_reference": 4.965696748682191e-06,
+       "worst_node": "890.1",
+       "max_rel_volts_vs_reference": 5.376478473817556e-06,
+       "max_pu_vs_original_same_solve": 7.484679542812955e-12,
+       "losses_rel_vs_reference": 2.2524288346021874e-05,
+       "taps": true
+      },
+      "default_tol": {
+       "converged": true,
+       "buses": 37,
+       "buses_with_other_kvbase": 0,
+       "examples": {},
+       "max_pu_vs_reference": 1.3762170051334621e-06,
+       "worst_node": "890.3",
+       "max_rel_volts_vs_reference": 1.5165080242941755e-06,
+       "max_pu_vs_original_same_solve": 5.869984489481617e-06,
+       "losses_rel_vs_reference": 5.530406066487664e-06,
+       "taps": true
+      }
+     },
+     "ll": {
+      "bases": [
+       4.16,
+       24.89996240961,
+       24.9,
+       69.0
+      ],
+      "tight": {
+       "converged": true,
+       "buses": 37,
+       "buses_with_other_kvbase": 0,
+       "examples": {},
+       "max_pu_vs_reference": 4.965696748682191e-06,
+       "worst_node": "890.1",
+       "max_rel_volts_vs_reference": 5.376478473817556e-06,
+       "max_pu_vs_original_same_solve": 7.484679542812955e-12,
+       "losses_rel_vs_reference": 2.2524288346021874e-05,
+       "taps": true
+      },
+      "default_tol": {
+       "converged": true,
+       "buses": 37,
+       "buses_with_other_kvbase": 0,
+       "examples": {},
+       "max_pu_vs_reference": 1.3762170051334621e-06,
+       "worst_node": "890.3",
+       "max_rel_volts_vs_reference": 1.5165080242941755e-06,
+       "max_pu_vs_original_same_solve": 5.869984489481617e-06,
+       "losses_rel_vs_reference": 5.530406066487664e-06,
+       "taps": true
+      }
+     },
+     "ll_merged": {
+      "bases": [
+       4.16,
+       24.9,
+       69.0
+      ],
+      "tight": {
+       "converged": true,
+       "buses": 37,
+       "buses_with_other_kvbase": 0,
+       "examples": {},
+       "max_pu_vs_reference": 4.965696748682191e-06,
+       "worst_node": "890.1",
+       "max_rel_volts_vs_reference": 5.376478473817556e-06,
+       "max_pu_vs_original_same_solve": 7.484679542812955e-12,
+       "losses_rel_vs_reference": 2.2524288346021874e-05,
+       "taps": true
+      },
+      "default_tol": {
+       "converged": true,
+       "buses": 37,
+       "buses_with_other_kvbase": 0,
+       "examples": {},
+       "max_pu_vs_reference": 1.3762170051334621e-06,
+       "worst_node": "890.3",
+       "max_rel_volts_vs_reference": 1.5165080242941755e-06,
+       "max_pu_vs_original_same_solve": 5.869984489481617e-06,
+       "losses_rel_vs_reference": 5.530406066487664e-06,
+       "taps": true
+      }
+     },
+     "three_phase_only": {
+      "bases": [
+       4.16,
+       24.9,
+       69.0
+      ],
+      "tight": {
+       "converged": true,
+       "buses": 37,
+       "buses_with_other_kvbase": 0,
+       "examples": {},
+       "max_pu_vs_reference": 4.965696748682191e-06,
+       "worst_node": "890.1",
+       "max_rel_volts_vs_reference": 5.376478473817556e-06,
+       "max_pu_vs_original_same_solve": 7.484679542812955e-12,
+       "losses_rel_vs_reference": 2.2524288346021874e-05,
+       "taps": true
+      },
+      "default_tol": {
+       "converged": true,
+       "buses": 37,
+       "buses_with_other_kvbase": 0,
+       "examples": {},
+       "max_pu_vs_reference": 1.3762170051334621e-06,
+       "worst_node": "890.3",
+       "max_rel_volts_vs_reference": 1.5165080242941755e-06,
+       "max_pu_vs_original_same_solve": 5.869984489481617e-06,
+       "losses_rel_vs_reference": 5.530406066487664e-06,
+       "taps": true
+      }
+     },
+     "ll_3ph_first": {
+      "bases": [
+       4.16,
+       24.9,
+       69.0
+      ],
+      "tight": {
+       "converged": true,
+       "buses": 37,
+       "buses_with_other_kvbase": 0,
+       "examples": {},
+       "max_pu_vs_reference": 4.965696748682191e-06,
+       "worst_node": "890.1",
+       "max_rel_volts_vs_reference": 5.376478473817556e-06,
+       "max_pu_vs_original_same_solve": 7.484679542812955e-12,
+       "losses_rel_vs_reference": 2.2524288346021874e-05,
+       "taps": true
+      },
+      "default_tol": {
+       "converged": true,
+       "buses": 37,
+       "buses_with_other_kvbase": 0,
+       "examples": {},
+       "max_pu_vs_reference": 1.3762170051334621e-06,
+       "worst_node": "890.3",
+       "max_rel_volts_vs_reference": 1.5165080242941755e-06,
+       "max_pu_vs_original_same_solve": 5.869984489481617e-06,
+       "losses_rel_vs_reference": 5.530406066487664e-06,
+       "taps": true
+      }
+     }
+    }
+   },
+   "ieee123": {
+    "file_voltage_bases": [
+     4.16,
+     0.48
+    ],
+    "original_tight_vs_reference_max_pu": 9.970212758947383e-06,
+    "variants": {
+     "as_stored": {
+      "bases": [
+       0.48,
+       2.402,
+       4.16
+      ],
+      "tight": {
+       "converged": true,
+       "buses": 132,
+       "buses_with_other_kvbase": 0,
+       "examples": {},
+       "max_pu_vs_reference": 9.97022243920398e-06,
+       "worst_node": "96.2",
+       "max_rel_volts_vs_reference": 1.373030526309847e-05,
+       "max_pu_vs_original_same_solve": 2.618576022683783e-09,
+       "losses_rel_vs_reference": 5.5982533936556556e-05,
+       "taps": true
+      },
+      "default_tol": {
+       "converged": true,
+       "buses": 132,
+       "buses_with_other_kvbase": 0,
+       "examples": {},
+       "max_pu_vs_reference": 9.801314223567559e-06,
+       "worst_node": "96.2",
+       "max_rel_volts_vs_reference": 1.0496745610294224e-05,
+       "max_pu_vs_original_same_solve": 3.469219616469843e-06,
+       "losses_rel_vs_reference": 3.314474042756271e-05,
+       "taps": true
+      }
+     },
+     "ll": {
+      "bases": [
+       0.48,
+       4.16,
+       4.16038603978
+      ],
+      "tight": {
+       "converged": true,
+       "buses": 132,
+       "buses_with_other_kvbase": 130,
+       "examples": {
+        "1": [
+         2.4017771198288433,
+         2.401999999999744
+        ],
+        "10": [
+         2.4017771198288433,
+         2.401999999999744
+        ],
+        "100": [
+         2.4017771198288433,
+         2.401999999999744
+        ],
+        "101": [
+         2.4017771198288433,
+         2.401999999999744
+        ],
+        "102": [
+         2.4017771198288433,
+         2.401999999999744
+        ],
+        "103": [
+         2.4017771198288433,
+         2.401999999999744
+        ]
+       },
+       "max_pu_vs_reference": 0.00010570677644961002,
+       "worst_node": "83.2",
+       "max_rel_volts_vs_reference": 1.373030526309847e-05,
+       "max_pu_vs_original_same_solve": 9.626824269548528e-05,
+       "losses_rel_vs_reference": 5.5982533936556556e-05,
+       "taps": true
+      },
+      "default_tol": {
+       "converged": true,
+       "buses": 132,
+       "buses_with_other_kvbase": 130,
+       "examples": {
+        "1": [
+         2.4017771198288433,
+         2.401999999999744
+        ],
+        "10": [
+         2.4017771198288433,
+         2.401999999999744
+        ],
+        "100": [
+         2.4017771198288433,
+         2.401999999999744
+        ],
+        "101": [
+         2.4017771198288433,
+         2.401999999999744
+        ],
+        "102": [
+         2.4017771198288433,
+         2.401999999999744
+        ],
+        "103": [
+         2.4017771198288433,
+         2.401999999999744
+        ]
+       },
+       "max_pu_vs_reference": 0.00010548308674418472,
+       "worst_node": "83.2",
+       "max_rel_volts_vs_reference": 1.0496745610294224e-05,
+       "max_pu_vs_original_same_solve": 9.943797019151823e-05,
+       "losses_rel_vs_reference": 3.314474042756271e-05,
+       "taps": true
+      }
+     },
+     "ll_merged": {
+      "bases": [
+       0.48,
+       4.16038603978
+      ],
+      "tight": {
+       "converged": true,
+       "buses": 132,
+       "buses_with_other_kvbase": 131,
+       "examples": {
+        "1": [
+         2.4017771198288433,
+         2.401999999999744
+        ],
+        "10": [
+         2.4017771198288433,
+         2.401999999999744
+        ],
+        "100": [
+         2.4017771198288433,
+         2.401999999999744
+        ],
+        "101": [
+         2.4017771198288433,
+         2.401999999999744
+        ],
+        "102": [
+         2.4017771198288433,
+         2.401999999999744
+        ],
+        "103": [
+         2.4017771198288433,
+         2.401999999999744
+        ]
+       },
+       "max_pu_vs_reference": 0.00010570677644961002,
+       "worst_node": "83.2",
+       "max_rel_volts_vs_reference": 1.373030526309847e-05,
+       "max_pu_vs_original_same_solve": 9.626824269548528e-05,
+       "losses_rel_vs_reference": 5.5982533936556556e-05,
+       "taps": true
+      },
+      "default_tol": {
+       "converged": true,
+       "buses": 132,
+       "buses_with_other_kvbase": 131,
+       "examples": {
+        "1": [
+         2.4017771198288433,
+         2.401999999999744
+        ],
+        "10": [
+         2.4017771198288433,
+         2.401999999999744
+        ],
+        "100": [
+         2.4017771198288433,
+         2.401999999999744
+        ],
+        "101": [
+         2.4017771198288433,
+         2.401999999999744
+        ],
+        "102": [
+         2.4017771198288433,
+         2.401999999999744
+        ],
+        "103": [
+         2.4017771198288433,
+         2.401999999999744
+        ]
+       },
+       "max_pu_vs_reference": 0.00010548308674418472,
+       "worst_node": "83.2",
+       "max_rel_volts_vs_reference": 1.0496745610294224e-05,
+       "max_pu_vs_original_same_solve": 9.943797019151823e-05,
+       "losses_rel_vs_reference": 3.314474042756271e-05,
+       "taps": true
+      }
+     },
+     "three_phase_only": {
+      "bases": [
+       0.48,
+       4.16
+      ],
+      "tight": {
+       "converged": true,
+       "buses": 132,
+       "buses_with_other_kvbase": 0,
+       "examples": {},
+       "max_pu_vs_reference": 9.97022243920398e-06,
+       "worst_node": "96.2",
+       "max_rel_volts_vs_reference": 1.373030526309847e-05,
+       "max_pu_vs_original_same_solve": 2.618576022683783e-09,
+       "losses_rel_vs_reference": 5.5982533936556556e-05,
+       "taps": true
+      },
+      "default_tol": {
+       "converged": true,
+       "buses": 132,
+       "buses_with_other_kvbase": 0,
+       "examples": {},
+       "max_pu_vs_reference": 9.801314223567559e-06,
+       "worst_node": "96.2",
+       "max_rel_volts_vs_reference": 1.0496745610294224e-05,
+       "max_pu_vs_original_same_solve": 3.469219616469843e-06,
+       "losses_rel_vs_reference": 3.314474042756271e-05,
+       "taps": true
+      }
+     },
+     "ll_3ph_first": {
+      "bases": [
+       0.48,
+       4.16
+      ],
+      "tight": {
+       "converged": true,
+       "buses": 132,
+       "buses_with_other_kvbase": 0,
+       "examples": {},
+       "max_pu_vs_reference": 9.97022243920398e-06,
+       "worst_node": "96.2",
+       "max_rel_volts_vs_reference": 1.373030526309847e-05,
+       "max_pu_vs_original_same_solve": 2.618576022683783e-09,
+       "losses_rel_vs_reference": 5.5982533936556556e-05,
+       "taps": true
+      },
+      "default_tol": {
+       "converged": true,
+       "buses": 132,
+       "buses_with_other_kvbase": 0,
+       "examples": {},
+       "max_pu_vs_reference": 9.801314223567559e-06,
+       "worst_node": "96.2",
+       "max_rel_volts_vs_reference": 1.0496745610294224e-05,
+       "max_pu_vs_original_same_solve": 3.469219616469843e-06,
+       "losses_rel_vs_reference": 3.314474042756271e-05,
+       "taps": true
+      }
+     }
+    }
+   }
+  },
+  "close_bases": {
+   "bus_kv_ll": {
+    "sourcebus": 115.0,
+    "650": 4.16,
+    "rg60": 4.16,
+    "633": 4.16,
+    "634": 0.48,
+    "671": 4.16,
+    "645": 4.16,
+    "646": 4.16,
+    "692": 4.16,
+    "675": 4.16,
+    "611": 4.16,
+    "652": 4.16,
+    "670": 4.16,
+    "632": 4.16,
+    "680": 4.16,
+    "684": 4.16
+   },
+   "regulator_reg1_kv": "[2.4, 2.4, ]"
+  }
+ },
+ "c_sequence": {
+  "input_sets": 26,
+  "cases": 78,
+  "max": {
+   "linecode n=1 textbook": {
+    "abs": 5.684341886080802e-14,
+    "rel": 3.7714733828796674e-16
+   },
+   "linecode n=1 z1_only": {
+    "abs": 0.6693258846666672,
+    "rel": 0.4559196415515422
+   },
+   "line n=1 textbook": {
+    "abs": 0.6693258846666668,
+    "rel": 0.837963794266859
+   },
+   "line n=1 z1_only": {
+    "abs": 5.684341886080802e-14,
+    "rel": 2.09222409555427e-16
+   },
+   "line_with_linecode n=1 textbook": {
+    "abs": 0.6693258846666668,
+    "rel": 0.837963794266859
+   },
+   "line_with_linecode n=1 z1_only": {
+    "abs": 5.684341886080802e-14,
+    "rel": 2.09222409555427e-16
+   },
+   "linecode n=2 textbook": {
+    "abs": 5.684341886080802e-14,
+    "rel": 3.7714733828796674e-16
+   },
+   "linecode n=2 z1_only": {
+    "abs": 0.6693258846666672,
+    "rel": 0.4559196415515424
+   },
+   "line n=2 textbook": {
+    "abs": 5.684341886080802e-14,
+    "rel": 3.7714733828796674e-16
+   },
+   "line n=2 z1_only": {
+    "abs": 0.6693258846666672,
+    "rel": 0.4559196415515423
+   },
+   "line_with_linecode n=2 textbook": {
+    "abs": 5.684341886080802e-14,
+    "rel": 3.7714733828796674e-16
+   },
+   "line_with_linecode n=2 z1_only": {
+    "abs": 0.6693258846666672,
+    "rel": 0.4559196415515423
+   },
+   "linecode n=3 textbook": {
+    "abs": 5.684341886080802e-14,
+    "rel": 3.7714733828796674e-16
+   },
+   "linecode n=3 z1_only": {
+    "abs": 0.6693258846666672,
+    "rel": 0.4559196415515424
+   },
+   "line n=3 textbook": {
+    "abs": 5.684341886080802e-14,
+    "rel": 3.7714733828796674e-16
+   },
+   "line n=3 z1_only": {
+    "abs": 0.6693258846666672,
+    "rel": 0.4559196415515423
+   },
+   "line_with_linecode n=3 textbook": {
+    "abs": 5.684341886080802e-14,
+    "rel": 3.7714733828796674e-16
+   },
+   "line_with_linecode n=3 z1_only": {
+    "abs": 0.6693258846666672,
+    "rel": 0.4559196415515423
+   }
+  },
+  "units_kept": true,
+  "is_z1z0": true
+ },
+ "d_loading": {
+  "ieee13": {
+   "lines": 12,
+   "line_ours_vs_opendss_max_abs_pct": 2.842170943040401e-14,
+   "line_p1_positive": 12,
+   "line_p2_negative": 12,
+   "line_examples": {
+    "650632": {
+     "ours_pct": 147.93539470217547,
+     "opendss_pct": 147.9353947021755,
+     "p1_kw": 3566.6990011134903,
+     "p2_kw": -3505.9704983113606,
+     "i_sum_terminals": 0.0012054468479383003
+    },
+    "632670": {
+     "ours_pct": 120.47256094337374,
+     "opendss_pct": 120.47256094337372,
+     "p1_kw": 2691.7269022220917,
+     "p2_kw": -2678.73853693544,
+     "i_sum_terminals": 0.0003983835664264602
+    },
+    "670671": {
+     "ours_pct": 118.4423518286981,
+     "opendss_pct": 118.44235182869808,
+     "p1_kw": 2478.738264425678,
+     "p2_kw": -2456.0133361520425,
+     "i_sum_terminals": 0.0007962186612519242
+    }
+   },
+   "transformers": {
+    "sub": {
+     "phases": 3,
+     "conductors": 4,
+     "kva": 5000.0,
+     "normhkva": 5500.0,
+     "normal_amps": 27.61240417863427,
+     "rated_i1": 25.10218561694025,
+     "s_k_kva": [
+      3967.252806579693,
+      3967.1089171156145
+     ],
+     "p_k_kw": [
+      3567.0537784280323,
+      -3567.021494222153
+     ],
+     "loading_s_pct": 79.34505613159386,
+     "loading_i1_pct": 88.76698223805025,
+     "opendss_pct": 80.6972565800457,
+     "wdgcurrents_len": 12
+    },
+    "reg1": {
+     "phases": 1,
+     "conductors": 2,
+     "kva": 1666.0,
+     "normhkva": 1832.6,
+     "normal_amps": 763.5833333333334,
+     "rated_i1": 694.1666666666667,
+     "s_k_kva": [
+      1427.069759697498,
+      1426.9032186032935
+     ],
+     "p_k_kw": [
+      1251.9545125551704,
+      -1251.8324310903984
+     ],
+     "loading_s_pct": 85.65844896143446,
+     "loading_i1_pct": 85.60270528243487,
+     "opendss_pct": 77.82064116584988,
+     "wdgcurrents_len": 4
+    },
+    "reg2": {
+     "phases": 1,
+     "conductors": 2,
+     "kva": 1666.0,
+     "normhkva": 1832.6,
+     "normal_amps": 763.5833333333334,
+     "rated_i1": 694.1666666666667,
+     "s_k_kva": [
+      1044.1320767512805,
+      1044.0468338909843
+     ],
+     "p_k_kw": [
+      972.8544817521274,
+      -972.7891358965603
+     ],
+     "loading_s_pct": 62.672993802597865,
+     "loading_i1_pct": 62.62844710245318,
+     "opendss_pct": 56.934951911321086,
+     "wdgcurrents_len": 4
+    },
+    "reg3": {
+     "phases": 1,
+     "conductors": 2,
+     "kva": 1666.0,
+     "normhkva": 1832.6,
+     "normal_amps": 763.5833333333334,
+     "rated_i1": 694.1666666666667,
+     "s_k_kva": [
+      1501.073028787136,
+      1500.8909954186706
+     ],
+     "p_k_kw": [
+      1342.2124999124896,
+      -1342.077434129323
+     ],
+     "loading_s_pct": 90.10042189598656,
+     "loading_i1_pct": 90.03995748992472,
+     "opendss_pct": 81.85450680902247,
+     "wdgcurrents_len": 4
+    },
+    "xfm1": {
+     "phases": 3,
+     "conductors": 4,
+     "kva": 500.0,
+     "normhkva": 550.0,
+     "normal_amps": 76.33236732074378,
+     "rated_i1": 69.39306120067617,
+     "s_k_kva": [
+      504.509832149766,
+      494.0651341109065
+     ],
+     "p_k_kw": [
+      405.5524662868308,
+      -400.00028572875505
+     ],
+     "loading_s_pct": 100.90196642995319,
+     "loading_i1_pct": 118.01436422648355,
+     "opendss_pct": 107.2857856604396,
+     "wdgcurrents_len": 12
+    }
+   },
+   "signs": {
+    "vsource.source": [
+     -3567.0537784187272,
+     -1736.4395103613474
+    ],
+    "load.671": [
+     1155.0003145362925,
+     660.0008159955312
+    ],
+    "capacitor.cap1": [
+     3.637978807091713e-15,
+     -593.4941347762272
+    ],
+    "circuit_total_power": [
+     -3567.0537784187272,
+     -1736.4395103613474
+    ]
+   }
+  },
+  "ieee34": {
+   "lines": 32,
+   "line_ours_vs_opendss_max_abs_pct": 1.7763568394002505e-15,
+   "line_p1_positive": 32,
+   "line_p2_negative": 32,
+   "line_examples": {
+    "l1": {
+     "ours_pct": 12.950337568978954,
+     "opendss_pct": 12.950337568978952,
+     "p1_kw": 2047.0377489239213,
+     "p2_kw": -2043.5536339496985,
+     "i_sum_terminals": 0.048730407377046994
+    },
+    "l2": {
+     "ours_pct": 12.95380601498763,
+     "opendss_pct": 12.953806014987633,
+     "p1_kw": 2016.053638063143,
+     "p2_kw": -2013.7746153522842,
+     "i_sum_terminals": 0.03261599247213893
+    },
+    "l3": {
+     "ours_pct": 12.956127635251871,
+     "opendss_pct": 12.956127635251871,
+     "p1_kw": 1986.2746221994876,
+     "p2_kw": -1944.7859884760037,
+     "i_sum_terminals": 0.598854807946051
+    }
+   },
+   "transformers": {
+    "subxf": {
+     "phases": 3,
+     "conductors": 4,
+     "kva": 25000.0,
+     "normhkva": 27500.0,
+     "normal_amps": 230.10336815528564,
+     "rated_i1": 209.18488014116878,
+     "s_k_kva": [
+      2066.5472414286114,
+      2066.540380293168
+     ],
+     "p_k_kw": [
+      2047.0393213089678,
+      -2047.0377489216862
+     ],
+     "loading_s_pct": 8.266188965714445,
+     "loading_i1_pct": 8.387121732828131,
+     "opendss_pct": 7.624656120752847,
+     "wdgcurrents_len": 12
+    },
+    "xfm1": {
+     "phases": 3,
+     "conductors": 4,
+     "kva": 500.0,
+     "normhkva": 550.0,
+     "normal_amps": 12.752716789329083,
+     "rated_i1": 11.593378899390078,
+     "s_k_kva": [
+      524.8637366493929,
+      506.65341529463734
+     ],
+     "p_k_kw": [
+      459.6279489006982,
+      -450.0133598291271
+     ],
+     "loading_s_pct": 104.97274732987859,
+     "loading_i1_pct": 100.8740181228482,
+     "opendss_pct": 91.70365283895293,
+     "wdgcurrents_len": 12
+    },
+    "reg1a": {
+     "phases": 1,
+     "conductors": 2,
+     "kva": 20000.0,
+     "normhkva": 22000.0,
+     "normal_amps": 1530.328324986088,
+     "rated_i1": 1391.2075681691708,
+     "s_k_kva": [
+      712.0283968071404,
+      711.8540290617932
+     ],
+     "p_k_kw": [
+      696.0415826108011,
+      -695.9283755526776
+     ],
+     "loading_s_pct": 3.560141984035702,
+     "loading_i1_pct": 3.7617758163615074,
+     "opendss_pct": 3.4197961966922787,
+     "wdgcurrents_len": 4
+    },
+    "reg1b": {
+     "phases": 1,
+     "conductors": 2,
+     "kva": 20000.0,
+     "normhkva": 22000.0,
+     "normal_amps": 1530.328324986088,
+     "rated_i1": 1391.2075681691708,
+     "s_k_kva": [
+      589.0577458405587,
+      588.968912294276
+     ],
+     "p_k_kw": [
+      586.2243285360418,
+      -586.1542748315335
+     ],
+     "loading_s_pct": 2.945288729202794,
+     "loading_i1_pct": 2.959179261173519,
+     "opendss_pct": 2.690162964703199,
+     "wdgcurrents_len": 4
+    },
+    "reg1c": {
+     "phases": 1,
+     "conductors": 2,
+     "kva": 20000.0,
+     "normhkva": 22000.0,
+     "normal_amps": 1530.328324986088,
+     "rated_i1": 1391.2075681691708,
+     "s_k_kva": [
+      560.6852299716646,
+      560.6156690309527
+     ],
+     "p_k_kw": [
+      560.4411527495744,
+      -560.3768719248981
+     ],
+     "loading_s_pct": 2.803426149858323,
+     "loading_i1_pct": 2.8346272021970798,
+     "opendss_pct": 2.5769338201791627,
+     "wdgcurrents_len": 4
+    },
+    "reg2a": {
+     "phases": 1,
+     "conductors": 2,
+     "kva": 20000.0,
+     "normhkva": 22000.0,
+     "normal_amps": 1530.328324986088,
+     "rated_i1": 1391.2075681691708,
+     "s_k_kva": [
+      475.773142183435,
+      475.7071759199021
+     ],
+     "p_k_kw": [
+      471.746316045071,
+      -471.6981924295026
+     ],
+     "loading_s_pct": 2.378865710917175,
+     "loading_i1_pct": 2.4526481240891784,
+     "opendss_pct": 2.229680112808344,
+     "wdgcurrents_len": 4
+    },
+    "reg2b": {
+     "phases": 1,
+     "conductors": 2,
+     "kva": 20000.0,
+     "normhkva": 22000.0,
+     "normal_amps": 1530.328324986088,
+     "rated_i1": 1391.2075681691708,
+     "s_k_kva": [
+      498.4695697888384,
+      498.4053271743122
+     ],
+     "p_k_kw": [
+      497.2585050746793,
+      -497.2048531275392
+     ],
+     "loading_s_pct": 2.492347848944192,
+     "loading_i1_pct": 2.5896931733348483,
+     "opendss_pct": 2.3542665212134986,
+     "wdgcurrents_len": 4
+    },
+    "reg2c": {
+     "phases": 1,
+     "conductors": 2,
+     "kva": 20000.0,
+     "normhkva": 22000.0,
+     "normal_amps": 1530.328324986088,
+     "rated_i1": 1391.2075681691708,
+     "s_k_kva": [
+      506.63053780634436,
+      506.5730450719559
+     ],
+     "p_k_kw": [
+      506.582073536209,
+      -506.5267425676143
+     ],
+     "loading_s_pct": 2.5331526890317217,
+     "loading_i1_pct": 2.6299001009772724,
+     "opendss_pct": 2.3908182736157015,
+     "wdgcurrents_len": 4
+    }
+   },
+   "signs": {}
+  },
+  "ieee123": {
+   "lines": 126,
+   "line_ours_vs_opendss_max_abs_pct": 1.4210854715202004e-14,
+   "line_p1_positive": 123,
+   "line_p2_negative": 122,
+   "line_examples": {
+    "l115": {
+     "ours_pct": 157.66512417119625,
+     "opendss_pct": 157.66512417119625,
+     "p1_kw": 3608.361697055915,
+     "p2_kw": -3589.0810632552493,
+     "i_sum_terminals": 0.0014124229535751062
+    },
+    "l1": {
+     "ours_pct": 2.249108830297223,
+     "opendss_pct": 2.2491088302972226,
+     "p1_kw": 20.00332522575505,
+     "p2_kw": -19.999759537090018,
+     "i_sum_terminals": 0.00037231712159520785
+    },
+    "l2": {
+     "ours_pct": 11.642461759332475,
+     "opendss_pct": 11.642461759332473,
+     "p1_kw": 102.85475417021615,
+     "p2_kw": -102.71826183942368,
+     "i_sum_terminals": 0.0005281964057699203
+    }
+   },
+   "transformers": {
+    "reg1a": {
+     "phases": 3,
+     "conductors": 4,
+     "kva": 5000.0,
+     "normhkva": 5500.0,
+     "normal_amps": 763.3236732074379,
+     "rated_i1": 693.9306120067617,
+     "s_k_kva": [
+      3843.5490381268187,
+      3843.538251987537
+     ],
+     "p_k_kw": [
+      3608.3628216240595,
+      -3608.3625167594237
+     ],
+     "loading_s_pct": 76.87098076253638,
+     "loading_i1_pct": 94.2904455126541,
+     "opendss_pct": 85.71858682968553,
+     "wdgcurrents_len": 12
+    },
+    "xfm1": {
+     "phases": 3,
+     "conductors": 4,
+     "kva": 150.0,
+     "normhkva": 165.0,
+     "normal_amps": 22.899710196223136,
+     "rated_i1": 20.817918360202853,
+     "s_k_kva": [
+      0.00010000594570405393,
+      5.744248564699163e-13
+     ],
+     "p_k_kw": [
+      2.06317690115601e-13,
+      1.204556771471663e-13
+     ],
+     "loading_s_pct": 6.66706304693693e-05,
+     "loading_i1_pct": 6.74293040057931e-05,
+     "opendss_pct": 6.129936727799373e-05,
+     "wdgcurrents_len": 12
+    },
+    "reg2a": {
+     "phases": 1,
+     "conductors": 2,
+     "kva": 2000.0,
+     "normhkva": 2200.0,
+     "normal_amps": 915.9034138218151,
+     "rated_i1": 832.639467110741,
+     "s_k_kva": [
+      67.96416047114687,
+      67.96405846871485
+     ],
+     "p_k_kw": [
+      60.767742228068116,
+      -60.76774200075512
+     ],
+     "loading_s_pct": 3.3982080235573435,
+     "loading_i1_pct": 3.371297972179548,
+     "opendss_pct": 3.064816338345044,
+     "wdgcurrents_len": 4
+    },
+    "reg3a": {
+     "phases": 1,
+     "conductors": 2,
+     "kva": 2000.0,
+     "normhkva": 2200.0,
+     "normal_amps": 915.9034138218151,
+     "rated_i1": 832.639467110741,
+     "s_k_kva": [
+      44.899755061909936,
+      44.899708948137764
+     ],
+     "p_k_kw": [
+      40.13798207432875,
+      -40.13798197136371
+     ],
+     "loading_s_pct": 2.2449877530954967,
+     "loading_i1_pct": 2.2658554725525843,
+     "opendss_pct": 2.0598686114114404,
+     "wdgcurrents_len": 4
+    },
+    "reg4a": {
+     "phases": 1,
+     "conductors": 2,
+     "kva": 2000.0,
+     "normhkva": 2200.0,
+     "normal_amps": 915.9034138218151,
+     "rated_i1": 832.639467110741,
+     "s_k_kva": [
+      568.0185039355138,
+      568.0176920257386
+     ],
+     "p_k_kw": [
+      567.3776656517208,
+      -567.3776489017182
+     ],
+     "loading_s_pct": 28.400925196775688,
+     "loading_i1_pct": 28.93955920081875,
+     "opendss_pct": 26.308690182562504,
+     "wdgcurrents_len": 4
+    },
+    "reg3c": {
+     "phases": 1,
+     "conductors": 2,
+     "kva": 2000.0,
+     "normhkva": 2200.0,
+     "normal_amps": 915.9034138218151,
+     "rated_i1": 832.639467110741,
+     "s_k_kva": [
+      44.775345870681534,
+      44.775301164159934
+     ],
+     "p_k_kw": [
+      40.04190375970066,
+      -40.04190365999656
+     ],
+     "loading_s_pct": 2.2387672935340768,
+     "loading_i1_pct": 2.2327573020937947,
+     "opendss_pct": 2.029779365539813,
+     "wdgcurrents_len": 4
+    },
+    "reg4b": {
+     "phases": 1,
+     "conductors": 2,
+     "kva": 2000.0,
+     "normhkva": 2200.0,
+     "normal_amps": 915.9034138218151,
+     "rated_i1": 832.639467110741,
+     "s_k_kva": [
+      423.77974771012185,
+      423.78003476688286
+     ],
+     "p_k_kw": [
+      423.53166449866154,
+      -423.53165585544906
+     ],
+     "loading_s_pct": 21.189001738344142,
+     "loading_i1_pct": 20.785100927582814,
+     "opendss_pct": 18.895546297802554,
+     "wdgcurrents_len": 4
+    },
+    "reg4c": {
+     "phases": 1,
+     "conductors": 2,
+     "kva": 2000.0,
+     "normhkva": 2200.0,
+     "normal_amps": 915.9034138218151,
+     "rated_i1": 832.639467110741,
+     "s_k_kva": [
+      459.49973739458983,
+      459.50014037115113
+     ],
+     "p_k_kw": [
+      459.1489064915863,
+      -459.14889591008534
+     ],
+     "loading_s_pct": 22.975007018557555,
+     "loading_i1_pct": 23.002018209385707,
+     "opendss_pct": 20.910925644896096,
+     "wdgcurrents_len": 4
+    }
+   },
+   "signs": {}
+  }
+ },
+ "e_compile_errors": {
+  "missing_linecode": {
+   "by_command": {
+    "errors": [
+     {
+      "line": 5,
+      "command": "New Line.l1 phases=3 bus1=src bus2=b2 linecode=nosuch length=1000 units=m",
+      "error": "(#401) Line.l1.LineCode: LineCode object \"nosuch\" not found."
+     }
+    ],
+    "results": [],
+    "values": {
+     "line.l1.linecode": "",
+     "line.l1.r1": "0.058"
+    },
+    "solve": {
+     "converged": true,
+     "iterations": 3,
+     "min_pu": 0.7440095063354399,
+     "zero_nodes": [],
+     "nodes": 6
+    }
+   },
+   "by_compile": {
+    "error": "(#401) Line.l1.LineCode: LineCode object \"nosuch\" not found. [file: \"C:\\Users\\PABHIL~1\\AppData\\Local\\Temp\\tmpkxqkffca\\design.dss\", line: 5]",
+    "circuit": "d"
+   }
+  },
+  "load_kw_not_set": {
+   "by_command": {
+    "errors": [],
+    "results": [],
+    "values": {
+     "load.ld1.kW": "10",
+     "load.ld1.kvar": "5.39742822138087",
+     "load.ld1.pf": "0.88"
+    },
+    "solve": {
+     "converged": true,
+     "iterations": 2,
+     "min_pu": 0.9999236310954631,
+     "zero_nodes": [],
+     "nodes": 6
+    }
+   },
+   "by_compile": {
+    "error": null,
+    "circuit": "d"
+   }
+  },
+  "load_kw_not_set_kvar_set": {
+   "by_command": {
+    "errors": [],
+    "results": [],
+    "values": {
+     "load.ld1.kW": "10",
+     "load.ld1.kvar": "200",
+     "load.ld1.pf": "0.0499376169438922"
+    },
+    "solve": {
+     "converged": true,
+     "iterations": 2,
+     "min_pu": 0.9979168689128937,
+     "zero_nodes": [],
+     "nodes": 6
+    }
+   },
+   "by_compile": {
+    "error": null,
+    "circuit": "d"
+   }
+  },
+  "load_kv_not_set": {
+   "by_command": {
+    "errors": [],
+    "results": [],
+    "values": {
+     "load.ld1.kV": "12.47"
+    },
+    "solve": {
+     "converged": true,
+     "iterations": 2,
+     "min_pu": 0.9966387827958137,
+     "zero_nodes": [],
+     "nodes": 6
+    }
+   },
+   "by_compile": {
+    "error": null,
+    "circuit": "d"
+   }
+  },
+  "linecode_no_impedance": {
+   "by_command": {
+    "errors": [],
+    "results": [],
+    "values": {
+     "linecode.empty.r1": "0.058",
+     "linecode.empty.x1": "0.1206",
+     "linecode.empty.normamps": "400"
+    },
+    "solve": {
+     "converged": true,
+     "iterations": 2,
+     "min_pu": 0.9980424166460306,
+     "zero_nodes": [],
+     "nodes": 6
+    }
+   },
+   "by_compile": {
+    "error": null,
+    "circuit": "d"
+   }
+  },
+  "line_no_linecode_no_impedance": {
+   "by_command": {
+    "errors": [],
+    "results": [],
+    "values": {
+     "line.l1.r1": "0.058",
+     "line.l1.x1": "0.1206",
+     "line.l1.c1": "3.4"
+    },
+    "solve": {
+     "converged": true,
+     "iterations": 3,
+     "min_pu": 0.7440095063354399,
+     "zero_nodes": [],
+     "nodes": 6
+    }
+   },
+   "by_compile": {
+    "error": null,
+    "circuit": "d"
+   }
+  },
+  "line_phases_vs_linecode": {
+   "by_command": {
+    "errors": [],
+    "results": [],
+    "values": {
+     "line.l1.phases": "3"
+    },
+    "solve": {
+     "converged": true,
+     "iterations": 2,
+     "min_pu": 0.9970968574487393,
+     "zero_nodes": [],
+     "nodes": 6
+    }
+   },
+   "by_compile": {
+    "error": null,
+    "circuit": "d"
+   }
+  },
+  "transformer_no_kva_no_kv": {
+   "by_command": {
+    "errors": [],
+    "results": [],
+    "values": {
+     "transformer.tx1.kVAs": "[1000, 1000, ]",
+     "transformer.tx1.kVs": "[12.47, 12.47, ]",
+     "transformer.tx1.%Rs": "[0.2, 0.2, ]",
+     "transformer.tx1.xhl": "7"
+    },
+    "solve": {
+     "converged": true,
+     "iterations": 3,
+     "min_pu": 0.30976824792718205,
+     "zero_nodes": [],
+     "nodes": 9
+    }
+   },
+   "by_compile": {
+    "error": null,
+    "circuit": "d"
+   }
+  },
+  "capacitor_no_kvar": {
+   "by_command": {
+    "errors": [],
+    "results": [],
+    "values": {
+     "capacitor.c1.kvar": "[ 1200]"
+    },
+    "solve": {
+     "converged": true,
+     "iterations": 2,
+     "min_pu": 1.0061757580913884,
+     "zero_nodes": [],
+     "nodes": 6
+    }
+   },
+   "by_compile": {
+    "error": null,
+    "circuit": "d"
+   }
+  },
+  "pv_no_pmpp_no_kva": {
+   "by_command": {
+    "errors": [],
+    "results": [],
+    "values": {
+     "pvsystem.pv1.Pmpp": "500",
+     "pvsystem.pv1.kVA": "500",
+     "pvsystem.pv1.irradiance": "1"
+    },
+    "solve": {
+     "converged": true,
+     "iterations": 2,
+     "min_pu": 0.9979426515497153,
+     "zero_nodes": [],
+     "nodes": 6
+    }
+   },
+   "by_compile": {
+    "error": null,
+    "circuit": "d"
+   }
+  },
+  "load_node_not_at_bus": {
+   "by_command": {
+    "errors": [],
+    "results": [],
+    "values": {
+     "line.l1.phases": "1"
+    },
+    "solve": {
+     "converged": true,
+     "iterations": 2,
+     "min_pu": 0.0,
+     "zero_nodes": [
+      "b2.3"
+     ],
+     "nodes": 5
+    }
+   },
+   "by_compile": {
+    "error": null,
+    "circuit": "d"
+   }
+  },
+  "island_bus": {
+   "by_command": {
+    "errors": [],
+    "results": [],
+    "values": {},
+    "solve": {
+     "converged": true,
+     "iterations": 2,
+     "min_pu": 0.0,
+     "zero_nodes": [
+      "far.1",
+      "far.2",
+      "far.3"
+     ],
+     "nodes": 9
+    }
+   },
+   "by_compile": {
+    "error": null,
+    "circuit": "d"
+   }
+  },
+  "line_to_other_zone": {
+   "by_command": {
+    "errors": [],
+    "results": [],
+    "values": {},
+    "solve": {
+     "converged": true,
+     "iterations": 2,
+     "min_pu": 0.6481308812570096,
+     "zero_nodes": [],
+     "nodes": 9
+    }
+   },
+   "by_compile": {
+    "error": null,
+    "circuit": "d"
+   }
+  },
+  "writer_with_none": {
+   "load.kw=None": {
+    "raised": "TypeError: float() argument must be a string or a real number, not 'NoneType'"
+   },
+   "linecode.r_matrix=()": {
+    "raised": null,
+    "diagnostics": [
+     "linecode.mtx601: not written: r matrix has 0 values, not 9"
+    ]
+   }
+  }
+ }
+}
