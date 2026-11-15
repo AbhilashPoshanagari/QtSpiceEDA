@@ -92,9 +92,11 @@ class WaveformModel(QObject):
 
     # ---- loading
 
-    def set_result(self, result: SimulationResult | None) -> None:
+    def set_result(self, result: SimulationResult | None, show_new: bool = True) -> None:
         """Show ``result`` (None clears). Keeps the visibility of traces that exist in
-        both the old and the new result."""
+        both the old and the new result; the other traces start visible only when
+        ``show_new`` is true (netlist runs pass False: the window starts empty and the
+        user adds traces, as in LTspice)."""
         old_visible = {name: t.visible for name, t in self._traces.items()}
         self._result = result
         self._traces = {}
@@ -123,7 +125,7 @@ class WaveformModel(QObject):
                     self._traces[name] = _Trace(name, unit, to_db(data), phase_deg(data))
                 else:
                     self._traces[name] = _Trace(name, unit, np.real(data).astype(float), None)
-                self._traces[name].visible = old_visible.get(name, True)
+                self._traces[name].visible = old_visible.get(name, show_new)
                 self._traces[name].raw = data
         self.resultChanged.emit()
         self.visibilityChanged.emit()

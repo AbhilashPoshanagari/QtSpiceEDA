@@ -155,15 +155,18 @@ def test_run_pushes_result_to_waveforms(fake_sim, qtbot) -> None:
         def __init__(self) -> None:
             super().__init__()
             self.results: list[object] = []
+            self.show_new: list[bool] = []
 
-        def set_result(self, result: object) -> None:
+        def set_result(self, result: object, show_new: bool = True) -> None:
             self.results.append(result)
+            self.show_new.append(show_new)
 
     sink = Sink()
     sim.attachWaveforms(sink)
     with qtbot.waitSignal(sim.resultReady, timeout=3000):
         sim.run(RC_EXAMPLE.read_text())
     assert sink.results == [sim.result]
+    assert sink.show_new == [False]  # a run starts with an empty waveform window
 
 
 def test_failed_run_reports_error(qapp: object, qtbot) -> None:

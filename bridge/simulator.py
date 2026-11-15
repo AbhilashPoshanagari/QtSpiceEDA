@@ -475,7 +475,7 @@ class Simulator(QObject):
             self._append_console(["", "Operating point:", *_op_lines(result)])
         self._set_progress(100)
         self._set_running(False)
-        self._push_result()
+        self._push_result(show_new=False)
         self.resultReady.emit()
 
     @Slot(str)
@@ -486,11 +486,15 @@ class Simulator(QObject):
             self._append_console([f"Error: {message}"])
         self._set_running(False)
 
-    def _push_result(self) -> None:
+    def _push_result(self, show_new: bool = True) -> None:
+        """Hand the result to the waveform window. After a run (``show_new`` False)
+        new traces start hidden, so a netlist with many nodes does not plot every
+        node at once (LTspice behaviour); traces already shown stay shown. A result
+        restored from a project shows its traces as before."""
         if self._waveforms is not None and self._result is not None:
             set_result = getattr(self._waveforms, "set_result", None)
             if set_result is not None:
-                set_result(self._result)
+                set_result(self._result, show_new=show_new)
 
 
 def _skipped_note(circuit: Circuit) -> str:

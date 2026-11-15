@@ -1,0 +1,31 @@
+* 8-transistor CMOS XOR gate
+* Supply voltage = 1.8 V
+
+VDD vdd 0 DC 1.8
+
+* Input signals
+VA A 0 PULSE(0 1.8 0 100p 100p 20n 40n)
+VB B 0 PULSE(0 1.8 0 100p 100p 10n 20n)
+
+* Inverter A -> Abar
+MP1 Abar A vdd vdd PMOS W=2u L=0.18u
+MN1 Abar A 0   0   NMOS W=1u L=0.18u
+
+* Inverter B -> Bbar
+MP2 Bbar B vdd vdd PMOS W=2u L=0.18u
+MN2 Bbar B 0   0   NMOS W=1u L=0.18u
+
+* Transmission gate 1: B -> Y (enabled when A=0)
+MN3 Y Abar B 0   NMOS W=1u L=0.18u
+MP3 Y A    B vdd PMOS W=2u L=0.18u
+
+* Transmission gate 2: Bbar -> Y (enabled when A=1)
+MN4 Y A Bbar 0   NMOS W=1u L=0.18u
+MP4 Y Abar Bbar vdd PMOS W=2u L=0.18u
+
+* MOS models (generic Level-1 models)
+.model NMOS NMOS (LEVEL=1 VTO=0.45 KP=200u)
+.model PMOS PMOS (LEVEL=1 VTO=-0.45 KP=100u)
+
+.tran 0.1n 80n
+.end
