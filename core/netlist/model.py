@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 
 ERROR = "error"
 WARNING = "warning"
+INFO = "info"
 
 GROUND_NODES = frozenset({"0", "gnd"})
 

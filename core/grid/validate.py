@@ -3,9 +3,13 @@
 ``validate(model)`` returns NetworkDiagnostics and never raises (rule 6). Each
 Diagnostic names the element id ("line.650632", "bus.671") as its location and carries
 a stable ``code`` (the constants below). Everything is an error except
-``OPEN_SWITCH_ISOLATED``, ``NO_VOLTAGE_BASES`` and a 1-phase delta element given one
-node (``PHASE_NODE_MISMATCH``: OpenDSS grounds the second node; IEEE 34 does this),
-which are warnings.
+``OPEN_SWITCH_ISOLATED``, ``NO_VOLTAGE_BASES``, a 1-phase delta element given one
+node (``PHASE_NODE_MISMATCH``: OpenDSS grounds the second node; IEEE 34 does this) and
+an unreachable bus with nothing but branches connected to it, which are warnings, and
+``LOOP``, which is info.
+
+Every graph question (reachability, voltage zones, available nodes, loops) is asked of
+``core.grid.topology.GridGraph`` (rule 25); this module never walks the graph itself.
 
 ``incomplete=True`` says the model lacks elements the extractor does not support yet
 (it warned "unsupported element ..."). One of them may be a branch, so reachability
@@ -15,11 +19,11 @@ findings are then reported as warnings instead of errors.
 from __future__ import annotations
 
 import math
-from collections import deque
 from collections.abc import Callable, Iterable, Iterator
 
 from core.grid.model import DELTA, WYE, GridModel, Terminal
-from core.netlist.model import ERROR, WARNING
+from core.grid.topology import GridGraph, required_nodes
+from core.netlist.model import ERROR, INFO, WARNING
 from core.physical.component import NetworkDiagnostic
 
 # ---- stable codes
@@ -60,6 +64,15 @@ CODES = (
     VALIDATION_FAILED,
 )
 
+# D1 (v0.5) topology checks, answered by core/grid/topology.py (rule 25). CODES above
+# is the v0.4 (G4) set; ALL_CODES is every code validate() can give.
+ZONE_MISMATCH = "zone_mismatch"
+NODE_NOT_AVAILABLE = "node_not_available"
+LOOP = "loop"
+
+TOPOLOGY_CODES = (ZONE_MISMATCH, NODE_NOT_AVAILABLE, LOOP)
+ALL_CODES = CODES + TOPOLOGY_CODES
+
 KV_TOLERANCE = 0.05
 """Largest relative difference between a rated kV and the bus voltage base."""
 
@@ -94,14 +107,27 @@ def validate(model: GridModel, *, incomplete: bool = False) -> list[NetworkDiagn
         except Exception as err:  # a malformed model; never raise (rule 6)
             out.append(_failed(check, err))
     try:
-        out.extend(_check_reachability(model, incomplete))
+        graph = GridGraph.build(model)
     except Exception as err:
-        out.append(_failed(_check_reachability, err))
+        out.append(_failed("topology", err))
+        return out
+    graph_checks: list[Callable[[GridModel, GridGraph, bool], Iterable[NetworkDiagnostic]]] = [
+        _check_reachability,
+        _check_zones,
+        _check_available_nodes,
+        _check_loops,
+    ]
+    for gcheck in graph_checks:
+        try:
+            out.extend(gcheck(model, graph, incomplete))
+        except Exception as err:
+            out.append(_failed(gcheck, err))
     return out
 
 
-def _failed(check: Callable[..., object], err: Exception) -> NetworkDiagnostic:
-    name = getattr(check, "__name__", "check").removeprefix("_check_")
+def _failed(check: Callable[..., object] | str, err: Exception) -> NetworkDiagnostic:
+    name = check if isinstance(check, str) else getattr(check, "__name__", "check")
+    name = name.removeprefix("_check_")
     return _diag(MODEL, ERROR, VALIDATION_FAILED, f"check '{name}' failed: {err!r}")
 
 
@@ -253,42 +279,15 @@ def _check_branch_phases(model: GridModel) -> Iterator[NetworkDiagnostic]:
             )
 
 
-def _adjacency(model: GridModel, with_open: bool) -> dict[str, set[str]]:
-    adj: dict[str, set[str]] = {}
-
-    def link(buses: list[str]) -> None:
-        for a in buses:
-            adj.setdefault(a, set()).update(b for b in buses if b != a)
-
-    for ln in model.lines.values():
-        if ln.enabled:
-            link([ln.bus1.bus, ln.bus2.bus])
-    for sw in model.switches.values():
-        if sw.enabled and (sw.closed or with_open):
-            link([sw.bus1.bus, sw.bus2.bus])
-    for t in model.transformers.values():
-        if t.enabled:
-            link([w.terminal.bus for w in t.windings])
-    return adj
-
-
-def _reach(adj: dict[str, set[str]], start: Iterable[str]) -> set[str]:
-    seen = set(start)
-    queue = deque(seen)
-    while queue:
-        for nxt in adj.get(queue.popleft(), ()):
-            if nxt not in seen:
-                seen.add(nxt)
-                queue.append(nxt)
-    return seen
-
-
-def _check_reachability(model: GridModel, incomplete: bool) -> Iterator[NetworkDiagnostic]:
-    starts = [s.bus1.bus for s in model.sources.values() if s.enabled]
-    if not starts:
+def _check_reachability(
+    model: GridModel, graph: GridGraph, incomplete: bool
+) -> Iterator[NetworkDiagnostic]:
+    """A bus not energized: an error (a warning when only branches connect to it, or the
+    model is incomplete); a warning when only an open switch cuts it off."""
+    if not graph.source_buses:
         return  # NO_SOURCE already says it
-    closed = _reach(_adjacency(model, with_open=False), starts)
-    with_open = _reach(_adjacency(model, with_open=True), starts)
+    closed = graph.energized_buses()
+    with_open = graph.energized_buses(include_open=True)
     note = " (the model lacks unsupported elements; one may connect it)" if incomplete else ""
     for name in model.buses:
         bus_id = f"bus.{name}"
@@ -298,6 +297,13 @@ def _check_reachability(model: GridModel, incomplete: bool) -> Iterator[NetworkD
             yield _diag(
                 bus_id, WARNING, OPEN_SWITCH_ISOLATED, f"bus {name} is cut off by an open switch"
             )
+        elif name not in graph.shunt_buses:
+            yield _diag(
+                bus_id,
+                WARNING,
+                UNREACHABLE_BUS,
+                f"bus {name} is not connected to a source{note} (only branches connect to it)",
+            )
         else:
             yield _diag(
                 bus_id,
@@ -305,6 +311,56 @@ def _check_reachability(model: GridModel, incomplete: bool) -> Iterator[NetworkD
                 UNREACHABLE_BUS,
                 f"bus {name} is not connected to a source{note}",
             )
+
+
+def _check_zones(
+    model: GridModel, graph: GridGraph, incomplete: bool
+) -> Iterator[NetworkDiagnostic]:
+    for edge, kv_a, kv_b in graph.zone_conflicts():
+        yield _diag(
+            edge.element_id,
+            ERROR,
+            ZONE_MISMATCH,
+            f"joins two voltage zones: bus {edge.bus_a} is in the {kv_a:.4g} kV zone, "
+            f"bus {edge.bus_b} in the {kv_b:.4g} kV zone (only a transformer may)",
+        )
+
+
+def _check_available_nodes(
+    model: GridModel, graph: GridGraph, incomplete: bool
+) -> Iterator[NetworkDiagnostic]:
+    """Each element's phase nodes must be present at its bus. Buses that no source
+    reaches are skipped: UNREACHABLE_BUS already reports them."""
+    for element_id, _, term, phases, conn in _terminals(model):
+        if element_id.startswith("vsource."):
+            continue  # a source makes its nodes
+        have = graph.available_nodes(term.bus)
+        if not have:
+            continue
+        missing = sorted(required_nodes(term, phases, conn) - set(have))
+        if missing:
+            nodes = ", ".join(str(n) for n in missing)
+            yield _diag(
+                element_id,
+                ERROR,
+                NODE_NOT_AVAILABLE,
+                f"{element_id} needs node{'s' if len(missing) > 1 else ''} {nodes} at "
+                f"bus.{term.bus}, which has {'.'.join(str(n) for n in have)}",
+            )
+
+
+def _check_loops(
+    model: GridModel, graph: GridGraph, incomplete: bool
+) -> Iterator[NetworkDiagnostic]:
+    for loop in graph.loops():
+        closing = loop.element_ids[-1]
+        yield _diag(
+            closing,
+            INFO,
+            LOOP,
+            f"closes a loop over closed branches: {', '.join(loop.element_ids)} "
+            f"(buses {', '.join(loop.buses)})",
+        )
 
 
 # ---- electrical
