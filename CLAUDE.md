@@ -398,11 +398,32 @@ until then, every item below is an open question, not a fact.
   coincident buses + place_missing; topology.py supplies the tree (rule 25); D4 uses
   place_missing for one new bus. Not needed for v0.5: orthogonal routing, label collision
   avoidance, crossing reduction for loops.
-- S4 Engine checks: Lines/LineCodes NormAmps and EmergAmps typed or Properties();
-  writer design with derived VoltageBases + CalcVoltageBases solves like the original;
-  sequence -> phase matrices vs OpenDSS for linecodes given r1/x1/r0/x0/c1/c0 (make
-  tests/fixtures/grid/sequence_reference.json with scratch/phase5/make_sequence_reference.py;
-  never edit by hand). Results: TBD.
+- S4 Engine checks: measured (Windows 11, Python 3.12.2, dss-python 0.15.7;
+  scratch/phase5/spike4_engine/README.md). Ratings: Lines/LineCodes NormAmps, EmergAmps
+  are typed (= Properties()); every IEEE 13/34/123 line and linecode has the OpenDSS
+  defaults 400/600 A (no file sets one); ToJSON(0) lists NormAmps only when set (0 of 94
+  linecodes). Ratings survive save circuit. linecode= resets a line's ratings: the writer
+  emits normamps/emergamps after linecode=. Voltage bases: source kV + 3-phase winding kV
+  (LL), then a 1-phase winding (wye: kV*sqrt(3)) only if no base is within 1 %; gives
+  every bus the file's kVBase on all three feeders, 2.6e-9 pu from the original solved
+  the same way (vs opendss_reference.json 1.4e-5, which the re-solved file shows too:
+  compare same-solve, as in G3). Converting all 1-phase windings to LL gives 4.16039 on
+  IEEE 123 and CalcVoltageBases moves 130 buses by 1e-4 pu: never let near-duplicates in.
+  Sequence: tests/fixtures/grid/sequence_reference.json (26 inputs x 1/2/3 phases, made
+  by scratch/phase5/make_sequence_reference.py; never edit by hand). Textbook
+  self=(2s1+s0)/3, mutual=(s0-s1)/3 matches to 6e-14 for n=2,3 and for LineCodes; a
+  1-phase LINE uses z1 only (also with a 1-phase sequence linecode, whose own Rmatrix is
+  the textbook one). sequence.py: textbook for n>=2, z1 for n=1. Line matrices are
+  recalculated only by a solve. Loading: line = max |Currents| of terminal 1 / NormAmps
+  (= PDElements.AllPctNorm to 3e-14); transformer = max over windings of |sum of Powers
+  at terminal k| / kVA. CktElement.NormalAmps of a transformer is from NormHkVA =
+  1.1 kVA, so OpenDSS % and v0.4 loading_pct are not our transformer loading (IEEE 13
+  xfm1: 100.9 % |S|/kVA, 107.3 % OpenDSS). Signs as in "Grid model". Compile: only a
+  missing linecode is an error (#401); a missing kW (10 kW, PF 0.88), kV, impedance, kVA,
+  kvar (1200) or Pmpp (500) gets a silent default; phase override by linecode=, nodes
+  missing at a bus, islands and lines between voltage zones all converge silently.
+  validate.py must catch all of them before writing. writer.write_dss raises TypeError on
+  a None field today (D2 fixes).
 - S5 Design file: .qgrid JSON size and save/load time for IEEE 123; equality after
   load/save/load. Results: TBD.
 - S6 Edit-run loop: edit -> GridModel to GridRunner -> writer -> compile -> GridResult ->
