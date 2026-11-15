@@ -35,7 +35,9 @@ saved beside it) or "" (not decided yet). The first edit of the schematic while 
 netlist editor holds other text (say a netlist file the user opened) sends
 ``netlistChoiceRequested``; QML asks the user and calls ``chooseNetlistSource(replace)``.
 With an empty netlist editor the schematic takes over without asking. Typing other text
-into the netlist editor later makes the choice open again.
+into the netlist editor later makes the choice open again. A sheet just drawn from
+the netlist ("Schematic from netlist", N2) is not an edit: the question comes with the
+first real edit of it.
 """
 
 from __future__ import annotations
@@ -594,6 +596,8 @@ class ProjectManager(QObject):
             return
         if ctl.is_empty():  # type: ignore[attr-defined]
             return
+        if getattr(ctl, "is_generated_unchanged", lambda: False)():
+            return  # N2: drawn from the netlist editor's text; nothing to choose yet
         if not self._netlist_text().strip():
             self._set_netlist_source("schematic")
             return

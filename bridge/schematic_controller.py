@@ -67,6 +67,7 @@ from core.netlist.parser import parse
 from core.schematic import edit as edit_ops
 from core.schematic import probe as probe_ops
 from core.schematic.connectivity import NetMap, connect
+from core.schematic.fromnetlist import schematic_from_netlist
 from core.schematic.geometry import (
     GROUND,
     INSTANCE,
@@ -482,6 +483,7 @@ class SchematicController(QObject):
         self._clipboard: Schematic | None = None
         self._simulator: QObject | None = None
         self._problems: list[dict[str, object]] = []
+        self._generated_at = -1  # N2: undo index right after "Schematic from netlist"
         self._ran: _Ran | None = None
         self._waveforms: QObject | None = None
         self._awaiting = False
@@ -510,6 +512,7 @@ class SchematicController(QObject):
         ):
             signal.connect(self.undoStateChanged)
         self._undo.indexChanged.connect(self.schematicEdited)
+        self.schematicEdited.connect(self.sheetEmptyChanged)
         self.schematicEdited.connect(self.probeChanged)
         self.symbolsChanged.connect(self._symbols_rescanned)
 
@@ -542,6 +545,7 @@ class SchematicController(QObject):
         """Replace the sheet (opening a project). Clears the undo stack and selection."""
         self._live = None
         self._undo.clear()
+        self._generated_at = -1
         self._selection = set()
         self._set(copy.deepcopy(schematic) if schematic is not None else Schematic())
         self.schematicEdited.emit()
@@ -1539,6 +1543,64 @@ class SchematicController(QObject):
         ]
         self.problemsChanged.emit()
         return result
+
+    # ---- N2: schematic from netlist
+
+    sheetEmptyChanged = Signal()
+
+    def _get_sheet_empty(self) -> bool:
+        return self.is_empty()
+
+    sheetEmpty = Property(bool, _get_sheet_empty, notify=sheetEmptyChanged)  # noqa: N815
+
+    @Slot(str, result="QVariantMap")
+    def generateFromNetlist(self, text: str) -> dict[str, object]:  # noqa: N802
+        """Draw the netlist ``text`` on the sheet (core.schematic.fromnetlist), replacing
+        what is there, as one undo step. Only a netlist without errors is drawn; its
+        errors (or the warnings of a drawn one) become ``problems``.
+
+        Returns {ok, placed, kept, problems}: ``placed`` is how many parts were drawn,
+        ``kept`` the elements left as SPICE text, ``problems`` [{severity, message}]."""
+        self.cancelLive()
+        sim = self._simulator
+        analysis_card = str(sim.property("analysisCard") or "") if sim is not None else ""
+        result = schematic_from_netlist(
+            text,
+            self._symbols,
+            self._base_dir(),
+            self.include_folders(),
+            require_analysis=not analysis_card,
+        )
+        self._problems = [
+            {
+                "severity": d.severity,
+                "message": f"line {d.line}: {d.message}" if d.line > 0 else d.message,
+            }
+            for d in result.diagnostics
+        ]
+        self.problemsChanged.emit()
+        if result.schematic is not None:
+            self._symbol_cache.clear()
+            sheet = result.schematic
+            # set before the push: indexChanged (-> schematicEdited) fires inside it
+            self._generated_at = self._undo.index() + 1
+            self._edit("Schematic from netlist", lambda s: _replace(s, sheet))
+            self._selection = set()
+            self._refresh()
+            self.selectionChanged.emit()
+            self._generated_at = self._undo.index()
+        return {
+            "ok": result.ok,
+            "placed": len(result.placed),
+            "kept": list(result.kept),
+            "problems": list(self._problems),
+        }
+
+    def is_generated_unchanged(self) -> bool:
+        """True while the sheet is exactly what "Schematic from netlist" drew (no edit
+        since, or the edits were undone). ProjectManager does not ask which netlist to
+        keep then: the sheet *is* the netlist editor's text."""
+        return self._generated_at >= 0 and self._undo.index() == self._generated_at
 
     @Slot(result=bool)
     def check(self) -> bool:
