@@ -1,0 +1,200 @@
+{
+  "machine": {
+    "python": "3.12.2",
+    "platform": "Windows-11-10.0.26100-SP0",
+    "processor": "Intel64 Family 6 Model 140 Stepping 1, GenuineIntel",
+    "repeats": 20,
+    "statistic": "median"
+  },
+  "feeders": {
+    "ieee13": {
+      "counts": {
+        "buses": 16,
+        "sources": 1,
+        "linecodes": 7,
+        "lines": 11,
+        "switches": 1,
+        "transformers": 5,
+        "regulators": 3,
+        "loads": 15,
+        "capacitors": 2,
+        "pvsystems": 0
+      },
+      "bus_glyphs": 16,
+      "element_glyphs": 35,
+      "buses_without_coordinates": 0,
+      "floats_in_model": 440,
+      "floats_in_diagram": 188,
+      "exact": {
+        "compact": {
+          "equal_model": true,
+          "equal_diagram": true,
+          "mismatches": 0,
+          "diagnostics": 0,
+          "same_bytes_on_resave": true
+        },
+        "indent1": {
+          "equal_model": true,
+          "equal_diagram": true,
+          "mismatches": 0,
+          "diagnostics": 0,
+          "same_bytes_on_resave": true
+        },
+        "indent2": {
+          "equal_model": true,
+          "equal_diagram": true,
+          "mismatches": 0,
+          "diagnostics": 0,
+          "same_bytes_on_resave": true
+        }
+      },
+      "bytes": {
+        "compact": 18691,
+        "compact_gzip": 2654,
+        "indent1": 25991,
+        "indent1_gzip": 2885,
+        "indent2": 32765,
+        "indent2_gzip": 3016,
+        "diagram_part_indent1": 5271,
+        "pickle": 14320
+      },
+      "ms": {
+        "to_plain": 0.632,
+        "json_dumps": 1.188,
+        "save_file": 8.63,
+        "json_loads": 0.202,
+        "from_plain_loads": 1.654,
+        "load_file": 2.059,
+        "save_file_compact": 7.329,
+        "pickle_dumps": 0.152,
+        "dataclasses_asdict": 0.456
+      }
+    },
+    "ieee34": {
+      "counts": {
+        "buses": 37,
+        "sources": 1,
+        "linecodes": 5,
+        "lines": 32,
+        "switches": 0,
+        "transformers": 8,
+        "regulators": 6,
+        "loads": 68,
+        "capacitors": 2,
+        "pvsystems": 0
+      },
+      "bus_glyphs": 37,
+      "element_glyphs": 111,
+      "buses_without_coordinates": 0,
+      "floats_in_model": 932,
+      "floats_in_diagram": 555,
+      "exact": {
+        "compact": {
+          "equal_model": true,
+          "equal_diagram": true,
+          "mismatches": 0,
+          "diagnostics": 0,
+          "same_bytes_on_resave": true
+        },
+        "indent1": {
+          "equal_model": true,
+          "equal_diagram": true,
+          "mismatches": 0,
+          "diagnostics": 0,
+          "same_bytes_on_resave": true
+        },
+        "indent2": {
+          "equal_model": true,
+          "equal_diagram": true,
+          "mismatches": 0,
+          "diagnostics": 0,
+          "same_bytes_on_resave": true
+        }
+      },
+      "bytes": {
+        "compact": 45824,
+        "compact_gzip": 4583,
+        "indent1": 64058,
+        "indent1_gzip": 4950,
+        "indent2": 80984,
+        "indent2_gzip": 5203,
+        "diagram_part_indent1": 15555,
+        "pickle": 36548
+      },
+      "ms": {
+        "to_plain": 1.633,
+        "json_dumps": 3.325,
+        "save_file": 12.627,
+        "json_loads": 1.494,
+        "from_plain_loads": 13.331,
+        "load_file": 13.354,
+        "save_file_compact": 22.737,
+        "pickle_dumps": 0.991,
+        "dataclasses_asdict": 2.894
+      }
+    },
+    "ieee123": {
+      "counts": {
+        "buses": 132,
+        "sources": 1,
+        "linecodes": 12,
+        "lines": 118,
+        "switches": 8,
+        "transformers": 8,
+        "regulators": 7,
+        "loads": 91,
+        "capacitors": 4,
+        "pvsystems": 0
+      },
+      "bus_glyphs": 132,
+      "element_glyphs": 230,
+      "buses_without_coordinates": 2,
+      "floats_in_model": 1659,
+      "floats_in_diagram": 1316,
+      "exact": {
+        "compact": {
+          "equal_model": true,
+          "equal_diagram": true,
+          "mismatches": 0,
+          "diagnostics": 0,
+          "same_bytes_on_resave": true
+        },
+        "indent1": {
+          "equal_model": true,
+          "equal_diagram": true,
+          "mismatches": 0,
+          "diagnostics": 0,
+          "same_bytes_on_resave": true
+        },
+        "indent2": {
+          "equal_model": true,
+          "equal_diagram": true,
+          "mismatches": 0,
+          "diagnostics": 0,
+          "same_bytes_on_resave": true
+        }
+      },
+      "bytes": {
+        "compact": 94212,
+        "compact_gzip": 8239,
+        "indent1": 133284,
+        "indent1_gzip": 8854,
+        "indent2": 169300,
+        "indent2_gzip": 9249,
+        "diagram_part_indent1": 36090,
+        "pickle": 78827
+      },
+      "ms": {
+        "to_plain": 9.658,
+        "json_dumps": 17.218,
+        "save_file": 42.875,
+        "json_loads": 2.965,
+        "from_plain_loads": 23.005,
+        "load_file": 25.722,
+        "save_file_compact": 27.832,
+        "pickle_dumps": 2.758,
+        "dataclasses_asdict": 4.645
+      }
+    }
+  }
+}
