@@ -363,9 +363,23 @@ ruff check . && ruff format --check .
 Week-1 spikes S1-S6 in scratch/phase5/ (code, tests, README). Fill this section with
 MEASURED results only (machine, versions, numbers, decision) when each spike is done;
 until then, every item below is an open question, not a fact.
-- S1 Canvas: IEEE 123 in QML (Repeater of items vs Shape paths), fps while panning and
-  zooming, hit-test time, memory; which parts of the schematic editor canvas (pan/zoom,
-  grid snap, rubber band) are reusable as-is. Decision: TBD.
+- S1 Canvas: measured (i7-1185G7, Intel Iris Xe via D3D11, threaded loop, 60 Hz, PySide6
+  6.8.3; scratch/phase5/spike1_canvas/README.md). IEEE 123 (132 buses) and 8 copies (1056):
+  both variants hold 60 fps pan/zoom/drag; render-thread time per frame p95 1.5 ms (1x),
+  4.9-5.8 ms (8x). First frame 0.5 s (1x), 0.95 s (b) / 1.31 s (a) at 8x. (a) Repeater item
+  per glyph: 10 534 items at 8x, 56.8 fps pan/zoom, 274 MB; (b) branches as ShapePaths +
+  glyph Items: 6 631 items, 59.5 fps, 257 MB, but each edit rebuilds all path strings
+  (0.7 ms -> 4.0 ms per drag step 1x -> 8x). GeometryRenderer re-tessellates in 0.04-0.14 ms per
+  edit; CurveRenderer 0.2-1.8 ms (max 6.2). GeometryRenderer is aliased: 4x window MSAA fixes
+  it at 60 fps, +50 MB. Hit-test in Python: spatial index 6-34 us, linear scan 0.6-5.5 ms;
+  click -> next frame 17-23 ms. Reusable from SchematicCanvas (inline, model-free, copy):
+  pan/zoom with one transformed content Item, settledZoom pen width, grid layer, rubber-band
+  rectangle. Tied to the schematic model: hit_test, snapPoint, selection/move, SymbolItem.
+  Decision: variant (b), GeometryRenderer + MSAA 4x, a separate "live" ShapePath for what is
+  dragged; glyph SVG Images with power-of-two sourceSize and asynchronous loading;
+  hit-testing in core/grid/diagram with a spatial index, nearest glyph within 6 px/zoom
+  wins (kind only breaks ties). IEEE 123 buses 150r/9r share coordinates with 150/9: layout
+  (S3) must separate coincident buses.
 - S2 Undo: core command + QUndoCommand wrapper; mergeWith for drags (one undo step per
   drag); macro for compound delete; memory for 1000 steps. Decision: TBD.
 - S3 Layout: auto_layout on IEEE 34 with coordinates removed, and on the two IEEE 123
