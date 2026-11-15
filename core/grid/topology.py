@@ -31,7 +31,9 @@ What it answers:
 - ``loops()``: cycles over closed branches. Parallel branches between the same two
   buses form a loop only when they share a node at both ends (the three 1-phase
   regulators 650-rg60 of IEEE 13 do not);
-- ``path(bus_a, bus_b)``: the shortest chain of edges, or None.
+- ``path(bus_a, bus_b)``: the shortest chain of edges, or None;
+- for the diagram layout (D3): ``connections``, ``bfs_tree``, ``spanning_forest`` and
+  ``hop_distance``, all deterministic (neighbours in name order).
 
 ``derived_voltage_bases(model)``: the voltage bases of a design (CLAUDE.md "Grid model
 changes for designs", S4 rule "ll_3ph_first").
@@ -155,6 +157,18 @@ class Loop:
 
     element_ids: tuple[str, ...]
     buses: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class SpanningForest:
+    """``GridGraph.spanning_forest()``: one tree per root, buses in breadth-first
+    ``order`` (a parent always comes before its children)."""
+
+    roots: list[str]
+    order: list[str]
+    parent: dict[str, str | None]
+    edge: dict[str, Edge]
+    """Child bus -> the edge from its parent."""
 
 
 @dataclass(frozen=True)
@@ -326,6 +340,79 @@ class GridGraph:
                     return chain[::-1]
                 queue.append(nxt)
         return None
+
+    # ---- deterministic walks for the diagram layout (D3)
+
+    def connections(self, bus: str, include_open: bool = True) -> list[tuple[str, Edge]]:
+        """One (neighbour, edge) per neighbouring bus, sorted by neighbour name.
+        Parallel branches (the three 1-phase regulators 650-rg60) are one connection;
+        its edge is a closed one if there is one, then a transformer edge."""
+        best: dict[str, Edge] = {}
+        for e in self._adj.get(bus, ()):
+            if e.bus_a == e.bus_b or not (e.closed or include_open):
+                continue
+            nxt = e.other(bus)
+            old = best.get(nxt)
+            rank = (e.closed, e.kind == TRANSFORMER)
+            if old is None or rank > (old.closed, old.kind == TRANSFORMER):
+                best[nxt] = e
+        return sorted(best.items())
+
+    def bfs_tree(
+        self, starts: Iterable[str], include_open: bool = True, seen: set[str] | None = None
+    ) -> list[tuple[str, str, Edge]]:
+        """Breadth-first from ``starts`` (in the given order) with neighbours in name
+        order: (bus, parent, edge) for every bus reached that is not a start and not in
+        ``seen``. ``seen`` is updated."""
+        seen = set() if seen is None else seen
+        queue = deque(starts)
+        seen.update(queue)
+        out: list[tuple[str, str, Edge]] = []
+        while queue:
+            bus = queue.popleft()
+            for nxt, e in self.connections(bus, include_open):
+                if nxt not in seen:
+                    seen.add(nxt)
+                    out.append((nxt, bus, e))
+                    queue.append(nxt)
+        return out
+
+    def spanning_forest(self) -> SpanningForest:
+        """A spanning forest of every bus, deterministic. From the first source bus:
+        breadth-first over closed branches, then from everything reached over any
+        branch (buses behind an open switch hang off the bus that reaches them). Other
+        source buses not reached yet, then every other bus, start a tree of their own
+        (over any branch)."""
+        parent: dict[str, str | None] = {}
+        edge: dict[str, Edge] = {}
+        order: list[str] = []
+        roots: list[str] = []
+        seen: set[str] = set()
+
+        def grow(found: list[tuple[str, str, Edge]]) -> None:
+            for bus, par, e in found:
+                parent[bus], edge[bus] = par, e
+                order.append(bus)
+
+        starts = [b for b, _, _ in self.source_buses]
+        for root in [*dict.fromkeys(starts), *self.buses]:
+            if root in seen:
+                continue
+            roots.append(root)
+            parent[root] = None
+            order.append(root)
+            before = len(order) - 1
+            grow(self.bfs_tree([root], include_open=False, seen=seen))
+            grow(self.bfs_tree(order[before:], include_open=True, seen=seen))
+        return SpanningForest(roots, order, parent, edge)
+
+    def hop_distance(self, starts: Iterable[str], include_open: bool = True) -> dict[str, int]:
+        """Number of branches from the nearest of ``starts`` to every bus reached."""
+        starts = list(starts)
+        dist = dict.fromkeys(starts, 0)
+        for bus, par, _ in self.bfs_tree(starts, include_open):
+            dist[bus] = dist[par] + 1
+        return dist
 
     # ---- voltage zones
 

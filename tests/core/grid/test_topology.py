@@ -373,3 +373,42 @@ def test_core_grid_topology_is_qt_and_dss_free() -> None:
 
     text = Path(tp.__file__).read_text(encoding="utf-8")
     assert "PySide6" not in text and "import dss" not in text and "from dss" not in text
+
+
+# ---- D3: deterministic walks for the diagram layout
+
+
+def test_connections_merge_parallel_branches_and_prefer_closed() -> None:
+    m = good_model()
+    m.switches["tie"] = Switch("tie", T("a"), T("b"), 3, False, 1e-4)
+    graph = tp.GridGraph.build(m)
+    conns = graph.connections("a")
+    assert [n for n, _ in conns] == ["b", "src"]  # name order, one per neighbour
+    assert conns[0][1].element_id == "transformer.t1"  # closed transformer, not the tie
+    assert [n for n, _ in graph.connections("b", include_open=False)] == ["a", "c"]
+
+
+def test_spanning_forest_closed_first_then_open_then_islands() -> None:
+    m = good_model()
+    m.switches["sw1"].closed = False  # c and d now hang behind an open switch
+    m.buses["e"] = Bus("e", LV_LN)  # an isolated bus: a tree of its own
+    forest = tp.GridGraph.build(m).spanning_forest()
+    assert forest.roots == ["src", "e"]
+    assert forest.order == ["src", "a", "b", "c", "d", "e"]
+    assert forest.parent == {"src": None, "a": "src", "b": "a", "c": "b", "d": "c", "e": None}
+    assert forest.edge["c"].element_id == "line.sw1"
+    assert forest.edge["b"].kind == tp.TRANSFORMER
+
+
+def test_spanning_forest_without_source_starts_at_first_bus() -> None:
+    m = good_model()
+    m.sources.clear()
+    forest = tp.GridGraph.build(m).spanning_forest()
+    assert forest.roots == ["src"]
+    assert set(forest.order) == set(m.buses)
+
+
+def test_hop_distance() -> None:
+    graph = tp.GridGraph.build(good_model())
+    assert graph.hop_distance(["src"]) == {"src": 0, "a": 1, "b": 2, "c": 3, "d": 4}
+    assert graph.hop_distance(["c"])["src"] == 3
