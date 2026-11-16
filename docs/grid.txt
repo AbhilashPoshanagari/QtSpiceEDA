@@ -1,0 +1,95 @@
+"""Build the user-flow example through GridDiagramController slots, run it, print."""
+
+import math
+import os
+import sys
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+sys.path.insert(0, os.getcwd())
+
+from PySide6.QtCore import QEventLoop, QTimer  # noqa: E402
+from PySide6.QtGui import QGuiApplication  # noqa: E402
+
+from bridge.grid_controller import GridController  # noqa: E402
+from bridge.grid_diagram_controller import GridDiagramController  # noqa: E402
+
+app = QGuiApplication([])
+grid = GridController()
+ctl = GridDiagramController(grid_controller=grid)
+
+
+def wait(sig, ms=60000):
+    loop = QEventLoop()
+    sig.connect(loop.quit)
+    QTimer.singleShot(ms, loop.quit)
+    loop.exec()
+
+
+def run(label):
+    assert ctl.runPowerFlow(), ctl.statusText
+    wait(ctl.resultReady)
+    print(f"\n===== {label}: {ctl.statusText}")
+    r = ctl.result()
+    print("losses kW", r.total_losses_kw, "kvar", r.total_losses_kvar,
+          "source kW", r.total_power_kw, "kvar", r.total_power_kvar)
+    for n, v in r.node_voltages.items() if hasattr(r, "node_voltages") else []:
+        pass
+    rep = ctl.report()
+    s = rep.summary
+    print(s)
+    for c in rep.level2:
+        print("  ", c)
+    for lo in rep.line_loadings + rep.transformer_loadings:
+        print("  load", lo)
+    for d in rep.voltage_drops:
+        print("  drop", d)
+    for d in rep.diagnostics:
+        print("  diag", d)
+
+
+mode = sys.argv[1] if len(sys.argv) > 1 else "all"
+assert ctl.newDesign("feeder_demo", 60.0, "sourcebus", 12.47, 0.1, 1.0, 0.1, 1.0), ctl.statusText
+print(ctl.consoleText)
+assert ctl.addElement("bus", [], 0.0, 8.0) == "bus.b1", ctl.statusText
+lc = ctl.addElement("linecode", [], math.nan, math.nan, {
+    "name": "lc1",
+    "r_matrix": "0.3 0 0 0 0.3 0 0 0 0.3",
+    "x_matrix": "0.6 0 0 0 0.6 0 0 0 0.6",
+    "c_matrix": "0 0 0 0 0 0 0 0 0",
+})
+assert lc == "linecode.lc1", ctl.consoleText
+assert ctl.addElement("line", ["sourcebus", "b1"], math.nan, math.nan) == "line.l1"
+print("after empty line:", ctl.errorCount, "errors")
+ctl.setProperty("line.l1", "linecode", "lc1")
+ctl.setProperty("line.l1", "length_m", "2000")
+ctl.setProperty("line.l1", "norm_amps", "200")
+assert ctl.addElement("load", ["b1"], math.nan, math.nan) == "load.ld1"
+ctl.setProperty("load.ld1", "kw", "3000")
+ctl.setProperty("load.ld1", "kvar", "1000")
+assert ctl.addElement("bus", [], 8.0, 8.0) == "bus.b2"
+tx = ctl.addElement("transformer", ["b1", "b2"], math.nan, math.nan)
+assert tx == "transformer.tx1", ctl.consoleText
+for f, v in [("windings.0.conn", "delta"), ("windings.0.kva", "500"), ("windings.0.pct_r", "1"),
+             ("windings.1.kv", "0.48"), ("windings.1.kva", "500"), ("windings.1.pct_r", "1"),
+             ("xhl", "5")]:
+    assert ctl.setProperty("transformer.tx1", f, v), (f, ctl.consoleText)
+assert ctl.addElement("load", ["b2"], math.nan, math.nan) == "load.ld2", ctl.consoleText
+ctl.setProperty("load.ld2", "kw", "400")
+ctl.setProperty("load.ld2", "kvar", "100")
+d = ctl.design().grid
+print("tx1", d.transformers["tx1"])
+print("ld2", d.loads["ld2"])
+print("ld1", d.loads["ld1"])
+print("src", d.sources)
+ctl.validate() if hasattr(ctl, "validate") else None
+print("errors", ctl.errorCount, ctl.consoleText[-800:])
+run("Run 1")
+res = ctl.result()
+for attr in dir(res):
+    if not attr.startswith("_"):
+        pass
+print([a for a in dir(res) if not a.startswith("_")])
+assert ctl.setProperty("transformer.tx1", "windings.1.tap", "1.025"), ctl.consoleText
+run("Run 2 (LV tap 1.025)")
+grid.shutdown() if hasattr(grid, "shutdown") else None
+ctl.shutdown()
