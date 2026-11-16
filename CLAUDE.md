@@ -10,11 +10,11 @@
   GridModel, writer + round trip, validation, IEEE 13/34/123 benchmarks, read-only grid
   view, .qsp format 4.
 - Schematic from netlist released (N0-N4): library folder, netlist -> schematic.
-- We are now building v0.5 on the `phase-5` branch: the Grid Network Designer, a
-  graphical feeder editor backed by GridModel and solved by OpenDSS, with Level 1
-  (topology) and Level 2 (electrical, one snapshot) feasibility checks.
-  Every v0.1-v0.4 and netlist-schematic test must keep passing.
-  Week-1 spikes S1-S6 done; next: D1-D9.
+- v0.5.0 complete on the `phase-5` branch (not yet tagged or pushed): the Grid Network
+  Designer, a graphical feeder editor backed by GridModel and solved by OpenDSS, with
+  Level 1 (topology) and Level 2 (electrical, one snapshot) feasibility checks; .qsp
+  format version 5 (grid_designs), sample examples/ieee13_design.qsp.
+  Spikes S1-S6 and tasks D1-D9 done. Every v0.1-v0.4 and netlist-schematic test passes.
 - Roadmap change (decided for v0.5): GIS import moves from v0.5 to v0.6.
   v0.6 GIS import + catalogs, v0.7 feeder planning (scenarios, before/after),
   v0.8+ advanced studies (QSTS, DER/EV impact, hosting capacity, faults, protection).

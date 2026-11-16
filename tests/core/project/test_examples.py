@@ -2,7 +2,8 @@
 answers (v0.1: RC low-pass, diode rectifier, first-order feedback loop; v0.2: RC
 low-pass schematic, op-amp amplifier with its own .lib, circuit symbol used twice;
 v0.3: the physical samples, checked in test_examples_physical.py; v0.4: the IEEE 13
-power flow, checked in test_examples_grid.py)."""
+power flow, checked in test_examples_grid.py; v0.5: the IEEE 13 design, checked in
+test_examples_design.py)."""
 
 from __future__ import annotations
 
@@ -43,6 +44,8 @@ SAMPLES = [
     "battery_discharge.qsp",
     # v0.4 grid sample (G7): tests in test_examples_grid.py
     "ieee13_powerflow.qsp",
+    # v0.5 grid design sample (D9): tests in test_examples_design.py
+    "ieee13_design.qsp",
 ]
 SCHEMATIC_SAMPLES = [
     "rlc_bandpass.qsp",

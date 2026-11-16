@@ -1,0 +1,35 @@
+{
+  "format": "qtspice-project",
+  "version": 5,
+  "netlists": [],
+  "diagrams": [],
+  "block_sources": [],
+  "analysis": {
+    "card": "",
+    "diagram_t_end": 1.0,
+    "diagram_dt": 0.001
+  },
+  "results": [],
+  "simulation": {
+    "compat_mode": "ltpsa"
+  },
+  "grid_designs": [
+    {
+      "path": "ieee13_design.qgrid",
+      "active": true,
+      "power_flow": {
+        "control_mode": "static",
+        "max_iterations": null,
+        "max_control_iterations": null,
+        "tolerance": null
+      },
+      "limits": {
+        "voltage_min_pu": 0.95,
+        "voltage_max_pu": 1.05,
+        "line_loading_limit_pct": 100.0,
+        "transformer_loading_limit_pct": 100.0,
+        "warn_fraction": 0.9
+      }
+    }
+  ]
+}

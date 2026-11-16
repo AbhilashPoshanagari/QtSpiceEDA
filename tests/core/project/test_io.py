@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from core.project.io import (
+    BASE_VERSION,
     FORMAT_VERSION,
     AnalysisSettings,
     BlockSource,
@@ -101,7 +102,7 @@ def test_files_on_disk(tmp_path: Path) -> None:
     assert sorted(p.name for p in results_dir(path).iterdir()) == ["diagram.npz", "netlist.npz"]
     assert not list(tmp_path.glob("*.tmp")), "temporary files are cleaned up"
     data = json.loads(path.read_text("utf-8"))
-    assert data["version"] == FORMAT_VERSION
+    assert data["version"] == BASE_VERSION
     assert data["results"] == [
         {"name": "netlist", "file": "netlist.npz"},
         {"name": "diagram", "file": "diagram.npz"},
@@ -219,7 +220,7 @@ def test_compat_mode_round_trip(tmp_path: Path) -> None:
     path = tmp_path / "p.qsp"
     save_project(path, Project(simulation=SimulationSettings("")))
     data = json.loads(path.read_text("utf-8"))
-    assert data["version"] == FORMAT_VERSION
+    assert data["version"] == BASE_VERSION
     assert data["simulation"] == {"compat_mode": ""}
     loaded = load_project(path)
     assert loaded.ok and loaded.project is not None
@@ -271,7 +272,7 @@ def test_schematic_round_trip(tmp_path: Path) -> None:
     project = Project(schematic=rc_schematic())
     save_project(path, project)
     data = json.loads(path.read_text("utf-8"))
-    assert data["version"] == FORMAT_VERSION == 4
+    assert data["version"] == BASE_VERSION == 4
     jsonschema.validate(data, SCHEMA)
     loaded = load_project(path)
     assert loaded.ok and loaded.warnings == []

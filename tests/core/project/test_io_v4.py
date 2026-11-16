@@ -13,7 +13,7 @@ import pytest
 
 from core.grid.config import CONTROL_OFF, PowerFlowConfig
 from core.project.io import (
-    FORMAT_VERSION,
+    BASE_VERSION,
     GridSettings,
     Project,
     ProjectError,
@@ -61,7 +61,7 @@ def test_grid_section_round_trips_byte_for_byte(tmp_path: Path) -> None:
     project = grid_project()
     save_project(path, project)
     data = json.loads(path.read_text("utf-8"))
-    assert data["version"] == FORMAT_VERSION == 4
+    assert data["version"] == BASE_VERSION == 4
     jsonschema.validate(data, SCHEMA)
     assert data["grid"] == {
         "dss_file": "grid/ieee13/IEEE13Nodeckt.dss",

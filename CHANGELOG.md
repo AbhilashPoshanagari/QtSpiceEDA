@@ -1,6 +1,79 @@
 # Changelog
 
-## Unreleased (after 0.4): schematic from netlist
+## 0.5.0 (unreleased)
+
+QtSpice 0.5 adds the **Grid Network Designer**: a graphical editor for distribution
+feeders. You draw buses, lines, switches, transformers, regulators, loads, capacitors,
+PV systems and sources, type their values, and solve the design with OpenDSS. A
+feasibility report checks the topology (Level 1) and one snapshot power flow (Level 2)
+against voltage and loading limits; it states that one snapshot does not prove
+feasibility for other loads, contingencies or protection. Designs open, edit, check and
+save without the `grid` extra; only Run needs DSS-Python. No new dependency. Projects
+from 0.1-0.4 still open; a project with designs is saved as format version 5. GIS
+import, planned for 0.5, moves to 0.6 (see the roadmap in [README.md](README.md)).
+
+### Spikes (S1-S6)
+- Canvas: IEEE 123 (and eight copies of it) pans, zooms and drags at 60 fps with
+  branches as shape paths and glyphs as items (S1).
+- Undo: delta commands, wrapped one-to-one in a QUndoCommand; 1000 random edits on
+  IEEE 123 undo and redo exactly (S2).
+- Layout: our own layered tree from the source; file coordinates scaled when present;
+  no crossings or overlaps on IEEE 13/34/123 (S3).
+- Engine checks: ratings, derived voltage bases, sequence-to-phase matrices and the
+  loading definitions; OpenDSS silently defaults missing values, so QtSpice's own checks
+  must catch them (S4).
+- Design file: plain JSON, bit-identical floats on a load/save round trip (S5).
+- Edit-run loop: a warm child process with a new OpenDSS engine per run, 35-54 ms per
+  run on IEEE 13/123 (S6).
+
+### Model (D1-D3)
+- Topology: one electrical graph of a grid model (islands, source reachability, voltage
+  zones, phases available at each bus, loops) in `core/grid/topology.py`; validation
+  uses it with the same diagnostics as before (D1).
+- Draft elements: values a user must enter may be empty in a design and are each an
+  error that blocks Run; lines and line codes get normal and emergency ratings (A);
+  voltage bases are derived for a design; sequence impedances become full phase
+  matrices (D2).
+- Diagram model and `.qgrid` design file: positions, rotation and bus-bar length only
+  (connectivity lives in the grid model); automatic layout for buses without
+  coordinates; a versioned JSON file that loads to equal objects and never raises
+  (D3).
+
+### Editor (D4-D6)
+- Edit commands: add, remove, connect, disconnect, set property, move, rotate, rename,
+  open/close switch and compound commands (remove a bus with everything on it; the
+  library Regulator), each reverting exactly. Rebuilding IEEE 13 from an empty design
+  with commands only matches the OpenDSS reference within 1e-6 pu and 0.1 % losses
+  (D4).
+- `GridDiagramController`: one undo stack, glyph and property models, live
+  validation, Run through the grid controller in the warm child process (D5).
+- Designer tab: canvas, component library and properties panel; *New Grid Design*,
+  *Open .dss as Design*, *Open Design*, *Save Design (As)*, *Export .dss*; *Edit as
+  Design* on the read-only Grid tab (D6).
+
+### Feasibility and results (D7-D8)
+- Line loading (max phase current / normal rating), transformer loading (|S| at a
+  winding / kVA), voltage band, losses and voltage drop, in a FeasibilityReport with
+  Level 1 and Level 2; limits per design, "near the limit" from 90 % (D7).
+- Results overlay (bus voltage and branch loading colours), feasibility panel with
+  click-to-select, diagnostics in the Console (D8).
+
+### Project and release (D9)
+- `.qsp` format version 5: a `grid_designs` list with each `.qgrid` path, the active
+  design and its own power-flow settings and limits. A project without designs is
+  still saved as version 4; versions 1-4 open unchanged. Run scripts of a design go to
+  `<project>_results/grid/<design>/`.
+- Sample `examples/ieee13_design.qsp` + `ieee13_design.qgrid`: IEEE 13 opened as a
+  design; its run matches the OpenDSS reference.
+- `--smoke-test` builds a two-bus design with edit commands only, checks it, writes
+  its DSS script and runs it when OpenDSS is available (always in the packaged app).
+- README section "Grid Network Designer".
+
+### Roadmap change
+- GIS import moves from 0.5 to 0.6 (0.6: GIS import and catalogs; 0.7: feeder planning;
+  0.8 and later: advanced studies).
+
+## Schematic from netlist (after 0.4, part of 0.5.0)
 
 - **Library folder and `.include` by name (N0).** One folder for your model files and
   symbols: `library/` in the repository when running from source (its contents are

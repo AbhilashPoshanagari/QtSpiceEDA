@@ -1,4 +1,4 @@
-# QtSpice 0.4
+# QtSpice 0.5
 
 QtSpice is a small desktop EDA application written in Python with Qt Quick. You can:
 
@@ -24,6 +24,9 @@ QtSpice is a small desktop EDA application written in Python with Qt Quick. You 
 - open a **distribution feeder** written for OpenDSS (`.dss`) and run a snapshot
   power flow (new in 0.4, optional `grid` extra): node voltages, branch flows,
   losses, voltage and loading violations, a voltage profile and a single-line view;
+- **design a distribution feeder** in the Grid Network Designer (new in 0.5): draw
+  buses, lines, transformers and loads on a canvas, type their values, solve it with
+  OpenDSS and read a feasibility report of the snapshot;
 - save everything in one `.qsp` project file, with the results in `.npz` files next
   to it.
 
@@ -86,6 +89,17 @@ ngspice bundled) are made with `pyinstaller packaging/qtspice-<windows|macos|lin
 
 `examples/` holds these projects. Open them with **File → Open…**:
 
+- **`ieee13_design.qsp`** (new in 0.5): the IEEE 13 bus test feeder as a design
+  (`ieee13_design.qgrid`, opened from the same feeder files with **Open .dss as
+  Design**). Opening the project shows it in the **Designer** tab: 16 buses drawn from
+  the file's bus coordinates, 11 lines, a switch, 5 transformers (3 of them the
+  regulators), 15 loads and 2 capacitors, all editable. It opens and saves without
+  the `grid` extra; **Run Power Flow** needs it and gives the same solution as the
+  original feeder: 3567 kW from the source, 112.4 kW of losses, node 671.1 at
+  0.9828 pu. The feasibility panel shows Level 1 passed and Level 2 failed with the
+  default limits: lowest voltage 0.9608 pu at bus 611 (within 0.95 pu), highest
+  1.0560 pu at rg60, line 650632 loaded to 148 % and transformer xfm1 to 100.9 % of
+  its kVA.
 - **`ieee13_powerflow.qsp`** (new in 0.4, needs the `grid` extra): the IEEE 13 bus
   test feeder (files in `examples/grid/`, BSD-3). Opening the project opens the feeder
   in the **Grid** tab and draws its single-line view. **Run** solves a snapshot power
@@ -694,6 +708,139 @@ off. OpenDSS's own RegControl settles one or two tap steps away from the publish
 taps, which moves voltages by up to 2.2 %. The controlled OpenDSS solution is tested
 separately, against the OpenDSS result of the original files.
 
+## Grid Network Designer (new in 0.5)
+
+The designer is a graphical editor for distribution feeders. A design is a grid model
+(the same model the Grid tab reads from a `.dss` file) plus a drawing of it, saved as
+a `.qgrid` file. OpenDSS solves it; QtSpice still has no power-flow solver of its own.
+Designs open, edit, check and save without the `grid` extra; only **Run Power Flow**
+needs it. Try `examples/ieee13_design.qsp`.
+
+### Workflow
+
+1. **Start a design.** *File → New Grid Design…* asks for a name and the base
+   frequency (required; there is no default, QtSpice never assumes 60 Hz). Tick *Start
+   with a source bus* to begin with a bus and a 3-phase source (kV and R1/X1/R0/X0
+   typed by you). Or start from a feeder: *File → Open .dss as Design…* reads a `.dss`
+   file through OpenDSS, or *Edit as Design* on the Grid tab copies the feeder open
+   there. The `.dss` file is never written; the Grid tab stays read-only.
+2. **Draw.** Click a library item and click the canvas, or drag it onto a bus. Lines,
+   switches and transformers are drawn bus to bus with the branch tools; loads,
+   capacitors, PV systems and sources are dropped onto a bus. Select with a click,
+   Ctrl+click or a rubber band; drag to move (snapped to the grid), R to rotate, F2
+   to rename, Del to delete (a bus takes everything connected to it), double-click a
+   switch to open or close it. Every edit is one undo step (Ctrl+Z / Ctrl+Y).
+3. **Type the values** in the properties panel (below).
+4. **Check.** The design is checked as you edit: elements with a problem carry a
+   badge, the status bar counts errors and warnings, and the Console lists
+   them by element (`load.ld1: kW not set`, `line.l7 needs node 3 at bus.12, which
+   has 1.2`, islands, buses not reached from a source, a line between two voltage
+   zones). **Run Power Flow** stays disabled while there is an error.
+5. **Run.** *Run Power Flow* (or *Run* in the main tool bar while the Designer tab is
+   shown) writes the design as a DSS script, solves it with OpenDSS in a separate
+   process and shows the results on the drawing and in the feasibility panel. The
+   script of each run is kept: in a saved project under
+   `<project>_results/grid/<design>/`, else next to the `.qgrid` file.
+6. **Save.** *File → Save Design* writes the `.qgrid` file (results are never stored
+   in it). *File → Export .dss…* writes a self-contained OpenDSS script with the bus
+   positions as bus coordinates.
+
+### Library
+
+Bus, Source, Line code, Line, Switch, Transformer (2 or 3 windings), Regulator,
+Load, Capacitor and PV system: the element classes of the 0.4 grid model and no
+others. A *Regulator* adds a single-phase transformer and its RegControl in one step.
+A *Line code* is not drawn; it is listed under *Line codes in this design* and a line
+picks it by name.
+
+A new element gets only structural values: its bus, the phases available at that bus,
+the kV of the bus's voltage zone and a free name (`l1`, `ld1`, `tx1`, `c1`, `pv1`,
+`sw1`, `b1`, ...). **QtSpice never invents electrical values**: impedances, ratings,
+kW, kvar, kVA, transformer %R/%X and PV ratings are typed by you or come from an
+element already in the design (or from the opened `.dss` file). A value an element
+cannot be created without (a source's kV and impedances, a switch's R, a regulator's
+settings) is asked for when you place it; any other missing value is an error that
+blocks Run.
+
+### Properties
+
+The properties panel shows the selected bus or element with its fields in the
+canonical units of the grid model (m, ohm/km and nF/km as full phase matrices, kV,
+kW, kvar, kVA, % on the winding base, A). A field that must be set and is empty says
+"not set" in red. Matrices are typed row by row (`0.3 0.1 0.1 0.1 0.3 ...`).
+Connections are typed as `bus.node.node...` (`671.1.2.3`); an empty field
+disconnects. Edits made in one field are one undo step. Lines and line codes have a
+normal and an emergency rating in A (`norm_amps`, `emerg_amps`); a line without a
+rating is reported as "no rating", never given a guessed one.
+
+### Results and feasibility
+
+After a run the drawing is coloured by the lowest phase voltage of each bus and by
+the loading of each line and transformer (thicker = more loaded); hiding the overlay
+shows the plain design. Any edit marks the results out of date until you run again.
+
+The **feasibility panel** has two levels:
+
+- **Level 1 - topology and validation:** the checks above (islands, source
+  reachability, phases, voltage zones, missing values).
+- **Level 2 - electrical, one snapshot:** lowest and highest node voltage against the
+  voltage band, line loading (largest phase current at terminal 1 / normal rating)
+  and transformer loading (largest |S| at a winding / kVA) against their limits (a loading
+  from 90 % of its limit is "near the limit"); plus losses and the largest voltage
+  drop from the source. Each row names the worst element; click it to select it on the
+  drawing.
+
+The limits (default 0.95-1.05 pu, 100 % for lines and transformers) are check
+thresholds, not equipment data. Each design in a project keeps its own settings and
+limits.
+
+**A snapshot is not proof of feasibility.** The report checks one power flow at the
+loads entered in the design. It does not show that the design works at other load
+levels, under contingencies (outages, switching) or with its protection, and the panel
+says so with every report.
+
+### Projects
+
+A project (format version 5) lists every design saved while it was open: the `.qgrid`
+path (relative to the project folder when inside it), which design is active, and each
+design's power-flow settings and limits. Opening the project opens its active design
+in the Designer tab. The `.qgrid` files are saved by the designer itself (*Save
+Design*); you are asked about unsaved design changes before another project opens. A
+project without designs is still saved as version 4, so 0.4 opens it.
+
+### Known limitations (v0.5)
+
+The designer edits and checks one snapshot of one design. Not in 0.5:
+
+- **No GIS or ArcGIS import**, no data normalisation or electrical enrichment, and no
+  conductor or transformer catalogs or standard equipment libraries (planned for 0.6).
+- **No planning studies:** no scenarios, load-growth studies, before/after
+  comparison, design alternatives or "can I add X" automation (planned for 0.7).
+- **No time-series or advanced studies:** no QSTS, load shapes or yearly runs, fault
+  studies, protection, hosting capacity, EV impact, harmonics or dynamics (0.8 and
+  later).
+- **No new equipment classes:** no fuse, recloser, breaker, generator, storage or EV
+  charger; the library has only the 0.4 model classes.
+- **No advice or auto-fix** for violations ("upsize the conductor").
+- **No copy/paste** between designs, and one drawing per design.
+- **Canonical units only** in the properties panel (no ft, mi or MVA display).
+- **The Grid tab stays read-only**; edit a feeder with *Edit as Design*.
+- No power-flow solver or DSS parser of QtSpice's own, no second grid engine, and no
+  coupling of grid models with ngspice circuits, physical networks or Python
+  controllers.
+- No settings dialog for the power-flow settings and limits yet (they are stored per
+  design in the project).
+- The drawing has straight bus-to-bus branches: no orthogonal routing, no label
+  collision avoidance.
+
+### Roadmap
+
+- **0.6:** GIS import and equipment catalogs. GIS import was planned for 0.5 and moved
+  to 0.6, so that 0.5 could deliver the designer and its feasibility checks first.
+- **0.7:** feeder planning: scenarios and before/after comparison.
+- **0.8 and later:** advanced studies (QSTS, DER/EV impact, hosting capacity, faults,
+  protection).
+
 ## Known limitations (schematic from netlist)
 
 - Parts are joined by net labels, not drawn wires; there is no wire routing. Move parts
@@ -718,9 +865,10 @@ are planned for later versions):
 - **Snapshot power flow only.** No QSTS, load shapes or yearly runs, no fault studies,
   hosting capacity, EV impact, harmonics or dynamics.
 - **No GIS or ArcGIS import**, no data normalisation or electrical enrichment, no
-  conductor or transformer catalogs, and no writing results back to GIS.
-- **Read-only grid view.** Feeders can't be drawn or edited in the UI: edit the `.dss`
-  file and open it again.
+  conductor or transformer catalogs, and no writing results back to GIS (GIS import
+  is planned for 0.6).
+- **Read-only grid view.** The Grid tab does not edit feeders; since 0.5 the Grid
+  Network Designer does (*Edit as Design*).
 - **No coupling** of grid models with ngspice circuits, physical networks or Python
   controllers.
 - **No settings dialog.** The power-flow settings and limits are stored in the
@@ -732,7 +880,8 @@ are planned for later versions):
   handles itself; the tests pass.
 
 Everything listed for v0.2 and v0.3 below still applies. Projects are saved as format
-version 4, which 0.3 doesn't open.
+version 4, which 0.3 doesn't open (0.5 saves a project with grid designs as version 5,
+which 0.4 doesn't open).
 
 ## Known limitations (v0.3)
 

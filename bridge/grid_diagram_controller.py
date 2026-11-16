@@ -404,6 +404,7 @@ class GridDiagramController(QObject):
     overlayPathsChanged = Signal()  # the result or the drawing changed
     lineCodesChanged = Signal()  # only when the list changes (not on every move)
     resultReady = Signal()
+    configChanged = Signal()  # new settings or limits of the next run (set_config)
     editRefused = Signal(str)  # a command was not applied: why (also in the Console)
     designOpened = Signal()  # openDssAsDesign or load finished with a design
     openFailed = Signal()
@@ -507,17 +508,20 @@ class GridDiagramController(QObject):
         return self._last_outcome
 
     def set_config(self, config: PowerFlowConfig) -> None:
-        """Settings and limits of the next run; results already shown become stale."""
-        if config != self.config:
-            self._mark_stale()
+        """Settings and limits of the next run; results already shown become stale.
+        ``configChanged`` only when they change (the project keeps them per design)."""
+        if config == self.config:
+            return
+        self._mark_stale()
         self.config = config
+        self.configChanged.emit()
 
     def set_grid_controller(self, ctl: QObject | None) -> None:
         self._grid_controller = ctl
 
-    def set_design(self, design: GridDesign, path: str = "") -> None:
-        """Make ``design`` the one being edited (a new, opened or loaded design):
-        clears the undo stack, selection and result, and checks it at once."""
+    def set_design(self, design: GridDesign | None, path: str = "") -> None:
+        """Make ``design`` the one being edited (a new, opened or loaded design; None:
+        no design): clears the undo stack, selection and result, and checks it at once."""
         self._timer.stop()
         self._undo.clear()
         self._design = design
@@ -1016,6 +1020,13 @@ class GridDiagramController(QObject):
         self._set_status(f"Exported {path.name}")
         self._log([self._status])
         return True
+
+    @Slot()
+    def closeDesign(self) -> None:  # noqa: N802 - QML API
+        """No design any more (a project without designs was opened or created): the
+        drawing, undo stack, selection, diagnostics and result are cleared. The
+        settings are kept; the project sets them."""
+        self.set_design(None)
 
     @Slot(str)
     def setResultsFolder(self, url_or_path: str) -> None:  # noqa: N802 - QML API

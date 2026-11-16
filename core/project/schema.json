@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://qtspice.invalid/schema/project-4.json",
-  "title": "QtSpice project (.qsp), format version 4 (version 1, 2 and 3 files are also valid)",
+  "$id": "https://qtspice.invalid/schema/project-5.json",
+  "title": "QtSpice project (.qsp), format version 5 (version 1, 2, 3 and 4 files are also valid)",
   "description": "Results are not stored here: each entry of 'results' names an .npz file in the '<project stem>_results' folder next to the .qsp file.",
   "type": "object",
   "required": ["format", "version", "netlists", "diagrams", "block_sources", "analysis", "results"],
@@ -9,21 +9,25 @@
   "allOf": [
     {
       "if": { "properties": { "version": { "const": 1 } } },
-      "then": { "not": { "anyOf": [{ "required": ["simulation"] }, { "required": ["schematic"] }, { "required": ["symbols"] }, { "required": ["plots"] }, { "required": ["plot_defs"] }, { "required": ["physical_sources"] }, { "required": ["sweep"] }, { "required": ["display_units"] }, { "required": ["grid"] }] } },
+      "then": { "not": { "anyOf": [{ "required": ["simulation"] }, { "required": ["schematic"] }, { "required": ["symbols"] }, { "required": ["plots"] }, { "required": ["plot_defs"] }, { "required": ["physical_sources"] }, { "required": ["sweep"] }, { "required": ["display_units"] }, { "required": ["grid"] }, { "required": ["grid_designs"] }] } },
       "else": { "required": ["simulation"] }
     },
     {
       "if": { "properties": { "version": { "const": 2 } } },
-      "then": { "not": { "anyOf": [{ "required": ["display_units"] }, { "required": ["grid"] }] } }
+      "then": { "not": { "anyOf": [{ "required": ["display_units"] }, { "required": ["grid"] }, { "required": ["grid_designs"] }] } }
     },
     {
       "if": { "properties": { "version": { "const": 3 } } },
-      "then": { "not": { "required": ["grid"] } }
+      "then": { "not": { "anyOf": [{ "required": ["grid"] }, { "required": ["grid_designs"] }] } }
+    },
+    {
+      "if": { "properties": { "version": { "const": 4 } } },
+      "then": { "not": { "required": ["grid_designs"] } }
     }
   ],
   "properties": {
     "format": { "const": "qtspice-project" },
-    "version": { "enum": [1, 2, 3, 4] },
+    "version": { "enum": [1, 2, 3, 4, 5] },
     "netlists": {
       "type": "array",
       "items": {
@@ -140,18 +144,7 @@
           "type": "string",
           "minLength": 1
         },
-        "power_flow": {
-          "description": "PowerFlowConfig solver settings (core/grid/config.py); null keeps the value the .dss file sets.",
-          "type": "object",
-          "required": ["control_mode", "max_iterations", "max_control_iterations", "tolerance"],
-          "additionalProperties": false,
-          "properties": {
-            "control_mode": { "enum": ["static", "off"] },
-            "max_iterations": { "type": ["integer", "null"], "minimum": 1 },
-            "max_control_iterations": { "type": ["integer", "null"], "minimum": 1 },
-            "tolerance": { "type": ["number", "null"], "exclusiveMinimum": 0 }
-          }
-        },
+        "power_flow": { "$ref": "#/$defs/powerFlow" },
         "limits": {
           "description": "Limits for the violations (core/grid/analysis.py): node voltage in pu, branch loading in percent of the normal rating. Requires 0 < voltage_min_pu < voltage_max_pu.",
           "type": "object",
@@ -161,6 +154,37 @@
             "voltage_min_pu": { "type": "number", "exclusiveMinimum": 0 },
             "voltage_max_pu": { "type": "number", "exclusiveMinimum": 0 },
             "loading_limit_pct": { "type": "number", "exclusiveMinimum": 0 }
+          }
+        }
+      }
+    },
+    "grid_designs": {
+      "description": "Format version 5, optional (D9): the Grid Network Designer designs of the project. Exactly one entry is active (the design the designer shows). The designs live in their .qgrid files; results are not stored. Left out when there is none; a project without designs is written as version 4.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "active", "power_flow", "limits"],
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "description": "The .qgrid file (core/grid/design_io.py): relative to the .qsp folder with / separators when inside it, else absolute. Paths are distinct.",
+            "type": "string",
+            "pattern": "\\.[qQ][gG][rR][iI][dD]$"
+          },
+          "active": { "type": "boolean" },
+          "power_flow": { "$ref": "#/$defs/powerFlow" },
+          "limits": {
+            "description": "Check thresholds of this design's runs (core/grid/analysis.py, D7): voltage band in pu (0 < min < max), line loading (max phase current / norm_amps) and transformer loading (|S| / kVA) limits in %, and the fraction of a limit from which a loading is 'warn' (0 < fraction <= 1).",
+            "type": "object",
+            "required": ["voltage_min_pu", "voltage_max_pu", "line_loading_limit_pct", "transformer_loading_limit_pct", "warn_fraction"],
+            "additionalProperties": false,
+            "properties": {
+              "voltage_min_pu": { "type": "number", "exclusiveMinimum": 0 },
+              "voltage_max_pu": { "type": "number", "exclusiveMinimum": 0 },
+              "line_loading_limit_pct": { "type": "number", "exclusiveMinimum": 0 },
+              "transformer_loading_limit_pct": { "type": "number", "exclusiveMinimum": 0 },
+              "warn_fraction": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
+            }
           }
         }
       }
@@ -187,6 +211,18 @@
     }
   },
   "$defs": {
+    "powerFlow": {
+      "description": "PowerFlowConfig solver settings (core/grid/config.py); null keeps the value the .dss file sets (for a design: the OpenDSS default).",
+      "type": "object",
+      "required": ["control_mode", "max_iterations", "max_control_iterations", "tolerance"],
+      "additionalProperties": false,
+      "properties": {
+        "control_mode": { "enum": ["static", "off"] },
+        "max_iterations": { "type": ["integer", "null"], "minimum": 1 },
+        "max_control_iterations": { "type": ["integer", "null"], "minimum": 1 },
+        "tolerance": { "type": ["number", "null"], "exclusiveMinimum": 0 }
+      }
+    },
     "axis": {
       "type": "object",
       "additionalProperties": false,

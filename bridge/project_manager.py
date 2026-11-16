@@ -14,6 +14,14 @@ WaveformModel)``); a project is the state they hold:
   open in the Grid tab and the power-flow settings and limits. Opening a project opens
   its .dss file there. The feeder is kept even when it cannot be opened (no
   dss-python, a missing file), so saving does not drop it.
+- the grid designs (D9, .qsp version 5), once ``attachDesigner(GridDiagramController)``
+  is called: every .qgrid file the designer opened or saved while this project was
+  open, the active one (the design the designer shows) and each design's own
+  power-flow settings and limits. Opening a project loads its active design into the
+  designer (a project without designs closes the designer's design; QML asks about
+  unsaved design changes first). The .qgrid files are saved by the designer, never by
+  the project; a design's run scripts go to ``<project>_results/grid/<design>/``. A
+  design whose file is missing is kept in the list, so saving does not drop it.
 
 ``modified`` compares that state with what was last saved or opened, so undoing
 back to the saved state clears it again. ``save()`` returns False when the project
@@ -44,6 +52,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from PySide6.QtCore import Property, QObject, QSettings, QUrl, Signal, Slot
@@ -51,6 +60,7 @@ from PySide6.QtQml import QmlElement, QmlSingleton
 
 from bridge.diagram_controller import DiagramController, DiagramState
 from bridge.grid_controller import GridController
+from bridge.grid_diagram_controller import GridDiagramController
 from bridge.simulator import Simulator
 from core.grid.config import PowerFlowConfig
 from core.project.io import (
@@ -58,6 +68,7 @@ from core.project.io import (
     AnalysisSettings,
     BlockSource,
     DiagramEntry,
+    GridDesignSettings,
     GridSettings,
     LoadResult,
     NetlistEntry,
@@ -65,6 +76,7 @@ from core.project.io import (
     ProjectError,
     SimulationSettings,
     load_project,
+    results_dir,
     save_project,
 )
 from core.schematic.model import Schematic
@@ -78,6 +90,14 @@ NETLIST_RESULT = "netlist"
 DIAGRAM_RESULT = "diagram"
 _RECENT_KEY = "projects/recent"
 _TRUSTED_KEY = "projects/trusted"
+
+
+@dataclass
+class _Design:
+    """A grid design of the project: its absolute .qgrid path and run settings."""
+
+    path: Path
+    config: PowerFlowConfig = field(default_factory=PowerFlowConfig)
 
 
 def _local_path(url: QUrl | str) -> Path:
@@ -149,6 +169,11 @@ class ProjectManager(QObject):
         self._grid_path: Path | None = None
         self._grid_config = PowerFlowConfig()
         self._grid_ctl: GridController | None = None
+        # D9: the project's grid designs (absolute .qgrid paths) and the active one;
+        # kept as loaded while no GridDiagramController is attached.
+        self._designs: list[_Design] = []
+        self._active_design: Path | None = None
+        self._designer: GridDiagramController | None = None
         self._saved_json = ""
         self._saved_results: tuple[object, object] = (None, None)
         self._pending: tuple[Path, Project, list[str]] | None = None
@@ -250,6 +275,19 @@ class ProjectManager(QObject):
         if self._simulator is not None and self._diagram is not None:
             self._mark_saved()
 
+    @Slot(QObject)
+    def attachDesigner(self, controller: QObject) -> None:  # noqa: N802 - QML API
+        """Make the Grid Network Designer's designs (GridDiagramController) part of the
+        project (D9)."""
+        assert isinstance(controller, GridDiagramController)
+        self._designer = controller
+        controller.designChanged.connect(self._on_design_changed)
+        controller.configChanged.connect(self._on_design_config)
+        self._load_design()
+        self._sync_results_folder()
+        if self._simulator is not None and self._diagram is not None:
+            self._mark_saved()
+
     # ---- state
 
     def current_project(self, path: Path | None = None) -> Project:
@@ -294,6 +332,12 @@ class ProjectManager(QObject):
                 else self._display_units
             ),
             grid=self._grid_entry(path),
+            grid_designs=[
+                GridDesignSettings(
+                    self._relative_entry(d.path, path), d.path == self._active_design, d.config
+                )
+                for d in self._designs
+            ],
         )
 
     def _grid_entry(self, path: Path | None) -> GridSettings | None:
@@ -347,6 +391,85 @@ class ProjectManager(QObject):
             return
         self._grid_config = self._grid_ctl.config
         self._update_modified()
+
+    def _design_entry(self, path: Path) -> _Design | None:
+        return next((d for d in self._designs if d.path == path), None)
+
+    def _designer_path(self) -> Path | None:
+        """The .qgrid file of the design the designer shows (None: none or unsaved)."""
+        ctl = self._designer
+        if ctl is None or not ctl.property("hasDesign") or not ctl.property("filePath"):
+            return None
+        return Path(ctl.property("filePath")).resolve()
+
+    def _load_design(self) -> list[str]:
+        """Show the project's active design in the attached designer, with its settings
+        and limits. Returns what was skipped."""
+        ctl = self._designer
+        if ctl is None:
+            return []
+        entry = self._design_entry(self._active_design) if self._active_design else None
+        applying, self._applying = self._applying, True
+        try:
+            if entry is None:
+                ctl.closeDesign()
+                ctl.set_config(PowerFlowConfig())
+                return []
+            if self._designer_path() == entry.path and not ctl.property("modified"):
+                ctl.set_config(entry.config)  # already open, unchanged
+                return []
+            ctl.closeDesign()
+            ctl.set_config(entry.config)
+            if not entry.path.is_file():
+                return [f"grid design {entry.path} is missing"]
+            if not ctl.load(str(entry.path)):
+                return [
+                    f"grid design {entry.path.name} was not opened: {ctl.property('statusText')}"
+                ]
+            return []
+        finally:
+            self._applying = applying
+
+    @Slot()
+    def _on_design_changed(self) -> None:
+        """The designer opened, created or saved a design: a saved one is part of the
+        project now and the active design, with its own settings."""
+        if self._applying or self._designer is None:
+            return
+        path = self._designer_path()
+        if path is not None:
+            entry = self._design_entry(path)
+            if entry is None:
+                self._designs.append(_Design(path, self._designer.config))
+            elif path != self._active_design:
+                self._applying = True
+                try:
+                    self._designer.set_config(entry.config)
+                finally:
+                    self._applying = False
+            self._active_design = path
+            self._update_modified()
+        self._sync_results_folder()
+
+    @Slot()
+    def _on_design_config(self) -> None:
+        if self._applying or self._designer is None:
+            return
+        path = self._designer_path()
+        entry = self._design_entry(path) if path is not None else None
+        if entry is not None:
+            entry.config = self._designer.config
+            self._update_modified()
+
+    def _sync_results_folder(self) -> None:
+        """A design of a saved project writes its run scripts to the project's results
+        folder (``<name>_results/grid/<design>/``); any other next to its .qgrid."""
+        ctl = self._designer
+        if ctl is None:
+            return
+        path = self._designer_path()
+        inside = bool(self._file_path) and path is not None and self._design_entry(path)
+        ctl.setResultsFolder(str(results_dir(self._file_path)) if inside else "")
 
     def _project_symbols(self) -> list[Path]:
         ctl = self._schematic_ctl
@@ -492,6 +615,12 @@ class ProjectManager(QObject):
         self._grid_path = (folder / project.grid.dss_file).resolve() if project.grid else None
         self._grid_config = project.grid.config if project.grid else PowerFlowConfig()
         grid_skipped = self._load_grid()
+        self._designs = [
+            _Design((folder / d.path).resolve(), d.config) for d in project.grid_designs
+        ]
+        active = next((d for d in project.grid_designs if d.active), None)
+        self._active_design = (folder / active.path).resolve() if active else None
+        grid_skipped += self._load_design()
         self._symbols = [(folder / s).resolve() for s in project.symbols]
         skipped = [f"circuit symbol {s} is missing" for s in self._symbols if not s.is_file()]
         if self._schematic_ctl is not None:
@@ -526,8 +655,12 @@ class ProjectManager(QObject):
     def _can_replace(self) -> bool:
         sim, diagram = self._parts()
         grid_running = self._grid_ctl is not None and self._grid_ctl.property("running")
+        designer_busy = self._designer is not None and self._designer.property("busy")
         if sim.property("running") or diagram.property("running") or grid_running:
             self._set_error("Stop the running simulation first")
+            return False
+        if designer_busy:
+            self._set_error("Stop the running power flow of the design first")
             return False
         self._pending = None
         return True
@@ -698,6 +831,7 @@ class ProjectManager(QObject):
             self.filePathChanged.emit()
         if self._schematic_ctl is not None:
             self._schematic_ctl.set_project_file(path)  # type: ignore[attr-defined]
+        self._sync_results_folder()
 
     def _set_modified(self, modified: bool) -> None:
         if modified != self._modified:

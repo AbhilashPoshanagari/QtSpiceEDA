@@ -13,6 +13,7 @@ import pytest
 from core.blocks.diagram import Diagram
 from core.physical.network import NetworkExtractor
 from core.project.io import (
+    BASE_VERSION,
     FORMAT_VERSION,
     BlockSource,
     DiagramEntry,
@@ -70,7 +71,7 @@ def test_physical_project_round_trips_byte_for_byte(tmp_path: Path) -> None:
     project = physical_project()
     save_project(path, project)
     data = json.loads(path.read_text("utf-8"))
-    assert data["version"] == FORMAT_VERSION
+    assert data["version"] == BASE_VERSION
     jsonschema.validate(data, SCHEMA)
     assert data["display_units"] is True
     diagram = data["diagrams"][0]["diagram"]
@@ -123,7 +124,7 @@ def test_version_2_file_of_a_development_build_with_physical_wires_opens(
     assert loaded.project is not None
     assert loaded.project.diagrams[0].diagram["physical_wires"]
     save_project(path, loaded.project)
-    assert json.loads(path.read_text("utf-8"))["version"] == FORMAT_VERSION
+    assert json.loads(path.read_text("utf-8"))["version"] == BASE_VERSION
 
 
 def test_version_2_file_may_not_have_display_units(tmp_path: Path) -> None:
@@ -217,7 +218,7 @@ def test_v1_and_v2_projects_open_save_as_current_and_reopen_unchanged(
     assert before.project is not None
     save_project(copy, before.project)
     data = json.loads(copy.read_text("utf-8"))
-    assert data["version"] == FORMAT_VERSION
+    assert data["version"] == BASE_VERSION
     jsonschema.validate(data, SCHEMA)
     after = load_project(copy)
     assert after.ok and after.project is not None

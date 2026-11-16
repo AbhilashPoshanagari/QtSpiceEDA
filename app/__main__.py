@@ -30,6 +30,7 @@ QML_DIR = ROOT / "ui" / "qml"
 MAIN_QML = QML_DIR / "Main.qml"
 EXAMPLE_NETLIST = ROOT / "examples" / "rc_lowpass.cir"
 EXAMPLE_FEEDER = ROOT / "examples" / "grid" / "ieee13" / "IEEE13Nodeckt.dss"
+EXAMPLE_DESIGN = ROOT / "examples" / "ieee13_design.qgrid"
 
 
 def create_engine() -> QQmlApplicationEngine:

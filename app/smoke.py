@@ -12,6 +12,11 @@ the UI uses:
    IEEE 13 feeder (examples/grid/). In a packaged app a missing OpenDSS engine is a
    failure, because the build bundles it; from source without the ``grid`` extra the
    check is skipped.
+6. (v0.5) the Grid Network Designer opens the bundled sample design
+   (examples/ieee13_design.qgrid), builds a two-bus design with edit commands only
+   (source, one line with an IEEE 13 linecode, one IEEE 13 load; every value copied
+   from the sample), checks it, writes its DSS script, saves and reopens it, and -
+   only when OpenDSS is available, as in check 5 - runs it.
 
 Prints one line per check and writes them to FILE as well (a windowed app on Windows
 has no console). The exit code is 0 only if every check passed. Settings go to a
@@ -20,6 +25,8 @@ temporary folder, so the user's recent files are not touched.
 
 from __future__ import annotations
 
+import copy
+import dataclasses
 import math
 import os
 import sys
@@ -81,6 +88,7 @@ def _run_checks(netlist: Path, work: Path, log: Log) -> bool:
     projects = engine.singletonInstance("QtSpice", "ProjectManager")
     grid = engine.singletonInstance("QtSpice", "GridController")
     schematic = engine.singletonInstance("QtSpice", "SchematicController")
+    designer = engine.rootObjects()[0].findChild(QObject, "gridDesigner")
     try:
         ok = (
             _check_netlist(sim, netlist, log)
@@ -88,8 +96,11 @@ def _run_checks(netlist: Path, work: Path, log: Log) -> bool:
             and _check_project(sim, projects, work, log)
             and _check_schematic(schematic, netlist, log)
             and _check_grid(grid, log)
+            and _check_designer(designer, work, log)
         )
     finally:
+        if designer is not None:
+            designer.shutdown()
         sim.shutdown()
         diagram.shutdown()
         grid.shutdown()
@@ -226,4 +237,102 @@ def _check_grid(grid: QObject, log: Log) -> bool:
         return False
     log(f"ok: grid power flow: {grid.property('statusText')}")
     log(f"ok: IEEE 13 node 671.1 = {result.voltage_pu('671.1'):.5f} pu")
+    return True
+
+
+def _check_designer(designer: QObject | None, work: Path, log: Log) -> bool:
+    """A two-bus design made in the designer with edit commands only (every one an
+    undo step), from values copied from the IEEE 13 sample design (rule 24: nothing
+    invented): the IEEE 13 source impedances at the kV of load 671, line 670671's
+    linecode and length, load 671. Checked (no errors), written as a DSS script, saved
+    and reopened, and run through GridController when OpenDSS is available."""
+    from app.__main__ import EXAMPLE_DESIGN
+
+    if designer is None:
+        log("FAIL: the Grid Network Designer is not in Main.qml")
+        return False
+    if not designer.load(str(EXAMPLE_DESIGN)) or designer.property("errorCount"):  # type: ignore[attr-defined]
+        log(f"FAIL: {EXAMPLE_DESIGN.name}: {designer.property('statusText')}")
+        return False
+    template = designer.design()  # type: ignore[attr-defined]
+    log(
+        f"ok: designer opened {EXAMPLE_DESIGN.name}: {designer.property('busCount')} buses, "
+        f"{designer.property('elementCount')} elements"
+    )
+    ieee = copy.deepcopy(template.grid)
+    src, line, load = ieee.sources["source"], ieee.lines["670671"], ieee.loads["671"]
+    code = ieee.linecodes[line.linecode]
+
+    def fields(el: object, skip: set[str]) -> dict[str, object]:
+        return {
+            f.name: getattr(el, f.name)
+            for f in dataclasses.fields(el)  # type: ignore[arg-type]
+            if f.name not in skip and getattr(el, f.name) is not None
+        }
+
+    nan = math.nan
+    source = fields(src, {"name", "bus1", "bus2"}) | {"kv": load.kv}
+    steps = [
+        ("bus", [], 0.0, 0.0, {"name": "b1"}),
+        ("vsource", ["b1"], nan, nan, source),
+        ("bus", [], 0.0, 6.0, {"name": "b2"}),
+        ("linecode", [], nan, nan, fields(code, {"generated"})),
+        ("line", ["b1", "b2"], nan, nan, {"linecode": code.name, "length_m": line.length_m}),
+        ("load", ["b2"], nan, nan, fields(load, {"name", "terminal"})),
+    ]
+    if not designer.newDesign("smoke", ieee.base_frequency):  # type: ignore[attr-defined]
+        log(f"FAIL: designer: {designer.property('statusText')}")
+        return False
+    for kind, terminals, x, y, values in steps:
+        if not designer.addElement(kind, terminals, x, y, values):  # type: ignore[attr-defined]
+            log(f"FAIL: designer: add {kind}: {designer.property('statusText')}")
+            return False
+    count = designer.undo_stack().count()  # type: ignore[attr-defined]
+    if count != len(steps):
+        log(f"FAIL: designer: {count} undo steps for {len(steps)} edits")
+        return False
+    designer._validate_now()  # type: ignore[attr-defined]  # skip the edit debounce
+    errors = [d for d in designer.diagnostics() if d.severity == "error"]  # type: ignore[attr-defined]
+    if errors:
+        log(f"FAIL: design check: {errors[0].block}: {errors[0].message}")
+        return False
+    log(
+        f"ok: designer: two-bus design from {len(steps)} edit commands, no errors "
+        f"(linecode {code.name}, load {load.name} {load.kw:g} kW)"
+    )
+    script = work / "smoke_design.dss"
+    if not designer.exportDss(str(script)):  # type: ignore[attr-defined]
+        log(f"FAIL: DSS script not written: {designer.property('statusText')}")
+        return False
+    text = script.read_text(encoding="utf-8").lower()
+    if "new line." not in text or "new load." not in text:
+        log("FAIL: the DSS script has no line or load")
+        return False
+    log(f"ok: designer: DSS script written ({len(text.splitlines())} lines)")
+    saved = work / "smoke_design.qgrid"
+    built = copy.deepcopy(designer.design())  # type: ignore[attr-defined]
+    if not designer.save(str(saved)) or not designer.load(str(saved)):  # type: ignore[attr-defined]
+        log(f"FAIL: design not saved and reopened: {designer.property('statusText')}")
+        return False
+    if designer.design() != built:  # type: ignore[attr-defined]
+        log("FAIL: the reopened design differs from the saved one")
+        return False
+    log(f"ok: designer: design saved and reopened ({saved.name})")
+    if not designer.property("available"):
+        if getattr(sys, "frozen", False):
+            log("FAIL: OpenDSS (dss-python) is not in the bundle")
+            return False
+        log("skipped: design power flow (dss-python is not installed)")
+        return True
+    if not designer.runPowerFlow():  # type: ignore[attr-defined]
+        log(f"FAIL: design run did not start: {designer.property('statusText')}")
+        return False
+    _wait(lambda: bool(designer.property("busy")), designer.resultReady)  # type: ignore[attr-defined]
+    result = designer.result()  # type: ignore[attr-defined]
+    if result is None or not result.converged:
+        log(f"FAIL: design power flow: {designer.property('statusText')}")
+        return False
+    worst = min(result.voltage_pu(f"b2.{n}") for n in (1, 2, 3))
+    log(f"ok: design power flow: {designer.property('statusText')}")
+    log(f"ok: design bus b2 lowest phase = {worst:.5f} pu")
     return True

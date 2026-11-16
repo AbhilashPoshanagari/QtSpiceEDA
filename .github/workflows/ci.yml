@@ -213,7 +213,10 @@ jobs:
 
   # Run the packaged app on a fresh runner that has no Python packages and no ngspice
   # installed: it must load its QML, simulate the bundled RC example with its own
-  # ngspice, run a block diagram and save/reopen a project.
+  # ngspice, run a block diagram, save/reopen a project, solve the bundled IEEE 13
+  # feeder with its own OpenDSS (v0.4) and open, build, save and run a grid design in
+  # the designer (v0.5). The bundle always has DSS-Python (package installs [grid]),
+  # so a missing engine fails the smoke test on every OS.
   smoke:
     needs: package
     strategy:

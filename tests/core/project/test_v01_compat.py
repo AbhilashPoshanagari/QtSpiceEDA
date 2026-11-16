@@ -15,7 +15,7 @@ import pytest
 
 from core.netlist.parser import parse
 from core.netlist.validate import validate
-from core.project.io import FORMAT_VERSION, Project, load_project, save_project
+from core.project.io import BASE_VERSION, Project, load_project, save_project
 from core.sim.backend import DEFAULT_COMPAT_MODE
 
 V01 = Path(__file__).resolve().parents[2] / "fixtures" / "v01"
@@ -64,7 +64,7 @@ def test_v01_project_saves_as_v3_and_reopens_unchanged(name: str, tmp_path: Path
     shutil.copyfile(V01 / name, copy)
     before = open_v01(copy)
     save_project(copy, before)
-    assert json.loads(copy.read_text(encoding="utf-8"))["version"] == FORMAT_VERSION
+    assert json.loads(copy.read_text(encoding="utf-8"))["version"] == BASE_VERSION
     after = open_v01(copy)
     assert content(after) == content(before)
     assert not (tmp_path / f"{copy.stem}_results").exists()

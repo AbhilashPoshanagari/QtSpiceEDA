@@ -1,0 +1,1606 @@
+{
+ "format": "qtspice-grid-design",
+ "version": 1,
+ "base_frequency": 60.0,
+ "grid_model": {
+  "name": "ieee13nodeckt",
+  "voltage_bases": [
+   115.0,
+   4.16,
+   0.48
+  ],
+  "derive_voltage_bases": false,
+  "buses": [
+   {
+    "name": "sourcebus",
+    "kv_base_ln": 66.39528095680697,
+    "x": 200.0,
+    "y": 400.0
+   },
+   {
+    "name": "650",
+    "kv_base_ln": 2.4017771198288433,
+    "x": 200.0,
+    "y": 350.0
+   },
+   {
+    "name": "rg60",
+    "kv_base_ln": 2.4017771198288433,
+    "x": 200.0,
+    "y": 300.0
+   },
+   {
+    "name": "633",
+    "kv_base_ln": 2.4017771198288433,
+    "x": 350.0,
+    "y": 250.0
+   },
+   {
+    "name": "634",
+    "kv_base_ln": 0.27712812921102037,
+    "x": 400.0,
+    "y": 250.0
+   },
+   {
+    "name": "671",
+    "kv_base_ln": 2.4017771198288433,
+    "x": 200.0,
+    "y": 100.0
+   },
+   {
+    "name": "645",
+    "kv_base_ln": 2.4017771198288433,
+    "x": 100.0,
+    "y": 250.0
+   },
+   {
+    "name": "646",
+    "kv_base_ln": 2.4017771198288433,
+    "x": 0.0,
+    "y": 250.0
+   },
+   {
+    "name": "692",
+    "kv_base_ln": 2.4017771198288433,
+    "x": 250.0,
+    "y": 100.0
+   },
+   {
+    "name": "675",
+    "kv_base_ln": 2.4017771198288433,
+    "x": 400.0,
+    "y": 100.0
+   },
+   {
+    "name": "611",
+    "kv_base_ln": 2.4017771198288433,
+    "x": 0.0,
+    "y": 100.0
+   },
+   {
+    "name": "652",
+    "kv_base_ln": 2.4017771198288433,
+    "x": 100.0,
+    "y": 0.0
+   },
+   {
+    "name": "670",
+    "kv_base_ln": 2.4017771198288433,
+    "x": 200.0,
+    "y": 200.0
+   },
+   {
+    "name": "632",
+    "kv_base_ln": 2.4017771198288433,
+    "x": 200.0,
+    "y": 250.0
+   },
+   {
+    "name": "680",
+    "kv_base_ln": 2.4017771198288433,
+    "x": 200.0,
+    "y": 0.0
+   },
+   {
+    "name": "684",
+    "kv_base_ln": 2.4017771198288433,
+    "x": 100.0,
+    "y": 100.0
+   }
+  ],
+  "sources": [
+   {
+    "name": "source",
+    "bus1": {
+     "bus": "sourcebus",
+     "nodes": []
+    },
+    "bus2": {
+     "bus": "sourcebus",
+     "nodes": [
+      0,
+      0,
+      0
+     ]
+    },
+    "phases": 3,
+    "kv": 115.0,
+    "pu": 1.0001,
+    "angle_deg": 30.0,
+    "r1_ohm": 0.160376682055275,
+    "x1_ohm": 0.641506728221101,
+    "r0_ohm": 0.179603583012336,
+    "x0_ohm": 0.538810749037007,
+    "enabled": true
+   }
+  ],
+  "linecodes": [
+   {
+    "name": "mtx601",
+    "phases": 3,
+    "r_matrix": [
+     0.2153051181102362,
+     0.09693390598902409,
+     0.09817664837349876,
+     0.09693390598902409,
+     0.20971277738010022,
+     0.09538047800843076,
+     0.09817664837349876,
+     0.09538047800843076,
+     0.2121361250298258
+    ],
+    "x_matrix": [
+     0.6324937365783823,
+     0.31174192714547044,
+     0.26321283703173465,
+     0.31174192714547044,
+     0.6510727352262785,
+     0.23916577189214983,
+     0.26321283703173465,
+     0.23916577189214983,
+     0.6429949097271931
+    ],
+    "c_matrix": [
+     1.7398393382645352,
+     -0.3728227153424004,
+     -0.3728227153424004,
+     -0.3728227153424004,
+     1.7398393382645352,
+     -0.3728227153424004,
+     -0.3728227153424004,
+     -0.3728227153424004,
+     1.7398393382645352
+    ],
+    "norm_amps": 400.0,
+    "emerg_amps": 600.0,
+    "generated": false
+   },
+   {
+    "name": "mtx602",
+    "phases": 3,
+    "r_matrix": [
+     0.46764395927781754,
+     0.09817664837349876,
+     0.09693390598902409,
+     0.09817664837349876,
+     0.46447496619740714,
+     0.09538047800843076,
+     0.09693390598902409,
+     0.09538047800843076,
+     0.4620516185476815
+    ],
+    "x_matrix": [
+     0.7340879265091863,
+     0.26321283703173465,
+     0.31174192714547044,
+     0.26321283703173465,
+     0.7445890996579972,
+     0.23916577189214983,
+     0.31174192714547044,
+     0.23916577189214983,
+     0.7526047880378589
+    ],
+    "c_matrix": [
+     1.7398393382645352,
+     -0.3728227153424004,
+     -0.3728227153424004,
+     -0.3728227153424004,
+     1.7398393382645352,
+     -0.3728227153424004,
+     -0.3728227153424004,
+     -0.3728227153424004,
+     1.7398393382645352
+    ],
+    "norm_amps": 400.0,
+    "emerg_amps": 600.0,
+    "generated": false
+   },
+   {
+    "name": "mtx603",
+    "phases": 2,
+    "r_matrix": [
+     0.8225711842837828,
+     0.1283752883162332,
+     0.1283752883162332,
+     0.8260508629603116
+    ],
+    "x_matrix": [
+     0.8431385707468384,
+     0.28527151435616,
+     0.28527151435616,
+     0.8370491330629126
+    ],
+    "c_matrix": [
+     1.7398393382645352,
+     -0.3728227153424004,
+     -0.3728227153424004,
+     1.7398393382645352
+    ],
+    "norm_amps": 400.0,
+    "emerg_amps": 600.0,
+    "generated": false
+   },
+   {
+    "name": "mtx606",
+    "phases": 3,
+    "r_matrix": [
+     0.49195262168933424,
+     0.19789181181897714,
+     0.1761276644396723,
+     0.19789181181897714,
+     0.48569417104111984,
+     0.19789181181897714,
+     0.1761276644396723,
+     0.19789181181897714,
+     0.49195262168933424
+    ],
+    "x_matrix": [
+     0.2723793048596198,
+     0.017201915811659908,
+     -0.011445905909488586,
+     0.017201915811659908,
+     0.24649608784697366,
+     0.017201915811659908,
+     -0.011445905909488586,
+     0.017201915811659908,
+     0.2723793048596198
+    ],
+    "c_matrix": [
+     238.57422651713992,
+     0.0,
+     0.0,
+     0.0,
+     238.57422651713992,
+     0.0,
+     0.0,
+     0.0,
+     238.57422651713992
+    ],
+    "norm_amps": 400.0,
+    "emerg_amps": 600.0,
+    "generated": false
+   },
+   {
+    "name": "mtx604",
+    "phases": 2,
+    "r_matrix": [
+     0.8225711842837828,
+     0.1283752883162332,
+     0.1283752883162332,
+     0.8260508629603116
+    ],
+    "x_matrix": [
+     0.8431385707468384,
+     0.28527151435616,
+     0.28527151435616,
+     0.8370491330629126
+    ],
+    "c_matrix": [
+     1.7398393382645352,
+     -0.3728227153424004,
+     -0.3728227153424004,
+     1.7398393382645352
+    ],
+    "norm_amps": 400.0,
+    "emerg_amps": 600.0,
+    "generated": false
+   },
+   {
+    "name": "mtx605",
+    "phases": 1,
+    "r_matrix": [
+     0.8259265887218642
+    ],
+    "x_matrix": [
+     0.8372976815398074
+    ],
+    "c_matrix": [
+     1.7398393382645352
+    ],
+    "norm_amps": 400.0,
+    "emerg_amps": 600.0,
+    "generated": false
+   },
+   {
+    "name": "mtx607",
+    "phases": 1,
+    "r_matrix": [
+     0.8341908255786208
+    ],
+    "x_matrix": [
+     0.3183905989024099
+    ],
+    "c_matrix": [
+     146.64360136801082
+    ],
+    "norm_amps": 400.0,
+    "emerg_amps": 600.0,
+    "generated": false
+   }
+  ],
+  "lines": [
+   {
+    "name": "650632",
+    "bus1": {
+     "bus": "rg60",
+     "nodes": [
+      1,
+      2,
+      3
+     ]
+    },
+    "bus2": {
+     "bus": "632",
+     "nodes": [
+      1,
+      2,
+      3
+     ]
+    },
+    "phases": 3,
+    "length_m": 609.6,
+    "linecode": "mtx601",
+    "enabled": true,
+    "norm_amps": null,
+    "emerg_amps": null
+   },
+   {
+    "name": "632670",
+    "bus1": {
+     "bus": "632",
+     "nodes": [
+      1,
+      2,
+      3
+     ]
+    },
+    "bus2": {
+     "bus": "670",
+     "nodes": [
+      1,
+      2,
+      3
+     ]
+    },
+    "phases": 3,
+    "length_m": 203.3016,
+    "linecode": "mtx601",
+    "enabled": true,
+    "norm_amps": null,
+    "emerg_amps": null
+   },
+   {
+    "name": "670671",
+    "bus1": {
+     "bus": "670",
+     "nodes": [
+      1,
+      2,
+      3
+     ]
+    },
+    "bus2": {
+     "bus": "671",
+     "nodes": [
+      1,
+      2,
+      3
+     ]
+    },
+    "phases": 3,
+    "length_m": 406.2984,
+    "linecode": "mtx601",
+    "enabled": true,
+    "norm_amps": null,
+    "emerg_amps": null
+   },
+   {
+    "name": "671680",
+    "bus1": {
+     "bus": "671",
+     "nodes": [
+      1,
+      2,
+      3
+     ]
+    },
+    "bus2": {
+     "bus": "680",
+     "nodes": [
+      1,
+      2,
+      3
+     ]
+    },
+    "phases": 3,
+    "length_m": 304.8,
+    "linecode": "mtx601",
+    "enabled": true,
+    "norm_amps": null,
+    "emerg_amps": null
+   },
+   {
+    "name": "632633",
+    "bus1": {
+     "bus": "632",
+     "nodes": [
+      1,
+      2,
+      3
+     ]
+    },
+    "bus2": {
+     "bus": "633",
+     "nodes": [
+      1,
+      2,
+      3
+     ]
+    },
+    "phases": 3,
+    "length_m": 152.4,
+    "linecode": "mtx602",
+    "enabled": true,
+    "norm_amps": null,
+    "emerg_amps": null
+   },
+   {
+    "name": "632645",
+    "bus1": {
+     "bus": "632",
+     "nodes": [
+      3,
+      2
+     ]
+    },
+    "bus2": {
+     "bus": "645",
+     "nodes": [
+      3,
+      2
+     ]
+    },
+    "phases": 2,
+    "length_m": 152.4,
+    "linecode": "mtx603",
+    "enabled": true,
+    "norm_amps": null,
+    "emerg_amps": null
+   },
+   {
+    "name": "645646",
+    "bus1": {
+     "bus": "645",
+     "nodes": [
+      3,
+      2
+     ]
+    },
+    "bus2": {
+     "bus": "646",
+     "nodes": [
+      3,
+      2
+     ]
+    },
+    "phases": 2,
+    "length_m": 91.44,
+    "linecode": "mtx603",
+    "enabled": true,
+    "norm_amps": null,
+    "emerg_amps": null
+   },
+   {
+    "name": "692675",
+    "bus1": {
+     "bus": "692",
+     "nodes": [
+      1,
+      2,
+      3
+     ]
+    },
+    "bus2": {
+     "bus": "675",
+     "nodes": [
+      1,
+      2,
+      3
+     ]
+    },
+    "phases": 3,
+    "length_m": 152.4,
+    "linecode": "mtx606",
+    "enabled": true,
+    "norm_amps": null,
+    "emerg_amps": null
+   },
+   {
+    "name": "671684",
+    "bus1": {
+     "bus": "671",
+     "nodes": [
+      1,
+      3
+     ]
+    },
+    "bus2": {
+     "bus": "684",
+     "nodes": [
+      1,
+      3
+     ]
+    },
+    "phases": 2,
+    "length_m": 91.44,
+    "linecode": "mtx604",
+    "enabled": true,
+    "norm_amps": null,
+    "emerg_amps": null
+   },
+   {
+    "name": "684611",
+    "bus1": {
+     "bus": "684",
+     "nodes": [
+      3
+     ]
+    },
+    "bus2": {
+     "bus": "611",
+     "nodes": [
+      3
+     ]
+    },
+    "phases": 1,
+    "length_m": 91.44,
+    "linecode": "mtx605",
+    "enabled": true,
+    "norm_amps": null,
+    "emerg_amps": null
+   },
+   {
+    "name": "684652",
+    "bus1": {
+     "bus": "684",
+     "nodes": [
+      1
+     ]
+    },
+    "bus2": {
+     "bus": "652",
+     "nodes": [
+      1
+     ]
+    },
+    "phases": 1,
+    "length_m": 243.84,
+    "linecode": "mtx607",
+    "enabled": true,
+    "norm_amps": null,
+    "emerg_amps": null
+   }
+  ],
+  "switches": [
+   {
+    "name": "671692",
+    "bus1": {
+     "bus": "671",
+     "nodes": []
+    },
+    "bus2": {
+     "bus": "692",
+     "nodes": []
+    },
+    "phases": 3,
+    "closed": true,
+    "r_ohm": 1.0000000000000001e-07,
+    "x_ohm": 0.0,
+    "enabled": true
+   }
+  ],
+  "transformers": [
+   {
+    "name": "sub",
+    "phases": 3,
+    "windings": [
+     {
+      "terminal": {
+       "bus": "sourcebus",
+       "nodes": []
+      },
+      "conn": "delta",
+      "kv": 115.0,
+      "kva": 5000.0,
+      "pct_r": 0.0005,
+      "tap": 1.0,
+      "min_tap": 0.9,
+      "max_tap": 1.1,
+      "num_taps": 32,
+      "rneut_ohm": -1.0,
+      "xneut_ohm": 0.0
+     },
+     {
+      "terminal": {
+       "bus": "650",
+       "nodes": []
+      },
+      "conn": "wye",
+      "kv": 4.16,
+      "kva": 5000.0,
+      "pct_r": 0.0005,
+      "tap": 1.0,
+      "min_tap": 0.9,
+      "max_tap": 1.1,
+      "num_taps": 32,
+      "rneut_ohm": -1.0,
+      "xneut_ohm": 0.0
+     }
+    ],
+    "xhl": 0.008,
+    "xht": 35.0,
+    "xlt": 30.0,
+    "pct_noload_loss": 0.0,
+    "pct_imag": 0.0,
+    "ppm_antifloat": 1.0,
+    "enabled": true
+   },
+   {
+    "name": "reg1",
+    "phases": 1,
+    "windings": [
+     {
+      "terminal": {
+       "bus": "650",
+       "nodes": [
+        1
+       ]
+      },
+      "conn": "wye",
+      "kv": 2.4,
+      "kva": 1666.0,
+      "pct_r": 0.005,
+      "tap": 1.0,
+      "min_tap": 0.9,
+      "max_tap": 1.1,
+      "num_taps": 32,
+      "rneut_ohm": -1.0,
+      "xneut_ohm": 0.0
+     },
+     {
+      "terminal": {
+       "bus": "rg60",
+       "nodes": [
+        1
+       ]
+      },
+      "conn": "wye",
+      "kv": 2.4,
+      "kva": 1666.0,
+      "pct_r": 0.005,
+      "tap": 1.05625,
+      "min_tap": 0.9,
+      "max_tap": 1.1,
+      "num_taps": 32,
+      "rneut_ohm": -1.0,
+      "xneut_ohm": 0.0
+     }
+    ],
+    "xhl": 0.01,
+    "xht": 35.0,
+    "xlt": 30.0,
+    "pct_noload_loss": 0.0,
+    "pct_imag": 0.0,
+    "ppm_antifloat": 1.0,
+    "enabled": true
+   },
+   {
+    "name": "reg2",
+    "phases": 1,
+    "windings": [
+     {
+      "terminal": {
+       "bus": "650",
+       "nodes": [
+        2
+       ]
+      },
+      "conn": "wye",
+      "kv": 2.4,
+      "kva": 1666.0,
+      "pct_r": 0.005,
+      "tap": 1.0,
+      "min_tap": 0.9,
+      "max_tap": 1.1,
+      "num_taps": 32,
+      "rneut_ohm": -1.0,
+      "xneut_ohm": 0.0
+     },
+     {
+      "terminal": {
+       "bus": "rg60",
+       "nodes": [
+        2
+       ]
+      },
+      "conn": "wye",
+      "kv": 2.4,
+      "kva": 1666.0,
+      "pct_r": 0.005,
+      "tap": 1.0375,
+      "min_tap": 0.9,
+      "max_tap": 1.1,
+      "num_taps": 32,
+      "rneut_ohm": -1.0,
+      "xneut_ohm": 0.0
+     }
+    ],
+    "xhl": 0.01,
+    "xht": 35.0,
+    "xlt": 30.0,
+    "pct_noload_loss": 0.0,
+    "pct_imag": 0.0,
+    "ppm_antifloat": 1.0,
+    "enabled": true
+   },
+   {
+    "name": "reg3",
+    "phases": 1,
+    "windings": [
+     {
+      "terminal": {
+       "bus": "650",
+       "nodes": [
+        3
+       ]
+      },
+      "conn": "wye",
+      "kv": 2.4,
+      "kva": 1666.0,
+      "pct_r": 0.005,
+      "tap": 1.0,
+      "min_tap": 0.9,
+      "max_tap": 1.1,
+      "num_taps": 32,
+      "rneut_ohm": -1.0,
+      "xneut_ohm": 0.0
+     },
+     {
+      "terminal": {
+       "bus": "rg60",
+       "nodes": [
+        3
+       ]
+      },
+      "conn": "wye",
+      "kv": 2.4,
+      "kva": 1666.0,
+      "pct_r": 0.005,
+      "tap": 1.05625,
+      "min_tap": 0.9,
+      "max_tap": 1.1,
+      "num_taps": 32,
+      "rneut_ohm": -1.0,
+      "xneut_ohm": 0.0
+     }
+    ],
+    "xhl": 0.01,
+    "xht": 35.0,
+    "xlt": 30.0,
+    "pct_noload_loss": 0.0,
+    "pct_imag": 0.0,
+    "ppm_antifloat": 1.0,
+    "enabled": true
+   },
+   {
+    "name": "xfm1",
+    "phases": 3,
+    "windings": [
+     {
+      "terminal": {
+       "bus": "633",
+       "nodes": []
+      },
+      "conn": "wye",
+      "kv": 4.16,
+      "kva": 500.0,
+      "pct_r": 0.55,
+      "tap": 1.0,
+      "min_tap": 0.9,
+      "max_tap": 1.1,
+      "num_taps": 32,
+      "rneut_ohm": -1.0,
+      "xneut_ohm": 0.0
+     },
+     {
+      "terminal": {
+       "bus": "634",
+       "nodes": []
+      },
+      "conn": "wye",
+      "kv": 0.48,
+      "kva": 500.0,
+      "pct_r": 0.55,
+      "tap": 1.0,
+      "min_tap": 0.9,
+      "max_tap": 1.1,
+      "num_taps": 32,
+      "rneut_ohm": -1.0,
+      "xneut_ohm": 0.0
+     }
+    ],
+    "xhl": 2.0,
+    "xht": 35.0,
+    "xlt": 30.0,
+    "pct_noload_loss": 0.0,
+    "pct_imag": 0.0,
+    "ppm_antifloat": 1.0,
+    "enabled": true
+   }
+  ],
+  "regulators": [
+   {
+    "name": "reg1",
+    "transformer": "reg1",
+    "winding": 2,
+    "vreg": 122.0,
+    "band": 2.0,
+    "pt_ratio": 20.0,
+    "ct_primary": 700.0,
+    "r": 3.0,
+    "x": 9.0,
+    "delay_s": 15.0,
+    "tap_delay_s": 2.0,
+    "max_tap_change": 16,
+    "pt_phase": "1",
+    "monitored_bus": "",
+    "reversible": false,
+    "enabled": true
+   },
+   {
+    "name": "reg2",
+    "transformer": "reg2",
+    "winding": 2,
+    "vreg": 122.0,
+    "band": 2.0,
+    "pt_ratio": 20.0,
+    "ct_primary": 700.0,
+    "r": 3.0,
+    "x": 9.0,
+    "delay_s": 15.0,
+    "tap_delay_s": 2.0,
+    "max_tap_change": 16,
+    "pt_phase": "1",
+    "monitored_bus": "",
+    "reversible": false,
+    "enabled": true
+   },
+   {
+    "name": "reg3",
+    "transformer": "reg3",
+    "winding": 2,
+    "vreg": 122.0,
+    "band": 2.0,
+    "pt_ratio": 20.0,
+    "ct_primary": 700.0,
+    "r": 3.0,
+    "x": 9.0,
+    "delay_s": 15.0,
+    "tap_delay_s": 2.0,
+    "max_tap_change": 16,
+    "pt_phase": "1",
+    "monitored_bus": "",
+    "reversible": false,
+    "enabled": true
+   }
+  ],
+  "loads": [
+   {
+    "name": "671",
+    "terminal": {
+     "bus": "671",
+     "nodes": [
+      1,
+      2,
+      3
+     ]
+    },
+    "phases": 3,
+    "conn": "delta",
+    "kv": 4.16,
+    "kw": 1155.0,
+    "kvar": 660.0,
+    "model": "pq",
+    "vminpu": 0.95,
+    "vmaxpu": 1.05,
+    "cvr_watts": 1.0,
+    "cvr_vars": 2.0,
+    "enabled": true
+   },
+   {
+    "name": "634a",
+    "terminal": {
+     "bus": "634",
+     "nodes": [
+      1
+     ]
+    },
+    "phases": 1,
+    "conn": "wye",
+    "kv": 0.277,
+    "kw": 160.0,
+    "kvar": 110.0,
+    "model": "pq",
+    "vminpu": 0.95,
+    "vmaxpu": 1.05,
+    "cvr_watts": 1.0,
+    "cvr_vars": 2.0,
+    "enabled": true
+   },
+   {
+    "name": "634b",
+    "terminal": {
+     "bus": "634",
+     "nodes": [
+      2
+     ]
+    },
+    "phases": 1,
+    "conn": "wye",
+    "kv": 0.277,
+    "kw": 120.0,
+    "kvar": 90.0,
+    "model": "pq",
+    "vminpu": 0.95,
+    "vmaxpu": 1.05,
+    "cvr_watts": 1.0,
+    "cvr_vars": 2.0,
+    "enabled": true
+   },
+   {
+    "name": "634c",
+    "terminal": {
+     "bus": "634",
+     "nodes": [
+      3
+     ]
+    },
+    "phases": 1,
+    "conn": "wye",
+    "kv": 0.277,
+    "kw": 120.0,
+    "kvar": 90.0,
+    "model": "pq",
+    "vminpu": 0.95,
+    "vmaxpu": 1.05,
+    "cvr_watts": 1.0,
+    "cvr_vars": 2.0,
+    "enabled": true
+   },
+   {
+    "name": "645",
+    "terminal": {
+     "bus": "645",
+     "nodes": [
+      2
+     ]
+    },
+    "phases": 1,
+    "conn": "wye",
+    "kv": 2.4,
+    "kw": 170.0,
+    "kvar": 125.0,
+    "model": "pq",
+    "vminpu": 0.95,
+    "vmaxpu": 1.05,
+    "cvr_watts": 1.0,
+    "cvr_vars": 2.0,
+    "enabled": true
+   },
+   {
+    "name": "646",
+    "terminal": {
+     "bus": "646",
+     "nodes": [
+      2,
+      3
+     ]
+    },
+    "phases": 1,
+    "conn": "delta",
+    "kv": 4.16,
+    "kw": 230.0,
+    "kvar": 132.0,
+    "model": "z",
+    "vminpu": 0.95,
+    "vmaxpu": 1.05,
+    "cvr_watts": 1.0,
+    "cvr_vars": 2.0,
+    "enabled": true
+   },
+   {
+    "name": "692",
+    "terminal": {
+     "bus": "692",
+     "nodes": [
+      3,
+      1
+     ]
+    },
+    "phases": 1,
+    "conn": "delta",
+    "kv": 4.16,
+    "kw": 170.0,
+    "kvar": 151.0,
+    "model": "i",
+    "vminpu": 0.95,
+    "vmaxpu": 1.05,
+    "cvr_watts": 1.0,
+    "cvr_vars": 2.0,
+    "enabled": true
+   },
+   {
+    "name": "675a",
+    "terminal": {
+     "bus": "675",
+     "nodes": [
+      1
+     ]
+    },
+    "phases": 1,
+    "conn": "wye",
+    "kv": 2.4,
+    "kw": 485.0,
+    "kvar": 190.0,
+    "model": "pq",
+    "vminpu": 0.95,
+    "vmaxpu": 1.05,
+    "cvr_watts": 1.0,
+    "cvr_vars": 2.0,
+    "enabled": true
+   },
+   {
+    "name": "675b",
+    "terminal": {
+     "bus": "675",
+     "nodes": [
+      2
+     ]
+    },
+    "phases": 1,
+    "conn": "wye",
+    "kv": 2.4,
+    "kw": 68.0,
+    "kvar": 60.0,
+    "model": "pq",
+    "vminpu": 0.95,
+    "vmaxpu": 1.05,
+    "cvr_watts": 1.0,
+    "cvr_vars": 2.0,
+    "enabled": true
+   },
+   {
+    "name": "675c",
+    "terminal": {
+     "bus": "675",
+     "nodes": [
+      3
+     ]
+    },
+    "phases": 1,
+    "conn": "wye",
+    "kv": 2.4,
+    "kw": 290.0,
+    "kvar": 212.0,
+    "model": "pq",
+    "vminpu": 0.95,
+    "vmaxpu": 1.05,
+    "cvr_watts": 1.0,
+    "cvr_vars": 2.0,
+    "enabled": true
+   },
+   {
+    "name": "611",
+    "terminal": {
+     "bus": "611",
+     "nodes": [
+      3
+     ]
+    },
+    "phases": 1,
+    "conn": "wye",
+    "kv": 2.4,
+    "kw": 170.0,
+    "kvar": 80.0,
+    "model": "i",
+    "vminpu": 0.95,
+    "vmaxpu": 1.05,
+    "cvr_watts": 1.0,
+    "cvr_vars": 2.0,
+    "enabled": true
+   },
+   {
+    "name": "652",
+    "terminal": {
+     "bus": "652",
+     "nodes": [
+      1
+     ]
+    },
+    "phases": 1,
+    "conn": "wye",
+    "kv": 2.4,
+    "kw": 128.0,
+    "kvar": 86.0,
+    "model": "z",
+    "vminpu": 0.95,
+    "vmaxpu": 1.05,
+    "cvr_watts": 1.0,
+    "cvr_vars": 2.0,
+    "enabled": true
+   },
+   {
+    "name": "670a",
+    "terminal": {
+     "bus": "670",
+     "nodes": [
+      1
+     ]
+    },
+    "phases": 1,
+    "conn": "wye",
+    "kv": 2.4,
+    "kw": 17.0,
+    "kvar": 10.0,
+    "model": "pq",
+    "vminpu": 0.95,
+    "vmaxpu": 1.05,
+    "cvr_watts": 1.0,
+    "cvr_vars": 2.0,
+    "enabled": true
+   },
+   {
+    "name": "670b",
+    "terminal": {
+     "bus": "670",
+     "nodes": [
+      2
+     ]
+    },
+    "phases": 1,
+    "conn": "wye",
+    "kv": 2.4,
+    "kw": 66.0,
+    "kvar": 38.0,
+    "model": "pq",
+    "vminpu": 0.95,
+    "vmaxpu": 1.05,
+    "cvr_watts": 1.0,
+    "cvr_vars": 2.0,
+    "enabled": true
+   },
+   {
+    "name": "670c",
+    "terminal": {
+     "bus": "670",
+     "nodes": [
+      3
+     ]
+    },
+    "phases": 1,
+    "conn": "wye",
+    "kv": 2.4,
+    "kw": 117.0,
+    "kvar": 68.0,
+    "model": "pq",
+    "vminpu": 0.95,
+    "vmaxpu": 1.05,
+    "cvr_watts": 1.0,
+    "cvr_vars": 2.0,
+    "enabled": true
+   }
+  ],
+  "capacitors": [
+   {
+    "name": "cap1",
+    "terminal": {
+     "bus": "675",
+     "nodes": []
+    },
+    "phases": 3,
+    "conn": "wye",
+    "kv": 4.16,
+    "kvar": 600.0,
+    "states": [
+     1
+    ],
+    "enabled": true
+   },
+   {
+    "name": "cap2",
+    "terminal": {
+     "bus": "611",
+     "nodes": [
+      3
+     ]
+    },
+    "phases": 1,
+    "conn": "wye",
+    "kv": 2.4,
+    "kvar": 100.0,
+    "states": [
+     1
+    ],
+    "enabled": true
+   }
+  ],
+  "pvsystems": []
+ },
+ "diagram": {
+  "bus_glyphs": {
+   "sourcebus": {
+    "x": 12.0,
+    "y": -24.0,
+    "orientation": 0,
+    "length": 2.0
+   },
+   "650": {
+    "x": 12.0,
+    "y": -21.0,
+    "orientation": 0,
+    "length": 2.0
+   },
+   "rg60": {
+    "x": 12.0,
+    "y": -18.0,
+    "orientation": 0,
+    "length": 2.0
+   },
+   "633": {
+    "x": 21.0,
+    "y": -15.0,
+    "orientation": 0,
+    "length": 2.0
+   },
+   "634": {
+    "x": 24.0,
+    "y": -15.0,
+    "orientation": 0,
+    "length": 3.5999999999999996
+   },
+   "671": {
+    "x": 12.0,
+    "y": -6.0,
+    "orientation": 0,
+    "length": 2.0
+   },
+   "645": {
+    "x": 6.0,
+    "y": -15.0,
+    "orientation": 0,
+    "length": 2.0
+   },
+   "646": {
+    "x": 0.0,
+    "y": -15.0,
+    "orientation": 0,
+    "length": 2.0
+   },
+   "692": {
+    "x": 15.0,
+    "y": -6.0,
+    "orientation": 0,
+    "length": 2.0
+   },
+   "675": {
+    "x": 24.0,
+    "y": -6.0,
+    "orientation": 0,
+    "length": 4.8
+   },
+   "611": {
+    "x": 0.0,
+    "y": -6.0,
+    "orientation": 0,
+    "length": 2.4
+   },
+   "652": {
+    "x": 6.0,
+    "y": 0.0,
+    "orientation": 0,
+    "length": 2.0
+   },
+   "670": {
+    "x": 12.0,
+    "y": -12.0,
+    "orientation": 0,
+    "length": 3.5999999999999996
+   },
+   "632": {
+    "x": 12.0,
+    "y": -15.0,
+    "orientation": 0,
+    "length": 2.0
+   },
+   "680": {
+    "x": 12.0,
+    "y": 0.0,
+    "orientation": 0,
+    "length": 2.0
+   },
+   "684": {
+    "x": 6.0,
+    "y": -6.0,
+    "orientation": 0,
+    "length": 2.0
+   }
+  },
+  "element_glyphs": {
+   "vsource.source": {
+    "x": 12.0,
+    "y": -22.0,
+    "rotation": 0,
+    "label_dx": 0.0,
+    "label_dy": -1.0
+   },
+   "line.650632": {
+    "x": 12.0,
+    "y": -16.5,
+    "rotation": 90,
+    "label_dx": 1.0,
+    "label_dy": 0.0
+   },
+   "line.632670": {
+    "x": 12.0,
+    "y": -13.5,
+    "rotation": 90,
+    "label_dx": 1.0,
+    "label_dy": 0.0
+   },
+   "line.670671": {
+    "x": 12.0,
+    "y": -9.0,
+    "rotation": 90,
+    "label_dx": 1.0,
+    "label_dy": 0.0
+   },
+   "line.671680": {
+    "x": 12.0,
+    "y": -3.0,
+    "rotation": 90,
+    "label_dx": 1.0,
+    "label_dy": 0.0
+   },
+   "line.632633": {
+    "x": 16.5,
+    "y": -15.0,
+    "rotation": 0,
+    "label_dx": 0.0,
+    "label_dy": -1.0
+   },
+   "line.632645": {
+    "x": 9.0,
+    "y": -15.0,
+    "rotation": 0,
+    "label_dx": 0.0,
+    "label_dy": -1.0
+   },
+   "line.645646": {
+    "x": 3.0,
+    "y": -15.0,
+    "rotation": 0,
+    "label_dx": 0.0,
+    "label_dy": -1.0
+   },
+   "line.692675": {
+    "x": 19.5,
+    "y": -6.0,
+    "rotation": 0,
+    "label_dx": 0.0,
+    "label_dy": -1.0
+   },
+   "line.671684": {
+    "x": 9.0,
+    "y": -6.0,
+    "rotation": 0,
+    "label_dx": 0.0,
+    "label_dy": -1.0
+   },
+   "line.684611": {
+    "x": 3.0,
+    "y": -6.0,
+    "rotation": 0,
+    "label_dx": 0.0,
+    "label_dy": -1.0
+   },
+   "line.684652": {
+    "x": 6.0,
+    "y": -3.0,
+    "rotation": 90,
+    "label_dx": 1.0,
+    "label_dy": 0.0
+   },
+   "line.671692": {
+    "x": 13.5,
+    "y": -6.0,
+    "rotation": 0,
+    "label_dx": 0.0,
+    "label_dy": -1.0
+   },
+   "transformer.sub": {
+    "x": 12.0,
+    "y": -22.5,
+    "rotation": 90,
+    "label_dx": 1.0,
+    "label_dy": 0.0
+   },
+   "transformer.reg1": {
+    "x": 12.0,
+    "y": -19.5,
+    "rotation": 90,
+    "label_dx": 1.0,
+    "label_dy": 0.0
+   },
+   "transformer.reg2": {
+    "x": 12.0,
+    "y": -19.5,
+    "rotation": 90,
+    "label_dx": 1.0,
+    "label_dy": 0.0
+   },
+   "transformer.reg3": {
+    "x": 12.0,
+    "y": -19.5,
+    "rotation": 90,
+    "label_dx": 1.0,
+    "label_dy": 0.0
+   },
+   "transformer.xfm1": {
+    "x": 22.5,
+    "y": -15.0,
+    "rotation": 0,
+    "label_dx": 0.0,
+    "label_dy": -1.0
+   },
+   "load.671": {
+    "x": 12.0,
+    "y": -4.0,
+    "rotation": 0,
+    "label_dx": 0.0,
+    "label_dy": -1.0
+   },
+   "load.634a": {
+    "x": 22.8,
+    "y": -13.0,
+    "rotation": 0,
+    "label_dx": 0.0,
+    "label_dy": -1.0
+   },
+   "load.634b": {
+    "x": 24.0,
+    "y": -13.0,
+    "rotation": 0,
+    "label_dx": 0.0,
+    "label_dy": -1.0
+   },
+   "load.634c": {
+    "x": 25.2,
+    "y": -13.0,
+    "rotation": 0,
+    "label_dx": 0.0,
+    "label_dy": -1.0
+   },
+   "load.645": {
+    "x": 6.0,
+    "y": -13.0,
+    "rotation": 0,
+    "label_dx": 0.0,
+    "label_dy": -1.0
+   },
+   "load.646": {
+    "x": 0.0,
+    "y": -13.0,
+    "rotation": 0,
+    "label_dx": 0.0,
+    "label_dy": -1.0
+   },
+   "load.692": {
+    "x": 15.0,
+    "y": -4.0,
+    "rotation": 0,
+    "label_dx": 0.0,
+    "label_dy": -1.0
+   },
+   "load.675a": {
+    "x": 22.2,
+    "y": -4.0,
+    "rotation": 0,
+    "label_dx": 0.0,
+    "label_dy": -1.0
+   },
+   "load.675b": {
+    "x": 23.4,
+    "y": -4.0,
+    "rotation": 0,
+    "label_dx": 0.0,
+    "label_dy": -1.0
+   },
+   "load.675c": {
+    "x": 24.6,
+    "y": -4.0,
+    "rotation": 0,
+    "label_dx": 0.0,
+    "label_dy": -1.0
+   },
+   "load.611": {
+    "x": -0.6,
+    "y": -4.0,
+    "rotation": 0,
+    "label_dx": 0.0,
+    "label_dy": -1.0
+   },
+   "load.652": {
+    "x": 6.0,
+    "y": 2.0,
+    "rotation": 0,
+    "label_dx": 0.0,
+    "label_dy": -1.0
+   },
+   "load.670a": {
+    "x": 10.8,
+    "y": -10.0,
+    "rotation": 0,
+    "label_dx": 0.0,
+    "label_dy": -1.0
+   },
+   "load.670b": {
+    "x": 12.0,
+    "y": -10.0,
+    "rotation": 0,
+    "label_dx": 0.0,
+    "label_dy": -1.0
+   },
+   "load.670c": {
+    "x": 13.2,
+    "y": -10.0,
+    "rotation": 0,
+    "label_dx": 0.0,
+    "label_dy": -1.0
+   },
+   "capacitor.cap1": {
+    "x": 25.8,
+    "y": -4.0,
+    "rotation": 0,
+    "label_dx": 0.0,
+    "label_dy": -1.0
+   },
+   "capacitor.cap2": {
+    "x": 0.6,
+    "y": -4.0,
+    "rotation": 0,
+    "label_dx": 0.0,
+    "label_dy": -1.0
+   }
+  }
+ }
+}
