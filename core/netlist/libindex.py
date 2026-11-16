@@ -111,11 +111,7 @@ class LibraryIndex:
             if not root.is_dir():
                 index.diagnostics.append(Diagnostic(0, 0, ERROR, f"folder not found: {root}"))
                 continue
-            for path in _walk(root, suffixes, index.diagnostics):
-                try:
-                    key = path.resolve()
-                except OSError:
-                    key = path
+            for path, key in _walk(root, suffixes, index.diagnostics):
                 if key in seen:
                     continue
                 seen.add(key)
@@ -187,17 +183,50 @@ class LibraryIndex:
             )
 
 
-def _walk(root: Path, suffixes: frozenset[str], diagnostics: list[Diagnostic]) -> list[Path]:
-    found: list[Path] = []
+def _resolve(path: Path) -> Path:
+    try:
+        return path.resolve()
+    except OSError:
+        return path
 
-    def on_error(exc: OSError) -> None:
-        diagnostics.append(Diagnostic(0, 0, WARNING, f"cannot read folder {exc.filename}"))
 
-    for dirpath, dirnames, filenames in os.walk(root, onerror=on_error):
-        dirnames.sort()
-        for name in sorted(filenames):
-            if os.path.splitext(name)[1].lower() in suffixes:
-                found.append(Path(dirpath, name))
+def _walk(
+    root: Path, suffixes: frozenset[str], diagnostics: list[Diagnostic]
+) -> list[tuple[Path, Path]]:
+    """(path, key) of every library file under ``root``, sorted per folder.
+
+    ``key`` is the real path, used to scan each file once when folders overlap or repeat.
+    Each folder is resolved once; a file is resolved only if it is a symlink itself
+    (``DirEntry.is_symlink`` needs no extra system call on Windows). Resolving every file
+    cost about 1.5 ms each on Windows. Like ``os.walk`` (followlinks=False), symlinked
+    folders are not entered.
+    """
+    found: list[tuple[Path, Path]] = []
+    pending = [root]
+    while pending:
+        folder = pending.pop()
+        try:
+            with os.scandir(folder) as it:
+                entries = sorted(it, key=lambda e: e.name)
+        except OSError as exc:
+            diagnostics.append(Diagnostic(0, 0, WARNING, f"cannot read folder {exc.filename}"))
+            continue
+        real_folder = _resolve(folder)
+        subfolders: list[Path] = []
+        for entry in entries:
+            try:
+                if entry.is_dir():
+                    if not entry.is_symlink():
+                        subfolders.append(Path(entry.path))
+                    continue
+            except OSError:
+                continue
+            if os.path.splitext(entry.name)[1].lower() not in suffixes:
+                continue
+            path = Path(entry.path)
+            key = _resolve(path) if entry.is_symlink() else real_folder / entry.name
+            found.append((path, key))
+        pending.extend(reversed(subfolders))
     return found
 
 

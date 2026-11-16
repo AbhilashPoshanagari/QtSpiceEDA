@@ -116,6 +116,58 @@ def test_parser_reports_encrypted_include() -> None:
     assert result.circuit.subcircuits == []
 
 
+def _tree(root: Path) -> None:
+    for rel in ("b.lib", "a.lib", "z/y.lib", "z/x/w.lib", "c/v.lib", "c/skip.txt"):
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f".subckt {path.stem} a b\n.ends\n")
+
+
+def test_files_come_in_os_walk_order(tmp_path: Path) -> None:
+    _tree(tmp_path)
+    expected = []
+    for dirpath, dirnames, filenames in os.walk(tmp_path):
+        dirnames.sort()
+        expected += [Path(dirpath, n) for n in sorted(filenames) if n.endswith(".lib")]
+    assert [f.path for f in LibraryIndex.scan([tmp_path]).files] == expected
+
+
+def test_overlapping_and_respelled_folders_scan_each_file_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _tree(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    index = LibraryIndex.scan([tmp_path / "z", tmp_path, Path("."), tmp_path / "c" / ".."])
+    assert sorted(s.name for s in index.subcircuits) == ["a", "b", "v", "w", "y"]
+    assert len(index.files) == 5
+
+
+def _symlink(link: Path, target: Path, is_dir: bool) -> None:
+    try:
+        link.symlink_to(target, target_is_directory=is_dir)
+    except OSError:  # Windows without developer mode / symlink privilege
+        pytest.skip("cannot create symlinks here")
+
+
+def test_a_symlinked_file_is_scanned_once(tmp_path: Path) -> None:
+    _tree(tmp_path)
+    other = tmp_path / "other"
+    other.mkdir()
+    _symlink(other / "alias.lib", tmp_path / "a.lib", is_dir=False)
+    index = LibraryIndex.scan([tmp_path, other])
+    assert sorted(s.name for s in index.subcircuits) == ["a", "b", "v", "w", "y"]
+
+
+def test_a_symlinked_folder_is_not_entered_but_can_be_given(tmp_path: Path) -> None:
+    lib = tmp_path / "lib"
+    _tree(lib)
+    _symlink(tmp_path / "alias", lib / "z", is_dir=True)
+    walked = LibraryIndex.scan([tmp_path])
+    assert len(walked.files) == 5  # alias/ is not entered, like os.walk
+    given = LibraryIndex.scan([tmp_path / "alias", lib])
+    assert len(given.files) == 5  # alias/ resolves to lib/z: each file once
+
+
 def _write_library(path: Path, i: int) -> None:
     lines = [f"* generated library {i}"]
     for j in range(10):
