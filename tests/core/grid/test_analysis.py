@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -98,24 +99,30 @@ def test_nodes_without_a_voltage_base_are_skipped() -> None:
     assert [v.location for v in find_violations(res, PowerFlowConfig())] == ["a.2"]
 
 
-def test_overloads_of_lines_and_transformers_only() -> None:
-    res = _result(
-        {"a.1": 1.0},
-        [
-            _branch("line.ok", loading=100.0),
-            _branch("line.hot", loading=120.5),
-            _branch("transformer.t", loading=101.0),
-            _branch("line.norating"),
-            _branch("reactor.r", loading=500.0),
-        ],
-    )
-    out = find_violations(res, PowerFlowConfig(loading_limit_pct=100.0))
-    assert [(v.kind, v.location, v.value) for v in out] == [
-        (OVERLOAD, "line.hot", 120.5),
-        (OVERLOAD, "transformer.t", 101.0),
+def test_overloads_use_the_d7_loadings_and_their_limits() -> None:
+    model = _model()
+    model.lines["l1"].norm_amps = 10.0  # 12 A -> 120 %
+    model.lines["l2"].norm_amps = 100.0  # 12 A -> 12 %
+    # l3 and l4 have no rating (their linecode has none): skipped
+    hot = BranchResult("line.l1", "lv", "a", 1, np.array([12 + 0j]), 0, 0, 0, 0, 400.0, 3.0)
+    cool = replace(hot, element="line.l2")
+    xf = replace(
+        _branch("transformer.t"), terminal_power=(101 + 0j, -(100 + 0j))
+    )  # 101 % of 100 kVA on winding 1
+    res = _result({"a.1": 1.0}, [hot, cool, _branch("line.l3", loading=500.0), xf])
+    out = find_violations(res, PowerFlowConfig(), model)
+    assert [(v.kind, v.location, v.limit) for v in out] == [
+        (OVERLOAD, "line.l1", 100.0),
+        (OVERLOAD, "transformer.t", 100.0),
     ]
+    assert out[0].value == pytest.approx(120.0) and out[1].value == pytest.approx(101.0)
     diag = out[0].to_diagnostic()
-    assert diag.block == "line.hot" and diag.code == OVERLOAD and "120.5" in diag.message
+    assert diag.block == "line.l1" and diag.code == OVERLOAD and "120.0" in diag.message
+    # each class has its own limit
+    cfg = PowerFlowConfig(line_loading_limit_pct=150.0, transformer_loading_limit_pct=100.0)
+    assert [v.location for v in find_violations(res, cfg, model)] == ["transformer.t"]
+    # the engine's loading_pct (OpenDSS NormalAmps) is never used; no model, no overloads
+    assert [v.kind for v in find_violations(res, PowerFlowConfig())] == []
 
 
 def test_voltage_violation_diagnostic_names_the_bus() -> None:

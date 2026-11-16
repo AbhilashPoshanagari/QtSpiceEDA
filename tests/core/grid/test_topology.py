@@ -129,6 +129,17 @@ def test_ieee13_parallel_regulators_are_no_loop() -> None:
 # ---- the good model of test_validate: src -l1- a =t1= b -sw1- c -l2(1-ph)- d
 
 
+def test_source_distances_weight_closed_edges_only() -> None:
+    m = good_model()
+    g = tp.GridGraph.build(m)
+    hops = g.source_distances(lambda e: 1.0)
+    assert hops == {b: float(n) for b, n in g.hop_distance(["src"], include_open=False).items()}
+    by_kind = g.source_distances(lambda e: 10.0 if e.kind == tp.LINE else 0.0)
+    assert by_kind == {"src": 0.0, "a": 10.0, "b": 10.0, "c": 10.0, "d": 20.0}
+    m.switches["sw1"].closed = False
+    assert set(tp.GridGraph.build(m).source_distances(lambda e: 1.0)) == {"src", "a", "b"}
+
+
 def test_graph_of_good_model() -> None:
     g = tp.GridGraph.build(good_model())
     assert g.buses == ["src", "a", "b", "c", "d"]

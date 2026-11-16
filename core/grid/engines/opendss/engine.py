@@ -354,7 +354,13 @@ class OpenDSSEngine:
                 phases = int(el.NumPhases)
                 conductors = int(el.NumConductors)
                 current = _complex(el.Currents)[:phases]
-                power = _complex(el.Powers)[:conductors]  # kW + j kvar, terminal 1
+                all_power = _complex(el.Powers)  # kW + j kvar, terminal by terminal
+                power = all_power[:conductors]
+                terminals = int(el.NumTerminals)
+                per_terminal = tuple(
+                    complex(all_power[k * conductors : (k + 1) * conductors].sum())
+                    for k in range(terminals)
+                )
                 losses = _complex(el.Losses)  # W + j var
                 buses = [str(b).lower().split(".")[0] for b in el.BusNames]
                 normal = float(el.NormalAmps)
@@ -371,6 +377,7 @@ class OpenDSSEngine:
                     losses_kvar=float(losses[0].imag) / 1000.0,
                     normal_amps=normal,
                     loading_pct=peak / normal * 100.0 if normal > 0 else None,
+                    terminal_power=per_terminal,
                 )
             idx = pd.Next
         return out

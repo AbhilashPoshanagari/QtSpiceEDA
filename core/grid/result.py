@@ -50,6 +50,9 @@ class BranchResult:
     """Normal current rating in A (OpenDSS NormAmps); 0 when the element has none."""
     loading_pct: float | None
     """Largest phase current / normal rating * 100; None without a rating."""
+    terminal_power: tuple[complex, ...] = ()
+    """Complex power into each terminal in kVA (kW + j kvar, all conductors of the
+    terminal summed); terminal 1 first. Transformer loading uses one per winding."""
 
 
 @dataclass

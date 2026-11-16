@@ -115,6 +115,9 @@ class Solved:
     node_v: list[tuple[float, float]]  # complex V (re, im), line-to-neutral, volts
     node_pu: list[float]
     taps: dict[str, float]  # regcontrol name -> tap of its controlled winding
+    branches: dict[str, dict[str, Any]] = field(default_factory=dict)
+    """Enabled lines and transformers (read_branches): currents and powers of every
+    terminal and conductor, NormalAmps and OpenDSS's own % of normal (AllPctNorm)."""
     compile_s: float = 0.0
     solve_s: float = 0.0
     extra: dict[str, Any] = field(default_factory=dict)
@@ -174,7 +177,49 @@ def read_solution(ctx: Any, feeder: str) -> Solved:
         node_v=[(float(volts[2 * i]), float(volts[2 * i + 1])) for i in range(len(names))],
         node_pu=[float(v) for v in ckt.AllBusVmagPu],
         taps=taps,
+        branches=read_branches(ctx),
     )
+
+
+def _pairs(values: Any) -> list[list[float]]:
+    flat = [float(v) for v in values]
+    return [[flat[2 * i], flat[2 * i + 1]] for i in range(len(flat) // 2)]
+
+
+def read_branches(ctx: Any) -> dict[str, dict[str, Any]]:
+    """Per enabled line (switches included) and transformer, in PDElements order.
+
+    ``currents`` (A) and ``powers`` (kW, kvar into the terminal) are CktElement.Currents
+    and .Powers as [re, im] pairs, terminal by terminal, ``conductors`` per terminal.
+    ``pct_norm`` is PDElements.AllPctNorm() (max conductor current at terminal 1 / the
+    element's NormalAmps * 100); for a transformer OpenDSS's NormalAmps comes from
+    NormHkVA (1.1 * kVA by default), so it is not the D7 kVA loading.
+    """
+    ckt = ctx.ActiveCircuit
+    pd = ckt.PDElements
+    names = [str(n).lower() for n in pd.AllNames]
+    pct = [float(v) for v in pd.AllPctNorm(False)]
+    if len(names) != len(pct):
+        raise RuntimeError("PDElements.AllNames and AllPctNorm differ in length")
+    pct_by_name = dict(zip(names, pct, strict=True))
+    out: dict[str, dict[str, Any]] = {}
+    idx = pd.First
+    while idx > 0:
+        el = ckt.ActiveCktElement
+        name = str(el.Name).lower()
+        if name.split(".")[0] in ("line", "transformer") and el.Enabled:
+            out[name] = {
+                "phases": int(el.NumPhases),
+                "terminals": int(el.NumTerminals),
+                "conductors": int(el.NumConductors),
+                "bus_names": [str(b).lower() for b in el.BusNames],
+                "currents": _pairs(el.Currents),
+                "powers": _pairs(el.Powers),
+                "norm_amps": float(el.NormalAmps),
+                "pct_norm": pct_by_name[name],
+            }
+        idx = pd.Next
+    return out
 
 
 def load_and_solve(feeder: str, ctx: Any | None = None) -> Solved:

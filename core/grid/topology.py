@@ -46,9 +46,10 @@ changes for designs", S4 rule "ll_3ph_first").
 
 from __future__ import annotations
 
+import heapq
 import math
 from collections import deque
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 
 from core.grid.model import DELTA, GridModel, Terminal, Transformer, Winding
@@ -340,6 +341,23 @@ class GridGraph:
     def energized_buses(self, include_open: bool = False) -> set[str]:
         """Buses reached from an enabled source over closed branches."""
         return self.reachable((b for b, _, _ in self.source_buses), include_open)
+
+    def source_distances(self, weight: Callable[[Edge], float]) -> dict[str, float]:
+        """Shortest weighted distance from any enabled source bus to every bus it
+        reaches over closed branches (Dijkstra). ``weight`` gives an edge's length and
+        must not be negative; open switches are not paths."""
+        dist: dict[str, float] = {}
+        heap = [(0.0, bus) for bus, _, _ in self.source_buses]
+        heapq.heapify(heap)
+        while heap:
+            d, bus = heapq.heappop(heap)
+            if bus in dist:
+                continue
+            dist[bus] = d
+            for e, nxt in self.neighbours(bus):
+                if nxt not in dist:
+                    heapq.heappush(heap, (d + weight(e), nxt))
+        return dist
 
     def islands(self) -> list[tuple[str, ...]]:
         """Connected parts over closed branches, each in bus order, ordered by their

@@ -35,7 +35,8 @@ CONFIG = PowerFlowConfig(
     tolerance=1e-6,
     voltage_min_pu=0.9,
     voltage_max_pu=1.1,
-    loading_limit_pct=80.0,
+    line_loading_limit_pct=80.0,
+    transformer_loading_limit_pct=80.0,
 )
 FREE_SOLVER = {
     "control_mode": "off",
@@ -98,7 +99,7 @@ def test_integer_numbers_load_as_float(tmp_path: Path) -> None:
     loaded = load_project(write(tmp_path, data))
     assert loaded.ok, loaded.errors
     config = loaded.project.grid.config  # type: ignore[union-attr]
-    assert type(config.voltage_max_pu) is float and type(config.loading_limit_pct) is float
+    assert type(config.voltage_max_pu) is float and type(config.line_loading_limit_pct) is float
     assert type(config.tolerance) is float
 
 

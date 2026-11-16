@@ -96,7 +96,7 @@ def test_feeder_and_limits_are_saved_and_restored(qtbot, parts: Parts, tmp_path:
     wait_idle(qtbot, grid)
     assert grid.canRun, grid.consoleText
     assert not projects.property("modified")
-    grid.set_config(replace(LIMITS, loading_limit_pct=90.0))
+    grid.set_config(replace(LIMITS, line_loading_limit_pct=90.0))
     assert projects.property("modified")
 
 

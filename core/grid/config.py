@@ -18,6 +18,10 @@ CONTROL_STATIC = "static"
 CONTROL_OFF = "off"
 CONTROL_MODES = (CONTROL_STATIC, CONTROL_OFF)
 
+LEGACY_LOADING_LIMIT = "loading_limit_pct"
+"""The one loading limit of v0.4 (the .qsp v4 grid section still stores it); it maps
+onto line_loading_limit_pct and transformer_loading_limit_pct."""
+
 
 @dataclass(frozen=True)
 class PowerFlowConfig:
@@ -32,7 +36,12 @@ class PowerFlowConfig:
     """Convergence tolerance in pu (OpenDSS Tolerance); None = keep the file's."""
     voltage_min_pu: float = 0.95
     voltage_max_pu: float = 1.05
-    loading_limit_pct: float = 100.0
+    line_loading_limit_pct: float = 100.0
+    """Line loading limit: max phase current / norm_amps, in % (D7)."""
+    transformer_loading_limit_pct: float = 100.0
+    """Transformer loading limit: |S| at a winding terminal / kVA, in % (D7)."""
+    warn_fraction: float = 0.9
+    """A loading from warn_fraction * limit up to the limit is "warn" (D7)."""
 
     def problems(self) -> list[str]:
         """What is wrong with these settings ([] = fine). Never raises."""
@@ -47,8 +56,12 @@ class PowerFlowConfig:
             out.append("tolerance must be greater than 0")
         if not 0 < self.voltage_min_pu < self.voltage_max_pu:
             out.append("voltage limits must satisfy 0 < min < max")
-        if not self.loading_limit_pct > 0:
-            out.append("loading limit must be greater than 0 %")
+        if not self.line_loading_limit_pct > 0:
+            out.append("line loading limit must be greater than 0 %")
+        if not self.transformer_loading_limit_pct > 0:
+            out.append("transformer loading limit must be greater than 0 %")
+        if not 0 < self.warn_fraction <= 1:
+            out.append("warn fraction must satisfy 0 < fraction <= 1")
         return out
 
     def to_dict(self) -> dict[str, Any]:
@@ -56,6 +69,11 @@ class PowerFlowConfig:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PowerFlowConfig:
-        """Unknown keys are ignored; missing keys take the defaults."""
+        """Unknown keys are ignored; missing keys take the defaults. The single v0.4
+        ``loading_limit_pct`` sets both loading limits unless they are given."""
         names = cls.__dataclass_fields__.keys()
-        return cls(**{k: v for k, v in data.items() if k in names})
+        values = {k: v for k, v in data.items() if k in names}
+        if LEGACY_LOADING_LIMIT in data:
+            for name in ("line_loading_limit_pct", "transformer_loading_limit_pct"):
+                values.setdefault(name, data[LEGACY_LOADING_LIMIT])
+        return cls(**values)

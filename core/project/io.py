@@ -42,7 +42,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from core.grid.config import CONTROL_MODES, PowerFlowConfig
+from core.grid.config import CONTROL_MODES, LEGACY_LOADING_LIMIT, PowerFlowConfig
 from core.netlist.model import ERROR
 from core.physical.mapper import SOLVER_SETTINGS
 from core.schematic.model import Schematic
@@ -68,7 +68,8 @@ _OPTIONAL_KEYS = (*_OPTIONAL_KEYS_V3, "grid")
 """Version 4 fields that may be left out."""
 _GRID_KEYS = ("dss_file", "power_flow", "limits")
 _POWER_FLOW_KEYS = ("control_mode", "max_iterations", "max_control_iterations", "tolerance")
-_LIMIT_KEYS = ("voltage_min_pu", "voltage_max_pu", "loading_limit_pct")
+_LIMIT_KEYS = ("voltage_min_pu", "voltage_max_pu", LEGACY_LOADING_LIMIT)
+"""The v4 file keys; the one loading limit is both PowerFlowConfig loading limits."""
 SOLVER_SPEC = "SolverConfiguration"
 """The block spec whose settings O1 checks (the B5 Solver Configuration)."""
 _PORT_REF = re.compile(r"^[^.\s]+\.[^.\s]+$")  # "block.port"
@@ -132,7 +133,13 @@ class GridSettings:
         return {
             "dss_file": self.dss_file,
             "power_flow": {k: settings[k] for k in _POWER_FLOW_KEYS},
-            "limits": {k: settings[k] for k in _LIMIT_KEYS},
+            # v4 holds one loading limit: the line limit (both are equal unless a
+            # caller set them apart; .qsp v5 per-design settings hold both, D9)
+            "limits": {
+                "voltage_min_pu": settings["voltage_min_pu"],
+                "voltage_max_pu": settings["voltage_max_pu"],
+                LEGACY_LOADING_LIMIT: settings["line_loading_limit_pct"],
+            },
         }
 
 
@@ -523,7 +530,8 @@ def _grid_config(grid: dict[str, Any]) -> PowerFlowConfig:
     power_flow = dict(grid["power_flow"])
     if power_flow["tolerance"] is not None:
         power_flow["tolerance"] = float(power_flow["tolerance"])
-    return PowerFlowConfig(**power_flow, **{k: float(v) for k, v in grid["limits"].items()})
+    limits = {k: float(v) for k, v in grid["limits"].items()}
+    return PowerFlowConfig.from_dict(power_flow | limits)
 
 
 def _check_diagram(diagram: dict[str, Any], where: str, version: int) -> list[str]:
