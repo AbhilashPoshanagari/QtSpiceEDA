@@ -491,6 +491,17 @@ def _field_label(path: str) -> str:
     return _FIELD_LABELS.get(path, path.replace("_", " "))
 
 
+def field_label(path: str) -> str:
+    """What a SetProperty path is called for users ("kW", "winding 2 kVA"); the same
+    words as the "<label> not set" Diagnostics of validate.py."""
+    return _field_label(path)
+
+
+def read_only_reason(field_name: str) -> str | None:
+    """Why SetProperty refuses this field ("use Rename"), or None when it can be set."""
+    return _READ_ONLY.get(field_name)
+
+
 def _hints(cls: type) -> dict[str, Any]:
     return typing.get_type_hints(cls)
 
@@ -1422,3 +1433,61 @@ class RotateGlyph(Command):
         if isinstance(g, BusGlyph):
             return [_SetAttr(g, "orientation", g.orientation, (g.orientation + 90 * q) % 180)]
         return [_SetAttr(g, "rotation", g.rotation, (g.rotation + 90 * q) % 360)]
+
+
+class MoveGlyphs(Command):
+    """Move several glyphs by one offset (dx, dy) from where they are now: dragging a
+    selection. Presentation only. Merges with the next MoveGlyphs of the same glyphs
+    and ``gesture`` (one mouse press; each step moves on from the last), so a whole
+    drag of a selection is one undo step and goes back to where it started (D6)."""
+
+    merge_id = MERGE_MOVE
+
+    def __init__(self, glyph_ids: Sequence[str], dx: float, dy: float, gesture: int = 0) -> None:
+        super().__init__()
+        self.glyph_ids = list(dict.fromkeys(glyph_ids))
+        self.dx, self.dy, self.gesture = dx, dy, gesture
+        n = len(self.glyph_ids)
+        self._description = f"Move {self.glyph_ids[0]}" if n == 1 else f"Move {n} items"
+
+    def _plan(self, design: GridDesign, diags: list[NetworkDiagnostic]) -> list[_Op] | None:
+        if not self.glyph_ids:
+            diags.append(_diag(DESIGN, UNKNOWN_ELEMENT, "nothing to move"))
+            return None
+        if not (_is_number(self.dx) and _is_number(self.dy)):
+            diags.append(_diag(DESIGN, BAD_VALUE, f"offset ({self.dx!r}, {self.dy!r}) "
+                               "is not two finite numbers"))  # fmt: skip
+            return None
+        ops: list[_Op] = []
+        for gid in self.glyph_ids:
+            g = _glyph(design, gid)
+            if g is None:
+                diags.append(_diag(str(gid), UNKNOWN_ELEMENT, "has no glyph"))
+                return None
+            ops.append(_SetAttr(g, "x", g.x, float(g.x + self.dx)))
+            ops.append(_SetAttr(g, "y", g.y, float(g.y + self.dy)))
+        self._affected = set(self.glyph_ids)
+        return ops
+
+    def merge(self, other: Command) -> bool:
+        if not (
+            isinstance(other, MoveGlyphs)
+            and other.glyph_ids == self.glyph_ids
+            and other.gesture == self.gesture
+            and self._ops
+            and other._ops
+        ):
+            return False
+        # the other command was planned on this one's result: its "old" is our "new"
+        for mine, theirs in zip(self._ops, other._ops, strict=True):
+            assert isinstance(mine, _SetAttr) and isinstance(theirs, _SetAttr)
+            mine.new = theirs.new
+        self.dx, self.dy = self.dx + other.dx, self.dy + other.dy
+        return True
+
+    @property
+    def obsolete(self) -> bool:
+        return bool(self._ops) and all(
+            isinstance(op, _SetAttr) and op.old == op.new
+            for op in self._ops  # type: ignore[union-attr]
+        )

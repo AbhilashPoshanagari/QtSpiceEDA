@@ -135,3 +135,51 @@ def test_load_only_reports_errors() -> None:
     assert outcome.status == OK and outcome.model is None
     assert [d.severity for d in outcome.diagnostics] == [ERROR]
     assert "IEEELineCodez.dss" in outcome.diagnostics[0].message
+
+
+# ---- GridModel runs (v0.5 designs, rule 23)
+
+
+@pytest.mark.opendss
+def test_model_run_writes_saves_and_matches_the_file_run(tmp_path: Path) -> None:
+    config = PowerFlowConfig(tolerance=1e-10, max_control_iterations=30)
+    model = GridRunner(IEEE13, solve=False).run().model
+    assert model is not None
+    script = tmp_path / "results" / "grid" / "ieee13" / "ieee13.dss"
+    runner = GridRunner(model, config, script_path=script)
+    assert runner.from_model
+    outcome = runner.run()
+    assert outcome.ok, outcome.diagnostics
+    assert script.is_file() and outcome.script_path == str(script.resolve())
+    assert script.read_text(encoding="utf-8") == outcome.script.replace("\r\n", "\n")
+    assert outcome.model is not None  # read back after the solve
+    file_run = GridRunner(IEEE13, config).run()
+    a = dict(zip(file_run.result.node_names, file_run.result.node_voltage_pu, strict=True))
+    b = dict(zip(outcome.result.node_names, outcome.result.node_voltage_pu, strict=True))
+    assert sorted(a) == sorted(b)
+    assert max(abs(float(a[n]) - float(b[n])) for n in a) <= 1e-6
+    assert outcome.result.total_losses_kw == pytest.approx(
+        file_run.result.total_losses_kw, rel=1e-3
+    )
+
+
+def test_draft_model_comes_back_as_diagnostics(tmp_path: Path) -> None:
+    """Runs with and without dss-python: the writer refuses a draft before OpenDSS."""
+    from core.grid.model import Bus, GridModel, Load, Source, Terminal
+
+    model = GridModel("d", 60.0, derive_voltage_bases=True)
+    model.buses["a"] = Bus("a", 0.0)
+    model.sources["s"] = Source("s", Terminal("a"), Terminal("a", (0, 0, 0)), 3, 12.47, 1.0,
+                                0.0, 0.1, 1.0, 0.1, 1.0)  # fmt: skip
+    model.loads["l"] = Load("l", Terminal("a"), 3, "wye", 12.47, None, 1.0, "pq")
+    outcome = GridRunner(model, script_path=tmp_path / "d.dss").run()
+    assert outcome.status == OK and outcome.result is None and outcome.script == ""
+    assert [(d.block, d.message) for d in outcome.diagnostics] == [("load.l", "kW not set")]
+    assert not (tmp_path / "d.dss").exists()
+
+
+def test_model_run_always_solves() -> None:
+    from core.grid.model import GridModel
+
+    with pytest.raises(ValueError):
+        GridRunner(GridModel("d", 60.0), solve=False)

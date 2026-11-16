@@ -122,10 +122,19 @@ class ChildProcess:
             if ready:
                 outcome = self._receive()
             elif not self._process.is_alive():
-                outcome = ChildOutcome(
-                    ERROR,
-                    error=f"{self.name} process exited with code {self._process.exitcode}",
-                )
+                # The child may have sent its message and exited between poll() and
+                # is_alive(): read what is in the pipe before calling it dead.
+                try:
+                    sent = self._conn.poll(0)
+                except (EOFError, OSError):
+                    sent = False
+                if sent:
+                    outcome = self._receive()
+                else:
+                    outcome = ChildOutcome(
+                        ERROR,
+                        error=f"{self.name} process exited with code {self._process.exitcode}",
+                    )
             # A cancel kills the process, which closes the pipe: that is not an error.
             if outcome is not None and not outcome.ok and self._cancelled.is_set():
                 outcome = ChildOutcome(CANCELLED, error="run cancelled")

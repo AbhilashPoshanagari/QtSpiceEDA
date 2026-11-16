@@ -169,6 +169,7 @@ CASES: list[tuple[str, Callable[[], c.Command]]] = [
     ("open switch", lambda: c.SetSwitchOpen("line.sw1", True)),
     ("move bus", lambda: c.MoveGlyph("bus.a", 1.5, -2.0)),
     ("move load", lambda: c.MoveGlyph("load.ld3", 4.0, 5.0)),
+    ("move selection", lambda: c.MoveGlyphs(["bus.a", "load.ld3", "line.l1"], 2.0, -1.0)),
     ("rotate bus", lambda: c.RotateGlyph("bus.c")),
     ("rotate line", lambda: c.RotateGlyph("line.l1", 3)),
     (
@@ -376,6 +377,9 @@ FAILURES: list[tuple[str, Callable[[], c.Command], str]] = [
     ("open a line", lambda: c.SetSwitchOpen("line.l1", True), c.WRONG_CLASS),
     ("move missing", lambda: c.MoveGlyph("linecode.lc3", 0, 0), c.UNKNOWN_ELEMENT),
     ("move nan", lambda: c.MoveGlyph("bus.a", math.nan, 0), c.BAD_VALUE),
+    ("move none", lambda: c.MoveGlyphs([], 1, 0), c.UNKNOWN_ELEMENT),
+    ("move some missing", lambda: c.MoveGlyphs(["bus.a", "bus.zz"], 1, 0), c.UNKNOWN_ELEMENT),
+    ("move by nan", lambda: c.MoveGlyphs(["bus.a"], math.inf, 0), c.BAD_VALUE),
     ("rotate float", lambda: c.RotateGlyph("bus.a", 0.5), c.BAD_VALUE),  # type: ignore[arg-type]
     ("not an id", lambda: c.SetProperty(None, "kw", 1.0), c.UNKNOWN_ELEMENT),  # type: ignore[arg-type]
     (
@@ -539,6 +543,30 @@ def test_move_merges_within_one_gesture_only() -> None:
     assert back.apply(design) == [] and first.merge(back)
     assert first.obsolete
     assert first.merge_id == c.MERGE_MOVE
+
+
+def test_move_selection_merges_within_one_gesture_only() -> None:
+    design = _design()
+    ids = ["bus.a", "load.ld3"]
+    ga, gl = design.diagram.bus_glyphs["a"], design.diagram.element_glyphs["load.ld3"]
+    start = [(ga.x, ga.y), (gl.x, gl.y)]
+    first = c.MoveGlyphs(ids, 1, 0, gesture=3)
+    assert first.apply(design) == [] and first.description == "Move 2 items"
+    for step in ((1, 0), (0, 2)):
+        nxt = c.MoveGlyphs(ids, *step, gesture=3)
+        assert nxt.apply(design) == [] and first.merge(nxt)
+    assert (ga.x, ga.y) == (start[0][0] + 2, start[0][1] + 2)
+    assert (gl.x, gl.y) == (start[1][0] + 2, start[1][1] + 2)
+    assert (first.dx, first.dy) == (2, 2)
+    assert not first.merge(c.MoveGlyphs(ids, 1, 1, gesture=4))
+    assert not first.merge(c.MoveGlyphs(["bus.a"], 1, 1, gesture=3))
+    assert not first.merge(c.MoveGlyph("bus.a", 1, 1, gesture=3))
+    assert first.revert(design) == []
+    assert [(ga.x, ga.y), (gl.x, gl.y)] == start
+    _assert_valid(design)
+    assert first.apply(design) == [] and (ga.x, ga.y) == (start[0][0] + 2, start[0][1] + 2)
+    back = c.MoveGlyphs(ids, -2, -2, gesture=3)
+    assert back.apply(design) == [] and first.merge(back) and first.obsolete
 
 
 def test_set_property_merges_only_with_a_merge_key() -> None:

@@ -103,7 +103,7 @@ def test_bus_675_phase_voltages(qtbot, ctl: GridController) -> None:
 def test_violations_are_from_analysis_and_highlighted(qtbot, ctl: GridController) -> None:
     open_and_run(qtbot, ctl, IEEE13)
     result = ctl.result()
-    expected = find_violations(result, ctl.config)
+    expected = find_violations(result, ctl.config, ctl.model())
     assert ctl.violation_list() == expected and expected
     assert ctl.violations.rowCount() == len(expected)
     assert ctl.summary["violationCount"] == len(expected)

@@ -59,3 +59,36 @@ def test_runs_only_once() -> None:
     with pytest.raises(RuntimeError):
         child.start()
     assert child.wait().ok  # the outcome is kept
+
+
+class _LatePipe:
+    """The parent's end of the pipe as the race sees it: the first poll() times out
+    although the child sends its message and exits right after (D6 found this)."""
+
+    def __init__(self, conn: Connection) -> None:
+        self._conn = conn
+        self._first = True
+
+    def poll(self, timeout: float = 0.0) -> bool:
+        if self._first:
+            self._first = False
+            return False
+        return self._conn.poll(timeout)
+
+    def recv(self) -> object:
+        return self._conn.recv()
+
+    def close(self) -> None:
+        self._conn.close()
+
+
+def test_message_sent_just_before_the_child_exits_is_kept() -> None:
+    child = ChildProcess(_send, ("late",), timeout=30)
+    child.start()
+    assert child.process is not None
+    child.process.join(timeout=30)  # it has sent and exited
+    assert child.process.exitcode == 0
+    child._conn = _LatePipe(child._conn)  # type: ignore[arg-type,assignment]
+    outcome = child.wait()
+    assert outcome.status == OK, outcome.error
+    assert outcome.message == ("got", "late")

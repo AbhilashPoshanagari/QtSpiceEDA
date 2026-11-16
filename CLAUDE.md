@@ -286,14 +286,14 @@ core/waveform/    layout.py expr.py plotdefs.py
 core/physical/    (v0.3 files)
 core/grid/        model.py validate.py config.py result.py analysis.py runner.py
 +                 topology.py sequence.py design_io.py
-+                 diagram/{model.py,layout.py,commands.py}
++                 diagram/{model.py,layout.py,commands.py,hittest.py}
                   engines/base.py engines/opendss/{engine.py,extract.py,writer.py,units.py}
 bridge/           (v0.4 files) + grid_diagram_controller.py
 ui/qml/           (v0.4 files) + grid/{GridDiagramEditor.qml,GridComponentLibrary.qml,
 +                 GridProperties.qml,GridResultsOverlay.qml,GridFeasibilityPanel.qml,
 +                 NewGridDesignDialog.qml} + grid/symbols/ (one SVG per model class)
 tests/core/grid/  + test_topology.py test_sequence.py test_design_io.py
-+                 diagram/{test_model.py,test_layout.py,test_commands.py}
++                 diagram/{test_model.py,test_layout.py,test_commands.py,test_hittest.py}
 + tests/bridge/test_grid_diagram_controller.py
 tests/fixtures/grid/{ieee13,ieee34,ieee123}/ + sequence_reference.json (S4 script)
 library/          README.md (user's .lib/.asy, git-ignored)

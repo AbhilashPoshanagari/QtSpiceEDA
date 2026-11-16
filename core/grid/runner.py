@@ -9,6 +9,12 @@ and sends back both (or the load diagnostics). With ``solve=False`` the child on
 loads, checks and reads back the circuit: the UI uses it when a file is opened, so
 a file with errors never gets as far as a run.
 
+A runner can also solve a GridModel (v0.5 designs, rule 23): the pickled model goes to
+the child, which writes it as a DSS script with writer.py (``OpenDSSEngine.load_model``),
+saves the script to ``script_path`` when one is given (name_results/grid/<design>/),
+solves it in its own engine and sends back the result, the solved model and the
+script text. The UI process never calls OpenDSS.
+
 ``wait()`` returns a GridRunOutcome; the timeout covers the whole run, including the
 child's start-up (about 0.5 s, mostly ``import dss``). ``cancel()`` is the Stop: it
 may be called from any thread and terminates the child at once.
@@ -27,6 +33,7 @@ from core.grid.engines.opendss.engine import OpenDSSEngine
 from core.grid.model import GridModel
 from core.grid.result import GridResult
 from core.netlist.model import ERROR as SEVERITY_ERROR
+from core.netlist.model import WARNING as SEVERITY_WARNING
 from core.physical.component import NetworkDiagnostic
 
 DEFAULT_TIMEOUT = 30.0
@@ -43,6 +50,7 @@ __all__ = [
     "GridRunner",
     "load_grid",
     "run_grid",
+    "run_model",
     "run_power_flow",
 ]
 
@@ -65,6 +73,10 @@ class GridRunOutcome:
     diagnostics: list[NetworkDiagnostic] = field(default_factory=list)
     message: str = ""
     traceback: str = ""
+    script: str = ""
+    """The DSS script a model run wrote ("" for a .dss file run)."""
+    script_path: str = ""
+    """Where that script was saved ("" when not saved)."""
 
     @property
     def ok(self) -> bool:
@@ -73,20 +85,37 @@ class GridRunOutcome:
 
 
 class GridRunner:
-    """One run of a .dss file in a child process. Create a new runner for each run."""
+    """One run of a .dss file or a GridModel in a child process. Create a new runner
+    for each run.
+
+    ``source`` is a .dss path or a GridModel. A model is always solved (``solve`` must
+    be True); ``script_path`` is where the child saves the script it writes for it.
+    """
 
     def __init__(
         self,
-        dss_path: str | Path,
+        source: str | Path | GridModel,
         config: PowerFlowConfig | None = None,
         timeout: float = DEFAULT_TIMEOUT,
         solve: bool = True,
+        script_path: str | Path | None = None,
     ) -> None:
-        path = str(Path(dss_path).expanduser().resolve())
+        config = config or PowerFlowConfig()
         self.solve = solve
-        self._child = ChildProcess(
-            _child_main, (path, config or PowerFlowConfig(), solve), timeout, name="grid runner"
-        )
+        self.from_model = isinstance(source, GridModel)
+        if self.from_model:
+            if not solve:
+                raise ValueError("a GridModel run always solves")
+            script = "" if script_path is None else str(Path(script_path).expanduser().resolve())
+            self._child = ChildProcess(
+                _child_model_main, (source, config, script), timeout, name="grid runner"
+            )
+        else:
+            assert not isinstance(source, GridModel)
+            path = str(Path(source).expanduser().resolve())
+            self._child = ChildProcess(
+                _child_main, (path, config, solve), timeout, name="grid runner"
+            )
         self._outcome: GridRunOutcome | None = None
 
     @property
@@ -111,9 +140,14 @@ class GridRunner:
         else:
             kind, *payload = child.message
             if kind == OK:
-                result, model, diagnostics = payload
+                result, model, diagnostics, script, script_path = payload
                 outcome = GridRunOutcome(
-                    OK, result=result, model=model, diagnostics=list(diagnostics)
+                    OK,
+                    result=result,
+                    model=model,
+                    diagnostics=list(diagnostics),
+                    script=script,
+                    script_path=script_path,
                 )
             else:
                 message, trace = payload
@@ -186,6 +220,42 @@ def load_grid(dss_path: str | Path) -> tuple[GridModel | None, list[NetworkDiagn
         engine.close()
 
 
+def run_model(
+    model: GridModel, config: PowerFlowConfig, script_path: str | Path | None = None
+) -> tuple[GridResult | None, GridModel | None, list[NetworkDiagnostic], str, str]:
+    """Write ``model`` as a DSS script, solve it and read it back in the current
+    process (the child's work for a design).
+
+    Returns (result, model read back after the solve, diagnostics, script, saved
+    path). result and model are None when the model could not be written or the
+    engine refused the script (the diagnostics say why). The script is saved to
+    ``script_path`` whenever one was written; a failed save is a warning.
+    """
+    engine = OpenDSSEngine()
+    try:
+        diagnostics = engine.load_model(model)
+        script = engine.script
+        saved = ""
+        if script and script_path:
+            target = Path(script_path)
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(script, encoding="utf-8", newline="\n")
+                saved = str(target)
+            except OSError as err:
+                diagnostics.append(
+                    NetworkDiagnostic("circuit", SEVERITY_WARNING, f"script not saved: {err}")
+                )
+        if not engine.loaded or any(d.severity == SEVERITY_ERROR for d in diagnostics):
+            return None, None, diagnostics, script, saved
+        result = engine.run(config)
+        back, found = engine.extract_model()
+        extra = [d for d in found if d.severity != SEVERITY_ERROR]
+        return result, back, diagnostics + result.diagnostics + extra, script, saved
+    finally:
+        engine.close()
+
+
 # ---- child process
 
 
@@ -196,9 +266,24 @@ def _child_main(conn: Connection, dss_path: str, config: PowerFlowConfig, solve:
         else:
             result = None
             model, diagnostics = load_grid(dss_path)
-        conn.send((OK, result, model, diagnostics))
+        conn.send((OK, result, model, diagnostics, "", ""))
     except BaseException as err:  # everything goes back to the parent
-        message = "".join(traceback.format_exception_only(err)).strip()
-        conn.send((ERROR, message, traceback.format_exc()))
+        _send_error(conn, err)
     finally:
         conn.close()
+
+
+def _child_model_main(
+    conn: Connection, model: GridModel, config: PowerFlowConfig, script_path: str
+) -> None:
+    try:
+        conn.send((OK, *run_model(model, config, script_path or None)))
+    except BaseException as err:
+        _send_error(conn, err)
+    finally:
+        conn.close()
+
+
+def _send_error(conn: Connection, err: BaseException) -> None:
+    message = "".join(traceback.format_exception_only(err)).strip()
+    conn.send((ERROR, message, traceback.format_exc()))

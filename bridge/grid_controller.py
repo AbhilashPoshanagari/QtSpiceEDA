@@ -15,11 +15,21 @@ QML uses it as ``import QtSpice`` / ``GridController.openFile(url)``.
   Violations are computed by core/grid/analysis.py from the PowerFlowConfig limits
   (rule 19), never here and never in QML.
 - The voltage profile goes to the waveform window as a SimulationResult
-  (``GridResult.to_simulation_result``, rule 7), with two flat limit traces.
+  (``GridResult.to_simulation_result``, rule 7), with two flat limit traces
+  (``show_profile``, also used for the designer's runs).
+- Results overlay (D8): ``overlay`` (status, value and tooltip text per bus and
+  element id, from analysis.results_overlay), ``overlayPaths`` (the branches of the
+  single-line view in file coordinates, one SVG path per status and width step) and
+  ``overlayBuses``; QML only maps a status to a colour.
 
 The project (G7, ProjectManager.attachGrid) stores ``filePath`` and ``config``;
 ``set_config`` replaces the settings and limits (``configChanged``) and recomputes the
 violations of a result already shown; ``clear`` forgets the open file.
+
+``runModel(model)`` (v0.5, rule 23) solves a GridModel from the Grid Network Designer
+(GridDiagramController) in a GridRunner child, which writes the DSS script with
+writer.py; the outcome comes back as ``modelRunFinished`` and leaves the open file, its
+result and the tables of this view untouched. One run (file or model) at a time.
 
 ``available`` is OpenDSSEngine.available(), read once: without dss-python the grid
 menu entries and the Grid tab are hidden and every slot refuses politely.
@@ -50,13 +60,16 @@ from PySide6.QtCore import (
 from PySide6.QtQml import QmlElement, QmlSingleton
 
 from core.grid.analysis import (
+    OFF,
     OVERLOAD,
     OVERVOLTAGE,
     PHASE_LETTERS,
     UNDERVOLTAGE,
+    ResultsOverlay,
     Violation,
     find_violations,
     loss_summary,
+    results_overlay,
     voltage_profile,
 )
 from core.grid.config import PowerFlowConfig
@@ -102,6 +115,69 @@ def _split_node(node: str) -> tuple[str, int | None]:
     if not bus or not tail.isdigit():
         return node, None
     return bus, int(tail)
+
+
+# ---- results overlay (D8), shared with GridDiagramController
+
+_PATH_ORDER = {OFF: 0, "none": 1, "pass": 2, "warn": 3, "fail": 4}
+"""Draw order of the overlay paths: the worst status on top."""
+
+
+def _num(value: float | None) -> float:
+    return math.nan if value is None else float(value)
+
+
+def overlay_map(overlay: ResultsOverlay) -> dict[str, dict[str, Any]]:
+    """{id: {status, value, limit, unit, ratio, weight, text}} for QML (NaN = none)."""
+    return {
+        key: {
+            "status": item.status,
+            "value": _num(item.value),
+            "limit": _num(item.limit),
+            "unit": item.unit,
+            "ratio": _num(item.ratio),
+            "weight": item.weight,
+            "text": item.text,
+        }
+        for key, item in overlay.items.items()
+    }
+
+
+def overlay_paths(
+    segments: list[tuple[str, float, float, float, float]], overlay: ResultsOverlay
+) -> list[dict[str, Any]]:
+    """The segments (element id, x1, y1, x2, y2) of the elements in ``overlay`` as one
+    SVG path per (status, weight): [{key, status, weight, path}], in drawing order
+    (de-energized and unchecked first, failures last)."""
+    parts: dict[tuple[str, int], list[str]] = {}
+    for element, x1, y1, x2, y2 in segments:
+        item = overlay.items.get(element)
+        if item is None:
+            continue
+        parts.setdefault((item.status, item.weight), []).append(
+            f"M{x1:.6g} {y1:.6g}L{x2:.6g} {y2:.6g}"
+        )
+    keys = sorted(parts, key=lambda k: (_PATH_ORDER.get(k[0], 0), k[1]))
+    return [
+        {
+            "key": f"{status}_{weight}",
+            "status": status,
+            "weight": weight,
+            "path": "".join(parts[(status, weight)]),
+        }  # fmt: skip
+        for status, weight in keys
+    ]
+
+
+def overlay_limits(config: PowerFlowConfig) -> dict[str, float]:
+    """The limits the overlay was computed with, for its legend."""
+    return {
+        "voltageMinPu": config.voltage_min_pu,
+        "voltageMaxPu": config.voltage_max_pu,
+        "lineLimitPct": config.line_loading_limit_pct,
+        "transformerLimitPct": config.transformer_loading_limit_pct,
+        "warnPct": config.warn_fraction * 100.0,
+    }
 
 
 # ---- table models
@@ -355,6 +431,7 @@ class GridController(QObject):
     configChanged = Signal()  # new settings or limits (set_config)
     resultReady = Signal()
     loadFailed = Signal()
+    modelRunFinished = Signal(object)  # GridRunOutcome of a runModel run
     _done = Signal(object)  # (runner, outcome), emitted from the wait thread
 
     def __init__(self, parent: QObject | None = None) -> None:
@@ -371,6 +448,7 @@ class GridController(QObject):
         self._result: GridResult | None = None
         self._violations: list[Violation] = []
         self._losses: list[dict[str, Any]] = []
+        self._overlay = ResultsOverlay()
         self._runner: GridRunner | None = None
         self._thread: threading.Thread | None = None
         self._status = ""
@@ -460,6 +538,29 @@ class GridController(QObject):
     def _get_geometry(self) -> dict[str, Any]:
         return self._geometry()
 
+    def _get_overlay(self) -> dict[str, dict[str, Any]]:
+        return overlay_map(self._overlay)
+
+    def _get_overlay_paths(self) -> list[dict[str, Any]]:
+        if not self._overlay.solved:
+            return []
+        segs = [(b["id"], b["x1"], b["y1"], b["x2"], b["y2"]) for b in self._geometry()["branches"]]
+        return overlay_paths(segs, self._overlay)
+
+    def _get_overlay_buses(self) -> list[dict[str, Any]]:
+        if not self._overlay.solved:
+            return []
+        out = []
+        for b in self._geometry()["buses"]:
+            item = self._overlay.items.get(f"bus.{b['name']}")
+            if item is not None:
+                out.append({"id": f"bus.{b['name']}", "status": item.status, "x1": b["x"],
+                            "y1": b["y"], "x2": b["x"], "y2": b["y"]})  # fmt: skip
+        return out
+
+    def _get_overlay_limits(self) -> dict[str, float]:
+        return overlay_limits(self.config)
+
     def _get_selected_bus(self) -> str:
         return self._selected_bus
 
@@ -494,6 +595,10 @@ class GridController(QObject):
     hasResult = Property(bool, _get_has_result, notify=resultChanged)  # noqa: N815
     summary = Property("QVariantMap", _get_summary, notify=resultChanged)
     geometry = Property("QVariantMap", _get_geometry, notify=resultChanged)
+    overlay = Property("QVariantMap", _get_overlay, notify=resultChanged)
+    overlayPaths = Property("QVariantList", _get_overlay_paths, notify=resultChanged)  # noqa: N815
+    overlayBuses = Property("QVariantList", _get_overlay_buses, notify=resultChanged)  # noqa: N815
+    overlayLimits = Property("QVariantMap", _get_overlay_limits, notify=resultChanged)  # noqa: N815
     selectedBus = Property(str, _get_selected_bus, notify=selectedBusChanged)  # noqa: N815
     selectedVoltages = Property(  # noqa: N815
         "QVariantList", _get_selected_voltages, notify=selectedBusChanged
@@ -605,6 +710,26 @@ class GridController(QObject):
         self._set_status("Running…")
         return True
 
+    def runModel(  # noqa: N802 - named as the .dss path's openFile/run
+        self,
+        model: GridModel,
+        config: PowerFlowConfig | None = None,
+        script_path: str | Path | None = None,
+    ) -> str:
+        """Solve ``model`` in a GridRunner child (rule 23), which writes its DSS script
+        and saves it to ``script_path`` when given. Returns "" when the run started,
+        else why not. The outcome is sent with ``modelRunFinished``."""
+        if not self._get_available():
+            return "dss-python is not installed"
+        if self._runner is not None:
+            return "a grid run is in progress"
+        config = config or self.config
+        problems = config.problems()
+        if problems:
+            return f"power-flow settings: {problems[0]}"
+        self._start(GridRunner(model, config, **self._timeout(), script_path=script_path))
+        return ""
+
     @Slot()
     def stop(self) -> None:
         if self._runner is not None:
@@ -671,6 +796,10 @@ class GridController(QObject):
         if runner is not self._runner:
             return
         self._runner = None
+        if runner.from_model:
+            self.runningChanged.emit()
+            self.modelRunFinished.emit(outcome)
+            return
         if runner.solve:
             self._run_done(outcome)
         else:
@@ -759,10 +888,12 @@ class GridController(QObject):
         self._result = result
         self._violations = []
         self._losses = []
+        self._overlay = ResultsOverlay()
         self.profile = None
         if result is not None and result.converged:
-            self._violations = find_violations(result, self.config)
+            self._violations = find_violations(result, self.config, self._model)
             if self._model is not None:
+                self._overlay = results_overlay(self._model, result, self.config)
                 self._losses = [
                     {
                         "kind": row.element_class,
@@ -772,22 +903,30 @@ class GridController(QObject):
                     }
                     for row in loss_summary(self._model, result)
                 ]
-                self._show_profile(self._model, result)
+                self._log_diagnostics(self.show_profile(self._model, result))
         self._fill_tables()
         self.resultChanged.emit()
         self.selectedBusChanged.emit()
 
-    def _show_profile(self, model: GridModel, result: GridResult) -> None:
+    def show_profile(
+        self, model: GridModel, result: GridResult, config: PowerFlowConfig | None = None
+    ) -> list[NetworkDiagnostic]:
+        """Hand the voltage profile of ``result`` (the solve of ``model``) to the
+        waveform window as a SimulationResult (rule 7), with flat traces at the
+        voltage limits of ``config`` (default: this view's); kept in ``profile``.
+        Returns the profile's diagnostics (unreachable buses) for the caller's
+        Console."""
+        config = config or self.config
         profile = voltage_profile(model, result)
-        self._log_diagnostics(profile.diagnostics)
         sim = result.to_simulation_result(profile)
         n = len(sim.vectors[sim.axis])
-        sim.vectors[LIMIT_LOW] = np.full(n, self.config.voltage_min_pu)
-        sim.vectors[LIMIT_HIGH] = np.full(n, self.config.voltage_max_pu)
+        sim.vectors[LIMIT_LOW] = np.full(n, config.voltage_min_pu)
+        sim.vectors[LIMIT_HIGH] = np.full(n, config.voltage_max_pu)
         sim.units[LIMIT_LOW] = sim.units[LIMIT_HIGH] = "pu"
         self.profile = sim
         if self._waveforms is not None and n:
             self._waveforms.set_result(sim)  # type: ignore[attr-defined]
+        return profile.diagnostics
 
     def _fill_tables(self) -> None:
         r = self._result
