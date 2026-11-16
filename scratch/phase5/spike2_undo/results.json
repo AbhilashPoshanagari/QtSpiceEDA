@@ -1,0 +1,205 @@
+{
+ "about": {
+  "made_by": "scratch/phase5/spike2_undo/bench.py",
+  "python": "3.12.2",
+  "pyside6": "6.8.3",
+  "platform": "Windows-11-10.0.26100-SP0",
+  "processor": "Intel64 Family 6 Model 140 Stepping 1, GenuineIntel",
+  "seed": 2026
+ },
+ "load_s": 0.385,
+ "model": {
+  "counts": {
+   "buses": 132,
+   "sources": 1,
+   "linecodes": 12,
+   "lines": 118,
+   "switches": 8,
+   "transformers": 8,
+   "regulators": 7,
+   "loads": 91,
+   "capacitors": 4,
+   "pvsystems": 0
+  },
+  "bus_glyphs": 132,
+  "element_glyphs": 230,
+  "pickle_bytes": 76081,
+  "objects_bytes_tracemalloc": 399200,
+  "pickle_dumps_ms": 5.6184,
+  "pickle_loads_ms": 2.143,
+  "deepcopy_ms": 14.6965,
+  "deepcopy_plus_eq_ms": 14.1008
+ },
+ "core": [
+  {
+   "mode": "delta",
+   "commands": 1000,
+   "kinds": {
+    "add_load": 254,
+    "set_property": 308,
+    "drag": 367,
+    "delete_bus": 71
+   },
+   "apply_total_ms": 5.3003,
+   "apply_median_ms": 0.0021,
+   "apply_p95_ms": 0.0287,
+   "apply_max_ms": 0.1344,
+   "apply_median_by_kind_ms": {
+    "add_load": 0.0028,
+    "set_property": 0.0024,
+    "drag": 0.0009,
+    "delete_bus": 0.0347
+   },
+   "undo_all_ms": 16.0016,
+   "redo_all_ms": 8.0925,
+   "undo_all_equals_start": true,
+   "redo_all_equals_end": true,
+   "retained_by_commands_bytes": 315189,
+   "retained_per_command_bytes": 315,
+   "end_counts": {
+    "buses": 61,
+    "sources": 1,
+    "linecodes": 12,
+    "lines": 31,
+    "switches": 1,
+    "transformers": 1,
+    "regulators": 1,
+    "loads": 208,
+    "capacitors": 2,
+    "pvsystems": 0
+   }
+  },
+  {
+   "mode": "deepcopy",
+   "commands": 1000,
+   "kinds": {
+    "add_load": 254,
+    "set_property": 308,
+    "drag": 367,
+    "delete_bus": 71
+   },
+   "apply_total_ms": 32990.5717,
+   "apply_median_ms": 28.903,
+   "apply_p95_ms": 50.9682,
+   "apply_max_ms": 488.9173,
+   "apply_median_by_kind_ms": {
+    "add_load": 28.5527,
+    "set_property": 29.4412,
+    "drag": 28.7818,
+    "delete_bus": 29.6203
+   },
+   "undo_all_ms": 15459.8109,
+   "redo_all_ms": 17622.3788,
+   "undo_all_equals_start": true,
+   "redo_all_equals_end": true,
+   "retained_by_commands_bytes": 658031350,
+   "retained_per_command_bytes": 658031,
+   "end_counts": {
+    "buses": 61,
+    "sources": 1,
+    "linecodes": 12,
+    "lines": 31,
+    "switches": 1,
+    "transformers": 1,
+    "regulators": 1,
+    "loads": 208,
+    "capacitors": 2,
+    "pvsystems": 0
+   }
+  },
+  {
+   "mode": "pickle",
+   "commands": 1000,
+   "kinds": {
+    "add_load": 254,
+    "set_property": 308,
+    "drag": 367,
+    "delete_bus": 71
+   },
+   "apply_total_ms": 10553.2372,
+   "apply_median_ms": 10.2041,
+   "apply_p95_ms": 15.1295,
+   "apply_max_ms": 27.37,
+   "apply_median_by_kind_ms": {
+    "add_load": 10.4909,
+    "set_property": 9.8094,
+    "drag": 10.4862,
+    "delete_bus": 9.7977
+   },
+   "undo_all_ms": 4820.0672,
+   "redo_all_ms": 7961.7178,
+   "undo_all_equals_start": true,
+   "redo_all_equals_end": true,
+   "retained_by_commands_bytes": 161471244,
+   "retained_per_command_bytes": 161471,
+   "end_counts": {
+    "buses": 61,
+    "sources": 1,
+    "linecodes": 12,
+    "lines": 31,
+    "switches": 1,
+    "transformers": 1,
+    "regulators": 1,
+    "loads": 208,
+    "capacitors": 2,
+    "pvsystems": 0
+   }
+  },
+  {
+   "mode": "deepcopy (gc off)",
+   "apply_total_ms": 66554.5373,
+   "apply_median_ms": 64.4172,
+   "undo_all_ms": 32565.8496,
+   "redo_all_ms": 21763.9274,
+   "undo_all_equals_start": true,
+   "redo_all_equals_end": true
+  }
+ ],
+ "qt": {
+  "drag200_delta": {
+   "undo_steps": 1,
+   "push_total_ms": 3.5359,
+   "push_median_ms": 0.0152,
+   "push_max_ms": 0.398,
+   "undo_ms": 0.0152,
+   "undo_equals_start": true
+  },
+  "drag200_pickle": {
+   "undo_steps": 1,
+   "push_total_ms": 641.2814,
+   "push_median_ms": 2.1168,
+   "push_max_ms": 25.0689,
+   "undo_ms": 1.0954,
+   "undo_equals_start": true
+  },
+  "delete_bus": {
+   "bus": "160r",
+   "children": 8,
+   "compound": {
+    "push_median_ms": 0.1281,
+    "undo_median_ms": 0.2215,
+    "redo_median_ms": 0.0915,
+    "exact_and_one_step": true
+   },
+   "macro": {
+    "push_median_ms": 0.1646,
+    "undo_median_ms": 0.2117,
+    "redo_median_ms": 0.078,
+    "exact_and_one_step": true
+   }
+  },
+  "qundostack_1000_delta": {
+   "actions": 1000,
+   "pushes": 36821,
+   "undo_steps": 1000,
+   "push_total_ms": 342.4505,
+   "push_mean_ms": 0.0093,
+   "undo_all_ms": 8.849,
+   "redo_all_ms": 5.3602,
+   "undo_all_equals_start": true,
+   "redo_all_equals_end": true,
+   "consistent": true,
+   "retained_by_stack_bytes": 568959
+  }
+ }
+}
