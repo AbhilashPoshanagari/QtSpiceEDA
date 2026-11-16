@@ -34,7 +34,7 @@ def test_main_window_loads(qapp: object) -> None:
 
     left = window.findChild(QObject, "leftTabs")
     bottom = window.findChild(QObject, "bottomTabs")
-    assert left.property("count") == 4  # Netlist, Blocks, Schematic, Grid (G6)
+    assert left.property("count") == 5  # Netlist, Blocks, Schematic, Grid (G6), Designer
     assert bottom.property("count") == 3
     window.close()
     engine.deleteLater()

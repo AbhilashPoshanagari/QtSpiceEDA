@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" fill="none" stroke="#2b2b2b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <!-- QtSpice grid symbol: PV system (a cell with a sun arrow) -->
+  <line x1="16" y1="0" x2="16" y2="8"/>
+  <rect x="6" y="8" width="20" height="20"/>
+  <line x1="6" y1="28" x2="26" y2="8"/>
+  <path d="M12 13 L12 17 M10 15 L14 15" stroke-width="1.5"/>
+  <path d="M19 24 L23 24" stroke-width="1.5"/>
+</svg>

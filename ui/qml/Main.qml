@@ -102,9 +102,156 @@ ApplicationWindow {
         if (ProjectManager.modified && !quitting) {
             close.accepted = false
             whenSaved(() => { window.quitting = true; window.close() })
+        } else if (designer.modified && !quitting) {
+            close.accepted = false
+            whenDesignDiscarded(() => { window.quitting = true; window.close() })
         } else {
             detachedWindow.close()
+            designer.shutdown()
         }
+    }
+
+    // ---- Grid Network Designer (v0.5, D6): one design, edited in the Designer tab.
+    // Not in the project file yet (D9): unsaved changes are asked about here.
+    GridDiagramController {
+        id: designer
+        objectName: "gridDesigner"
+    }
+    readonly property bool designerShown: leftTabs.currentIndex === 4
+    property var pendingDesignAction: null
+
+    // Run `action` now, or after asking whether to drop the design's unsaved changes.
+    function whenDesignDiscarded(action) {
+        if (!designer.modified) {
+            action()
+            return
+        }
+        pendingDesignAction = action
+        discardDesignDialog.open()
+    }
+    function showDesigner() {
+        leftTabs.currentIndex = 4
+        window.sidePanelShown = true
+    }
+    function saveDesign() {
+        if (designer.filePath === "")
+            designSaveDialog.open()
+        else
+            designer.save()
+    }
+    function editGridAsDesign() {
+        whenDesignDiscarded(() => {
+            if (designer.editGridAsDesign())
+                window.showDesigner()
+            else
+                window.showBottom(2)
+        })
+    }
+
+    Connections {
+        target: designer
+        function onDesignOpened() { window.showDesigner() }
+        function onOpenFailed() { window.showBottom(2) }
+        function onResultReady() { window.showBottom(2) }
+    }
+
+    NewGridDesignDialog {
+        id: newDesignDialog
+        designer: designer
+        onAccepted: {
+            if (designer.hasDesign)
+                window.showDesigner()
+        }
+    }
+    Dialog {
+        id: discardDesignDialog
+        objectName: "discardDesignDialog"
+        title: qsTr("Unsaved design")
+        modal: true
+        anchors.centerIn: Overlay.overlay
+        standardButtons: Dialog.Save | Dialog.Discard | Dialog.Cancel
+        width: 420
+        Label {
+            width: parent.width
+            wrapMode: Text.WordWrap
+            text: qsTr("The grid design %1 has unsaved changes.").arg(designer.designName)
+        }
+        onAccepted: {   // Save
+            const action = window.pendingDesignAction
+            window.pendingDesignAction = null
+            if (designer.filePath === "") {
+                designSaveDialog.then = action
+                designSaveDialog.open()
+            } else if (designer.save() && action) {
+                action()
+            }
+        }
+        onDiscarded: {
+            const action = window.pendingDesignAction
+            window.pendingDesignAction = null
+            close()
+            if (action)
+                action()
+        }
+        onRejected: window.pendingDesignAction = null
+    }
+    FileDialog {
+        id: designOpenDssDialog
+        objectName: "designOpenDssDialog"
+        title: qsTr("Open OpenDSS feeder as a design")
+        nameFilters: [qsTr("OpenDSS files (*.dss *.DSS)"), qsTr("All files (*)")]
+        onAccepted: designer.openDssAsDesign(selectedFile)
+    }
+    FileDialog {
+        id: designOpenDialog
+        objectName: "designOpenDialog"
+        title: qsTr("Open grid design")
+        nameFilters: [qsTr("Grid designs (*.qgrid)"), qsTr("All files (*)")]
+        onAccepted: designer.load(selectedFile)
+    }
+    FileDialog {
+        id: designSaveDialog
+        objectName: "designSaveDialog"
+        property var then: null
+        title: qsTr("Save grid design")
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "qgrid"
+        nameFilters: [qsTr("Grid designs (*.qgrid)")]
+        onAccepted: {
+            const action = then
+            then = null
+            if (designer.save(selectedFile) && action)
+                action()
+        }
+        onRejected: then = null
+    }
+    FileDialog {
+        id: designExportDialog
+        objectName: "designExportDialog"
+        title: qsTr("Export the design as an OpenDSS script")
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "dss"
+        nameFilters: [qsTr("OpenDSS files (*.dss)")]
+        onAccepted: {
+            if (!designer.exportDss(selectedFile))
+                window.showBottom(2)
+        }
+    }
+    Action {
+        id: designUndo
+        text: designer.canUndo && window.designerShown ? qsTr("&Undo %1").arg(designer.undoText)
+                                                       : qsTr("&Undo")
+        shortcut: StandardKey.Undo
+        enabled: window.designerShown && designer.canUndo
+        onTriggered: designer.undo()
+    }
+    Action {
+        id: designRedo
+        text: designer.canRedo && window.designerShown ? qsTr("&Redo %1").arg(designer.redoText)
+                                                       : qsTr("&Redo")
+        shortcut: "Ctrl+Y"
+        enabled: window.designerShown && designer.canRedo
+        onTriggered: designer.redo()
     }
 
     // ---- projects (F7)
@@ -442,6 +589,42 @@ ApplicationWindow {
                 height: GridController.available ? implicitHeight : 0
                 onTriggered: gridOpenDialog.open()
             }
+            MenuSeparator {}
+            MenuItem {
+                objectName: "newGridDesignMenu"
+                text: qsTr("New Grid &Design…")
+                onTriggered: window.whenDesignDiscarded(() => newDesignDialog.open())
+            }
+            MenuItem {
+                objectName: "openDssAsDesignMenu"
+                text: qsTr("Open .dss as Desi&gn…")
+                enabled: designer.available && !designer.busy
+                onTriggered: window.whenDesignDiscarded(() => designOpenDssDialog.open())
+            }
+            MenuItem {
+                objectName: "openDesignMenu"
+                text: qsTr("Open Design (.q&grid)…")
+                onTriggered: window.whenDesignDiscarded(() => designOpenDialog.open())
+            }
+            MenuItem {
+                objectName: "saveDesignMenu"
+                text: qsTr("Save Desig&n")
+                enabled: designer.hasDesign
+                onTriggered: window.saveDesign()
+            }
+            MenuItem {
+                objectName: "saveDesignAsMenu"
+                text: qsTr("Save Design As…")
+                enabled: designer.hasDesign
+                onTriggered: designSaveDialog.open()
+            }
+            MenuItem {
+                objectName: "exportDssMenu"
+                text: qsTr("E&xport .dss…")
+                enabled: designer.hasDesign
+                onTriggered: designExportDialog.open()
+            }
+            MenuSeparator {}
             Menu {
                 id: recentMenu
                 title: qsTr("Open &Recent")
@@ -467,6 +650,33 @@ ApplicationWindow {
             MenuItem { text: qsTr("Save &As…"); onTriggered: window.saveAs(null) }
             MenuSeparator {}
             MenuItem { text: qsTr("&Quit"); onTriggered: window.close() }
+        }
+        Menu {
+            title: qsTr("&Edit")
+            MenuItem { objectName: "designUndoMenu"; action: designUndo }
+            MenuItem { objectName: "designRedoMenu"; action: designRedo }
+        }
+        Menu {
+            title: qsTr("&Grid")
+            MenuItem {
+                objectName: "runPowerFlowMenu"
+                text: qsTr("&Run Power Flow")
+                enabled: designer.canRun
+                onTriggered: {
+                    window.showDesigner()
+                    designer.runPowerFlow()
+                    window.showBottom(2)
+                }
+            }
+            MenuItem {
+                text: qsTr("Why can't I run?")
+                visible: designer.hasDesign && !designer.canRun
+                height: visible ? implicitHeight : 0
+                onTriggered: {
+                    designer.runPowerFlow()  // refuses and says why (status and Console)
+                    window.showBottom(2)
+                }
+            }
         }
         Menu {
             title: qsTr("&Tools")
@@ -516,6 +726,11 @@ ApplicationWindow {
     }
 
     function runSimulation() {
+        if (designerShown) {
+            designer.runPowerFlow()
+            window.showBottom(2)
+            return
+        }
         if (gridShown) {
             GridController.run()
             window.showBottom(2)  // Console while it runs, or why it did not start
@@ -580,37 +795,42 @@ ApplicationWindow {
             ToolButton {
                 objectName: "checkButton"
                 text: qsTr("Check")
-                enabled: !window.gridShown
+                enabled: !window.gridShown && !window.designerShown
                 onClicked: window.schematicShown ? SchematicController.check() : netlistEditor.check()
             }
             ToolButton {
                 objectName: "runButton"
                 text: qsTr("Run")
-                enabled: window.gridShown ? GridController.canRun : !Simulator.running
+                enabled: window.designerShown ? designer.canRun
+                         : window.gridShown ? GridController.canRun : !Simulator.running
                 onClicked: window.runSimulation()
             }
             ToolButton {
                 objectName: "stopButton"
                 text: qsTr("Stop")
-                enabled: window.gridShown ? GridController.running : Simulator.running
-                onClicked: window.gridShown ? GridController.stop() : Simulator.stop()
+                enabled: window.designerShown ? designer.busy
+                         : window.gridShown ? GridController.running : Simulator.running
+                onClicked: window.designerShown ? designer.stop()
+                           : window.gridShown ? GridController.stop() : Simulator.stop()
             }
             ProgressBar {
                 objectName: "runProgress"
                 Layout.preferredWidth: 120
-                visible: window.gridShown ? GridController.running : Simulator.running
+                visible: window.designerShown ? designer.busy
+                         : window.gridShown ? GridController.running : Simulator.running
                 from: 0
                 to: 100
-                value: window.gridShown ? 0 : Simulator.progress
-                indeterminate: window.gridShown || Simulator.progress <= 0
+                value: window.gridShown || window.designerShown ? 0 : Simulator.progress
+                indeterminate: window.gridShown || window.designerShown || Simulator.progress <= 0
             }
             Label {
                 objectName: "runStatus"
                 Layout.fillWidth: true
                 leftPadding: 8
                 elide: Text.ElideRight
-                readonly property string status: window.gridShown ? GridController.statusText
-                                                                  : Simulator.statusText
+                readonly property string status: window.designerShown ? designer.statusText
+                                                 : window.gridShown ? GridController.statusText
+                                                                    : Simulator.statusText
                 text: status
                 color: status.startsWith("Failed") || status.startsWith("Not started")
                        || status.startsWith("Not opened") ? "#d73a49" : palette.windowText
@@ -676,7 +896,8 @@ ApplicationWindow {
                         ToolTip.text: qsTr("Show the side panel (Ctrl+B)")
                     }
                     Repeater {
-                        model: [qsTr("Netlist"), qsTr("Blocks"), qsTr("Schematic"), qsTr("Grid")]
+                        model: [qsTr("Netlist"), qsTr("Blocks"), qsTr("Schematic"), qsTr("Grid"),
+                                qsTr("Designer")]
                         delegate: ToolButton {
                             id: stripButton
                             required property string modelData
@@ -729,6 +950,10 @@ ApplicationWindow {
                                 text: qsTr("Grid")
                                 visible: GridController.available
                                 width: GridController.available ? implicitWidth : 0
+                            }
+                            TabButton {
+                                objectName: "designerTab"
+                                text: qsTr("Designer")
                             }
                         }
                         ToolButton {
@@ -797,6 +1022,20 @@ ApplicationWindow {
                             onOpenRequested: gridOpenDialog.open()
                             onViolationsRequested: gridResults.currentIndex = 2
                         }
+                        SplitView {
+                            orientation: Qt.Vertical
+                            GridComponentLibrary {
+                                designer: designer
+                                SplitView.preferredHeight: 330
+                                SplitView.minimumHeight: 160
+                                onActivated: kind => designEditor.startPlace(kind)
+                            }
+                            GridProperties {
+                                designer: designer
+                                SplitView.fillHeight: true
+                                SplitView.minimumHeight: 120
+                            }
+                        }
                     }
                 }
 
@@ -828,11 +1067,31 @@ ApplicationWindow {
                         GridView {
                             SplitView.fillHeight: true
                             SplitView.minimumHeight: 120
+                            onEditAsDesignRequested: window.editGridAsDesign()
                         }
                         GridResultsTable {
                             id: gridResults
                             SplitView.preferredHeight: 260
                             SplitView.minimumHeight: 100
+                        }
+                    }
+                    SplitView {
+                        orientation: Qt.Vertical
+                        GridDiagramEditor {
+                            id: designEditor
+                            SplitView.fillHeight: true
+                            SplitView.minimumHeight: 200
+                            designer: designer
+                            onNewDesignRequested: window.whenDesignDiscarded(() => newDesignDialog.open())
+                            onOpenDssRequested: window.whenDesignDiscarded(() => designOpenDssDialog.open())
+                            onConsoleRequested: window.showBottom(2)
+                        }
+                        // D8: Level 1 + Level 2 of the last run; a row selects and centres
+                        GridFeasibilityPanel {
+                            designer: designer
+                            SplitView.preferredHeight: 220
+                            SplitView.minimumHeight: 90
+                            onElementActivated: id => designEditor.focusOn(id)
                         }
                     }
                 }
@@ -918,7 +1177,7 @@ ApplicationWindow {
                     currentIndex: bottomTabs.currentIndex
                     WaveformView {}
                     DeckView {}
-                    ConsoleView {}
+                    ConsoleView { designer: designer }
                 }
             }
         }

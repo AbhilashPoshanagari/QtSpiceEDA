@@ -12,7 +12,8 @@ ScrollView {
     id: root
     objectName: "consoleView"
 
-    property string source: "simulator"  // or "diagram", "grid"
+    property string source: "simulator"  // or "diagram", "grid", "designer"
+    property var designer: null  // the Grid Network Designer (v0.5), if there is one
 
     Connections {
         target: Simulator
@@ -33,6 +34,15 @@ ScrollView {
         }
     }
 
+    Connections {
+        target: root.designer
+        ignoreUnknownSignals: true
+        function onConsoleTextChanged() {
+            if (root.designer.consoleText !== "")
+                root.source = "designer"
+        }
+    }
+
     TextArea {
         id: console_
         objectName: "consoleText"
@@ -41,7 +51,8 @@ ScrollView {
         wrapMode: TextEdit.NoWrap
         font.family: Qt.platform.os === "windows" ? "Consolas" : "monospace"
         font.pointSize: 9
-        text: root.source === "diagram" ? DiagramController.consoleText
+        text: root.source === "designer" && root.designer ? root.designer.consoleText
+              : root.source === "diagram" ? DiagramController.consoleText
               : root.source === "grid" ? GridController.consoleText : Simulator.consoleText
         placeholderText: Simulator.available
                          ? qsTr("ngspice output appears here.")

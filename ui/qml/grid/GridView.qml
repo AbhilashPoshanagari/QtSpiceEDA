@@ -5,16 +5,20 @@ import QtQuick.Layouts
 import QtSpice
 
 // Read-only single-line view of the open feeder (G6), drawn from the bus coordinates
-// in GridController.geometry. Buses are coloured by their lowest phase voltage in pu,
-// lines over their loading limit are drawn thick and red, open switches are drawn
-// open. Click a bus to see its phase voltages, hover it for a quick readout; wheel or
+// in GridController.geometry. Buses are coloured by their status from the results
+// overlay (D8: GridController.overlay, computed in core/grid/analysis.py; QML only maps
+// the status to a colour), GridResultsOverlay draws branch loading colours and widths
+// with a legend and a toggle, lines over their loading limit are drawn thick and red,
+// open switches are drawn open. Click a bus to see its phase voltages, hover it for a quick readout; wheel or
 // the toolbar to zoom, drag to pan, double-click or Fit to fit. Bus labels that would
 // overlap another label or bus are left out (zoom in to see them). Nothing here edits
-// the feeder (drawing feeders is out of scope).
+// the feeder. v0.5 (rule 28): "Edit as Design" asks for a copy of the feeder in the
+// Grid Network Designer (editAsDesignRequested); the .dss file is never written.
 Item {
     id: root
     objectName: "gridView"
     clip: true
+    signal editAsDesignRequested()
 
     readonly property var geo: GridController.geometry
     readonly property bool hasDrawing: geo.hasCoordinates === true
@@ -66,17 +70,12 @@ Item {
         }
         return best
     }
-    function busColor(pu) {
-        if (pu === undefined || isNaN(pu))
-            return "#9e9e9e"  // no result yet
-        if (pu < GridController.voltageMinPu)
-            return "#d73a49"
-        if (pu > GridController.voltageMaxPu)
-            return "#8250df"
-        const near = 0.01
-        if (pu < GridController.voltageMinPu + near || pu > GridController.voltageMaxPu - near)
-            return "#d4a72c"
-        return "#2da44e"
+    // The bus's overlay status as a colour; grey before a run or with the overlay off.
+    function busColor(name) {
+        const item = GridController.overlay["bus." + name]
+        if (item === undefined || !resultsLayer.shown)
+            return "#9e9e9e"
+        return resultsLayer.statusColor(item.status)
     }
     function fit() { zoom = 1; panX = 0; panY = 0 }
     // Zoom by `f`, keeping the point (x, y) of the view where it is.
@@ -111,9 +110,11 @@ Item {
     function saveImage(url) {
         const path = urlToPath(url)
         toolbar.visible = false
+        editAsDesign.visible = false
         hoverBus = ""
         root.grabToImage(result => {
             toolbar.visible = Qt.binding(() => root.hasDrawing)
+            editAsDesign.visible = Qt.binding(() => GridController.filePath !== "")
             result.saveToFile(path)
         })
     }
@@ -196,7 +197,7 @@ Item {
             for (const b of root.geo.buses) {
                 const x = root.px(b.x), y = root.py(b.y)
                 const r = b.name === GridController.selectedBus ? 7 : 5
-                ctx.fillStyle = root.busColor(b.minPu)
+                ctx.fillStyle = root.busColor(b.name)
                 ctx.strokeStyle = b.name === GridController.selectedBus ? "#0969da" : "#24292f"
                 ctx.lineWidth = b.name === GridController.selectedBus ? 2.5 : 1
                 ctx.beginPath()
@@ -267,6 +268,24 @@ Item {
         onWheel: w => root.zoomAt(w.angleDelta.y > 0 ? 1.2 : 1 / 1.2, w.x, w.y)
     }
 
+    // Results overlay (D8). The view is read-only, so its results are never stale.
+    // px/py are linear: pixel = px(0) + (px(1) - px(0)) * x.
+    GridResultsOverlay {
+        id: resultsLayer
+        anchors.fill: parent
+        visible: root.hasDrawing
+        available: GridController.hasResult
+        items: GridController.overlay
+        paths: GridController.overlayPaths
+        buses: GridController.overlayBuses
+        limits: GridController.overlayLimits
+        originX: root.px(0)
+        originY: root.py(0)
+        scaleX: root.px(1) - root.px(0)
+        scaleY: root.py(1) - root.py(0)
+        onShownChanged: canvas.requestPaint()
+    }
+
     // Toolbar, top left over the drawing
     Frame {
         id: toolbar
@@ -322,6 +341,23 @@ Item {
         }
     }
 
+    // v0.5: copy the open feeder into a new design (rule 28: read-only here)
+    Button {
+        id: editAsDesign
+        objectName: "gridEditAsDesign"
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.margins: 4
+        visible: GridController.filePath !== ""
+        enabled: !GridController.running
+        text: qsTr("Edit as Design")
+        onClicked: root.editAsDesignRequested()
+        ToolTip.visible: hovered
+        ToolTip.delay: 600
+        ToolTip.text: qsTr("Open a copy of this feeder in the Grid Network Designer; "
+                           + "the .dss file is not changed")
+    }
+
     FileDialog {
         id: imageDialog
         title: qsTr("Save the single-line view")
@@ -361,6 +397,13 @@ Item {
                       : hoverTip.volts.map(v => v.phase + " " + v.pu).join("   ") + " pu"
             }
             Label {
+                objectName: "gridHoverStatus"
+                readonly property var item: GridController.overlay["bus." + root.hoverBus]
+                visible: item !== undefined
+                color: palette.toolTipText
+                text: item !== undefined ? resultsLayer.statusWord(item.status) : ""
+            }
+            Label {
                 visible: hoverTip.volts.length > 0
                 color: palette.placeholderText
                 font.pointSize: 8
@@ -385,30 +428,6 @@ Item {
                   ? qsTr("This feeder has no bus coordinates, so it cannot be drawn. "
                          + "Add BusCoords to the .dss file; the results are in the table.")
                   : qsTr("Nothing to draw yet.")
-    }
-
-    // Legend
-    Row {
-        anchors.left: parent.left
-        anchors.bottom: parent.bottom
-        anchors.margins: 6
-        spacing: 10
-        visible: root.hasDrawing
-        Repeater {
-            model: [
-                { c: "#2da44e", t: qsTr("within limits") },
-                { c: "#d4a72c", t: qsTr("near a limit") },
-                { c: "#d73a49", t: qsTr("< %1 pu").arg(GridController.voltageMinPu) },
-                { c: "#8250df", t: qsTr("> %1 pu").arg(GridController.voltageMaxPu) },
-                { c: "#9e9e9e", t: qsTr("not solved") }
-            ]
-            delegate: Row {
-                required property var modelData
-                spacing: 3
-                Rectangle { width: 10; height: 10; radius: 5; color: modelData.c; anchors.verticalCenter: parent.verticalCenter }
-                Label { text: modelData.t; font.pointSize: 8 }
-            }
-        }
     }
 
     // Phase voltages of the selected bus

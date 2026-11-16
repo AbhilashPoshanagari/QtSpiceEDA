@@ -11,12 +11,13 @@ import multiprocessing
 import sys
 from pathlib import Path
 
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QGuiApplication, QSurfaceFormat
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
 
 import bridge.diagram_controller  # noqa: F401  registers the QtSpice QML types
 import bridge.grid_controller  # noqa: F401
+import bridge.grid_diagram_controller  # noqa: F401
 import bridge.project_manager  # noqa: F401
 import bridge.schematic_controller  # noqa: F401
 import bridge.simulator  # noqa: F401
@@ -59,6 +60,10 @@ def main(argv: list[str] | None = None) -> int:
         return run_smoke_test(Path(options.smoke_test), options.report, [argv[0], *qt_args])
 
     QQuickStyle.setStyle("Fusion")
+    # 4x MSAA: the designer draws its branches with the GeometryRenderer (spike S1)
+    fmt = QSurfaceFormat.defaultFormat()
+    fmt.setSamples(4)
+    QSurfaceFormat.setDefaultFormat(fmt)
     app = QGuiApplication([argv[0], *qt_args])
     app.setApplicationName("QtSpice")
     app.setOrganizationName("QtSpice")
