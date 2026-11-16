@@ -1,0 +1,124 @@
+! GridModel written by QtSpice (writer.py)
+Clear
+Set DefaultBaseFrequency=60
+
+! Source
+New Circuit.ieee13nodeckt bus1=sourcebus phases=3 basekv=115 pu=1.0001 angle=30 basefreq=60 r1=0.160376682055275 x1=0.641506728221101 r0=0.179603583012336 x0=0.538810749037007
+
+! Linecodes (ohm/km, nF/km)
+New Linecode.mtx601 nphases=3
+~ rmatrix=[0.2153051181102362 | 0.09693390598902409 0.20971277738010022 | 0.09817664837349876 0.09538047800843076 0.2121361250298258]
+~ xmatrix=[0.6324937365783823 | 0.31174192714547044 0.6510727352262785 | 0.26321283703173465 0.23916577189214983 0.6429949097271931]
+~ cmatrix=[1.7398393382645352 | -0.3728227153424004 1.7398393382645352 | -0.3728227153424004 -0.3728227153424004 1.7398393382645352]
+~ normamps=400 emergamps=600 units=km
+New Linecode.mtx602 nphases=3
+~ rmatrix=[0.46764395927781754 | 0.09817664837349876 0.46447496619740714 | 0.09693390598902409 0.09538047800843076 0.4620516185476815]
+~ xmatrix=[0.7340879265091863 | 0.26321283703173465 0.7445890996579972 | 0.31174192714547044 0.23916577189214983 0.7526047880378589]
+~ cmatrix=[1.7398393382645352 | -0.3728227153424004 1.7398393382645352 | -0.3728227153424004 -0.3728227153424004 1.7398393382645352]
+~ normamps=400 emergamps=600 units=km
+New Linecode.mtx603 nphases=2
+~ rmatrix=[0.8225711842837828 | 0.1283752883162332 0.8260508629603116]
+~ xmatrix=[0.8431385707468384 | 0.28527151435616 0.8370491330629126]
+~ cmatrix=[1.7398393382645352 | -0.3728227153424004 1.7398393382645352]
+~ normamps=400 emergamps=600 units=km
+New Linecode.mtx606 nphases=3
+~ rmatrix=[0.49195262168933424 | 0.19789181181897714 0.48569417104111984 | 0.1761276644396723 0.19789181181897714 0.49195262168933424]
+~ xmatrix=[0.2723793048596198 | 0.017201915811659908 0.24649608784697366 | -0.011445905909488586 0.017201915811659908 0.2723793048596198]
+~ cmatrix=[238.57422651713992 | 0 238.57422651713992 | 0 0 238.57422651713992]
+~ normamps=400 emergamps=600 units=km
+New Linecode.mtx604 nphases=2
+~ rmatrix=[0.8225711842837828 | 0.1283752883162332 0.8260508629603116]
+~ xmatrix=[0.8431385707468384 | 0.28527151435616 0.8370491330629126]
+~ cmatrix=[1.7398393382645352 | -0.3728227153424004 1.7398393382645352]
+~ normamps=400 emergamps=600 units=km
+New Linecode.mtx605 nphases=1
+~ rmatrix=[0.8259265887218642]
+~ xmatrix=[0.8372976815398074]
+~ cmatrix=[1.7398393382645352]
+~ normamps=400 emergamps=600 units=km
+New Linecode.mtx607 nphases=1
+~ rmatrix=[0.8341908255786208]
+~ xmatrix=[0.3183905989024099]
+~ cmatrix=[146.64360136801082]
+~ normamps=400 emergamps=600 units=km
+
+! Transformers
+New Transformer.sub phases=3 windings=2 xhl=0.008 %noloadloss=0 %imag=0 ppm_antifloat=1
+~ wdg=1 bus=sourcebus conn=delta kv=115 kva=5000 %r=0.0005 tap=1 mintap=0.9 maxtap=1.1 numtaps=32 rneut=-1 xneut=0
+~ wdg=2 bus=650 conn=wye kv=4.16 kva=5000 %r=0.0005 tap=1 mintap=0.9 maxtap=1.1 numtaps=32 rneut=-1 xneut=0
+New Transformer.reg1 phases=1 windings=2 xhl=0.01 %noloadloss=0 %imag=0 ppm_antifloat=1
+~ wdg=1 bus=650.1 conn=wye kv=2.4 kva=1666 %r=0.005 tap=1 mintap=0.9 maxtap=1.1 numtaps=32 rneut=-1 xneut=0
+~ wdg=2 bus=rg60.1 conn=wye kv=2.4 kva=1666 %r=0.005 tap=1.05625 mintap=0.9 maxtap=1.1 numtaps=32 rneut=-1 xneut=0
+New Transformer.reg2 phases=1 windings=2 xhl=0.01 %noloadloss=0 %imag=0 ppm_antifloat=1
+~ wdg=1 bus=650.2 conn=wye kv=2.4 kva=1666 %r=0.005 tap=1 mintap=0.9 maxtap=1.1 numtaps=32 rneut=-1 xneut=0
+~ wdg=2 bus=rg60.2 conn=wye kv=2.4 kva=1666 %r=0.005 tap=1.0375 mintap=0.9 maxtap=1.1 numtaps=32 rneut=-1 xneut=0
+New Transformer.reg3 phases=1 windings=2 xhl=0.01 %noloadloss=0 %imag=0 ppm_antifloat=1
+~ wdg=1 bus=650.3 conn=wye kv=2.4 kva=1666 %r=0.005 tap=1 mintap=0.9 maxtap=1.1 numtaps=32 rneut=-1 xneut=0
+~ wdg=2 bus=rg60.3 conn=wye kv=2.4 kva=1666 %r=0.005 tap=1.05625 mintap=0.9 maxtap=1.1 numtaps=32 rneut=-1 xneut=0
+New Transformer.xfm1 phases=3 windings=2 xhl=2 %noloadloss=0 %imag=0 ppm_antifloat=1
+~ wdg=1 bus=633 conn=wye kv=4.16 kva=500 %r=0.55 tap=1 mintap=0.9 maxtap=1.1 numtaps=32 rneut=-1 xneut=0
+~ wdg=2 bus=634 conn=wye kv=0.48 kva=500 %r=0.55 tap=1 mintap=0.9 maxtap=1.1 numtaps=32 rneut=-1 xneut=0
+
+! Regulators
+New RegControl.reg1 transformer=reg1 winding=2 vreg=122 band=2 ptratio=20 ctprim=700 r=3 x=9 delay=15 tapdelay=2 maxtapchange=16 ptphase=1 reversible=no
+New RegControl.reg2 transformer=reg2 winding=2 vreg=122 band=2 ptratio=20 ctprim=700 r=3 x=9 delay=15 tapdelay=2 maxtapchange=16 ptphase=1 reversible=no
+New RegControl.reg3 transformer=reg3 winding=2 vreg=122 band=2 ptratio=20 ctprim=700 r=3 x=9 delay=15 tapdelay=2 maxtapchange=16 ptphase=1 reversible=no
+
+! Lines (length in m)
+New Line.650632 phases=3 bus1=rg60.1.2.3 bus2=632.1.2.3 linecode=mtx601 length=609.6 units=m
+New Line.632670 phases=3 bus1=632.1.2.3 bus2=670.1.2.3 linecode=mtx601 length=203.3016 units=m
+New Line.670671 phases=3 bus1=670.1.2.3 bus2=671.1.2.3 linecode=mtx601 length=406.2984 units=m
+New Line.671680 phases=3 bus1=671.1.2.3 bus2=680.1.2.3 linecode=mtx601 length=304.8 units=m
+New Line.632633 phases=3 bus1=632.1.2.3 bus2=633.1.2.3 linecode=mtx602 length=152.4 units=m
+New Line.632645 phases=2 bus1=632.3.2 bus2=645.3.2 linecode=mtx603 length=152.4 units=m
+New Line.645646 phases=2 bus1=645.3.2 bus2=646.3.2 linecode=mtx603 length=91.44 units=m
+New Line.692675 phases=3 bus1=692.1.2.3 bus2=675.1.2.3 linecode=mtx606 length=152.4 units=m
+New Line.671684 phases=2 bus1=671.1.3 bus2=684.1.3 linecode=mtx604 length=91.44 units=m
+New Line.684611 phases=1 bus1=684.3 bus2=611.3 linecode=mtx605 length=91.44 units=m
+New Line.684652 phases=1 bus1=684.1 bus2=652.1 linecode=mtx607 length=243.84 units=m
+
+! Switches
+New Line.671692 phases=3 bus1=671 bus2=692 switch=yes r1=1.0000000000000001e-07 x1=0 r0=1.0000000000000001e-07 x0=0 c1=0 c0=0 length=1 units=none
+
+! Loads
+New Load.671 phases=3 bus1=671.1.2.3 conn=delta model=1 kv=4.16 kw=1155 kvar=660 vminpu=0.95 vmaxpu=1.05 cvrwatts=1 cvrvars=2
+New Load.634a phases=1 bus1=634.1 conn=wye model=1 kv=0.277 kw=160 kvar=110 vminpu=0.95 vmaxpu=1.05 cvrwatts=1 cvrvars=2
+New Load.634b phases=1 bus1=634.2 conn=wye model=1 kv=0.277 kw=120 kvar=90 vminpu=0.95 vmaxpu=1.05 cvrwatts=1 cvrvars=2
+New Load.634c phases=1 bus1=634.3 conn=wye model=1 kv=0.277 kw=120 kvar=90 vminpu=0.95 vmaxpu=1.05 cvrwatts=1 cvrvars=2
+New Load.645 phases=1 bus1=645.2 conn=wye model=1 kv=2.4 kw=170 kvar=125 vminpu=0.95 vmaxpu=1.05 cvrwatts=1 cvrvars=2
+New Load.646 phases=1 bus1=646.2.3 conn=delta model=2 kv=4.16 kw=230 kvar=132 vminpu=0.95 vmaxpu=1.05 cvrwatts=1 cvrvars=2
+New Load.692 phases=1 bus1=692.3.1 conn=delta model=5 kv=4.16 kw=170 kvar=151 vminpu=0.95 vmaxpu=1.05 cvrwatts=1 cvrvars=2
+New Load.675a phases=1 bus1=675.1 conn=wye model=1 kv=2.4 kw=485 kvar=190 vminpu=0.95 vmaxpu=1.05 cvrwatts=1 cvrvars=2
+New Load.675b phases=1 bus1=675.2 conn=wye model=1 kv=2.4 kw=68 kvar=60 vminpu=0.95 vmaxpu=1.05 cvrwatts=1 cvrvars=2
+New Load.675c phases=1 bus1=675.3 conn=wye model=1 kv=2.4 kw=290 kvar=212 vminpu=0.95 vmaxpu=1.05 cvrwatts=1 cvrvars=2
+New Load.611 phases=1 bus1=611.3 conn=wye model=5 kv=2.4 kw=170 kvar=80 vminpu=0.95 vmaxpu=1.05 cvrwatts=1 cvrvars=2
+New Load.652 phases=1 bus1=652.1 conn=wye model=2 kv=2.4 kw=128 kvar=86 vminpu=0.95 vmaxpu=1.05 cvrwatts=1 cvrvars=2
+New Load.670a phases=1 bus1=670.1 conn=wye model=1 kv=2.4 kw=17 kvar=10 vminpu=0.95 vmaxpu=1.05 cvrwatts=1 cvrvars=2
+New Load.670b phases=1 bus1=670.2 conn=wye model=1 kv=2.4 kw=66 kvar=38 vminpu=0.95 vmaxpu=1.05 cvrwatts=1 cvrvars=2
+New Load.670c phases=1 bus1=670.3 conn=wye model=1 kv=2.4 kw=117 kvar=68 vminpu=0.95 vmaxpu=1.05 cvrwatts=1 cvrvars=2
+
+! Capacitors
+New Capacitor.cap1 phases=3 bus1=675 conn=wye kv=4.16 kvar=600 states=[1]
+New Capacitor.cap2 phases=1 bus1=611.3 conn=wye kv=2.4 kvar=100 states=[1]
+
+! Voltage bases (kV LL)
+Set VoltageBases=[115 4.16 0.48]
+CalcVoltageBases
+
+! Bus coordinates
+SetBusXY bus=sourcebus x=200 y=400
+SetBusXY bus=650 x=200 y=350
+SetBusXY bus=rg60 x=200 y=300
+SetBusXY bus=633 x=350 y=250
+SetBusXY bus=634 x=400 y=250
+SetBusXY bus=671 x=200 y=100
+SetBusXY bus=645 x=100 y=250
+SetBusXY bus=646 x=0 y=250
+SetBusXY bus=692 x=250 y=100
+SetBusXY bus=675 x=400 y=100
+SetBusXY bus=611 x=0 y=100
+SetBusXY bus=652 x=100 y=0
+SetBusXY bus=670 x=200 y=200
+SetBusXY bus=632 x=200 y=250
+SetBusXY bus=680 x=200 y=0
+SetBusXY bus=684 x=100 y=100
