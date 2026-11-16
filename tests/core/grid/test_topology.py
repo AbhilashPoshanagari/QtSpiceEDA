@@ -412,3 +412,31 @@ def test_hop_distance() -> None:
     graph = tp.GridGraph.build(good_model())
     assert graph.hop_distance(["src"]) == {"src": 0, "a": 1, "b": 2, "c": 3, "d": 4}
     assert graph.hop_distance(["c"])["src"] == 3
+
+
+# ---- D4: elements at a bus, disconnected terminals
+
+
+def test_connected_elements_in_model_order() -> None:
+    m = good_model()
+    assert tp.connected_elements(m, "src") == ["vsource.s", "line.l1"]
+    assert tp.connected_elements(m, "b") == ["line.sw1", "transformer.t1", "load.ld3"]
+    assert tp.connected_elements(m, "c") == ["line.l2", "line.sw1", "load.ldd", "load.ldll"]
+    m.lines["l1"].enabled = False  # disabled elements are still connected
+    assert "line.l1" in tp.connected_elements(m, "a")
+    assert tp.connected_elements(m, "nope") == []
+    assert tp.connected_elements(m, tp.DISCONNECTED) == []
+
+
+def test_disconnected_terminals_are_not_in_the_graph() -> None:
+    m = good_model()
+    m.lines["l2"].bus2 = T(tp.DISCONNECTED)
+    m.loads["ld1"].terminal = T(tp.DISCONNECTED)
+    m.transformers["t1"].windings[1].terminal = T(tp.DISCONNECTED)
+    g = tp.GridGraph.build(m)
+    assert tp.DISCONNECTED not in g.buses
+    assert not any(e.element_id in ("line.l2", "transformer.t1") for e in g.edges)
+    assert "b" not in g.voltage_zones()  # its only anchor was the disconnected winding
+    msgs = {(d.block, d.message) for d in v.validate(m) if d.code == v.UNKNOWN_BUS}
+    assert ("line.l2", "bus2 is not connected to a bus") in msgs
+    assert ("transformer.t1", "winding 2 is not connected to a bus") in msgs

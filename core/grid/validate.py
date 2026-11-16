@@ -26,7 +26,7 @@ import math
 from collections.abc import Callable, Iterable, Iterator
 
 from core.grid.model import DELTA, WYE, GridModel, Terminal, missing_fields
-from core.grid.topology import GridGraph, derived_voltage_bases, required_nodes
+from core.grid.topology import DISCONNECTED, GridGraph, derived_voltage_bases, required_nodes
 from core.netlist.model import ERROR, INFO, WARNING
 from core.physical.component import NetworkDiagnostic
 
@@ -238,7 +238,9 @@ def _check_duplicates(model: GridModel) -> Iterator[NetworkDiagnostic]:
 
 def _check_unknown_buses(model: GridModel) -> Iterator[NetworkDiagnostic]:
     for element_id, label, term, _, _ in _terminals(model):
-        if term.bus not in model.buses:
+        if term.bus == DISCONNECTED:
+            yield _diag(element_id, ERROR, UNKNOWN_BUS, f"{label} is not connected to a bus")
+        elif term.bus not in model.buses:
             yield _diag(element_id, ERROR, UNKNOWN_BUS, f"{label} names unknown bus '{term.bus}'")
     for s in model.sources.values():
         if s.bus2.bus not in model.buses:

@@ -35,6 +35,11 @@ What it answers:
 - for the diagram layout (D3): ``connections``, ``bfs_tree``, ``spanning_forest`` and
   ``hop_distance``, all deterministic (neighbours in name order).
 
+A terminal whose bus is ``DISCONNECTED`` ("", set by the designer's Disconnect command)
+is not part of the graph: a branch with such an end is no edge, a shunt on it is on no
+bus. ``connected_elements(model, bus)`` lists every element with a terminal at a bus
+(the designer's Remove bus and Rename, D4).
+
 ``derived_voltage_bases(model)``: the voltage bases of a design (CLAUDE.md "Grid model
 changes for designs", S4 rule "ll_3ph_first").
 """
@@ -51,6 +56,9 @@ from core.grid.model import DELTA, GridModel, Terminal, Transformer, Winding
 LINE = "line"
 SWITCH = "switch"
 TRANSFORMER = "transformer"
+
+DISCONNECTED = ""
+"""The bus of a terminal that is connected to nothing (a draft; validate.py reports it)."""
 
 BASE_MATCH = 0.01
 """A 1-phase winding kV within 1 % of an existing base belongs to that base."""
@@ -83,6 +91,30 @@ def winding_kv_ll(t: Transformer, w: Winding) -> float:
     if t.phases > 1 or w.conn == DELTA or len(phase_nodes) >= 2:
         return w.kv
     return w.kv * _SQRT3
+
+
+def connected_elements(model: GridModel, bus: str) -> list[str]:
+    """Ids of every element with a terminal at ``bus``, enabled or not, each once, in
+    model order: sources (bus1 or bus2), lines, switches, transformers (any winding),
+    loads, capacitors, PV systems."""
+    out: list[str] = []
+
+    def at(element_id: str, *terms: Terminal) -> None:
+        if any(t.bus == bus for t in terms) and element_id not in out:
+            out.append(element_id)
+
+    if bus == DISCONNECTED:
+        return out
+    for s in model.sources.values():
+        at(s.id, s.bus1, s.bus2)
+    for br in (*model.lines.values(), *model.switches.values()):
+        at(br.id, br.bus1, br.bus2)
+    for t in model.transformers.values():
+        at(t.id, *(w.terminal for w in t.windings))
+    for group in (model.loads, model.capacitors, model.pvsystems):
+        for el in group.values():
+            at(el.id, el.terminal)
+    return out
 
 
 def _usable_kv(kv: object) -> bool:
@@ -215,7 +247,7 @@ class GridGraph:
         transformers: list[_TransformerNodes] = []
 
         for s in model.sources.values():
-            if not s.enabled:
+            if not s.enabled or s.bus1.bus == DISCONNECTED:
                 continue
             note(s.bus1.bus)
             shunts.add(s.bus1.bus)
@@ -225,10 +257,10 @@ class GridGraph:
             if kv > 0:
                 anchors.append((s.bus1.bus, kv))
         for ln in model.lines.values():
-            if ln.enabled:
+            if ln.enabled and _connected(ln.bus1, ln.bus2):
                 edges.append(_branch(ln.id, LINE, ln.bus1, ln.bus2, ln.phases, True))
         for sw in model.switches.values():
-            if sw.enabled:
+            if sw.enabled and _connected(sw.bus1, sw.bus2):
                 edges.append(_branch(sw.id, SWITCH, sw.bus1, sw.bus2, sw.phases, sw.closed))
         for t in model.transformers.values():
             if not t.enabled:
@@ -236,6 +268,8 @@ class GridGraph:
             ws = list(t.windings)
             for k in range(1, len(ws)):
                 a, b = ws[0].terminal, ws[k].terminal
+                if not _connected(a, b):
+                    continue
                 edges.append(
                     Edge(
                         t.id,
@@ -250,6 +284,8 @@ class GridGraph:
                     )
                 )
             for w in ws:
+                if w.terminal.bus == DISCONNECTED:
+                    continue
                 note(w.terminal.bus)
                 if _usable_kv(w.kv):
                     anchors.append((w.terminal.bus, snap_kv(float(winding_kv_ll(t, w)), bases)))
@@ -263,11 +299,14 @@ class GridGraph:
                             frozenset(n for n in terminal_nodes(w.terminal, t.phases) if n),
                         )
                         for w in ws
+                        if w.terminal.bus != DISCONNECTED
                     ),
                 )
             )
         for group in (model.loads, model.capacitors, model.pvsystems):
             for el in group.values():
+                if el.terminal.bus == DISCONNECTED:
+                    continue
                 note(el.terminal.bus)
                 if el.enabled:
                     shunts.add(el.terminal.bus)
@@ -532,6 +571,10 @@ class GridGraph:
             chain, buses = _tree_path(tree, e.bus_b, e.bus_a)
             out.append(Loop((*(c.element_id for c in chain), e.element_id), tuple(buses)))
         return out
+
+
+def _connected(*terms: Terminal) -> bool:
+    return all(t.bus != DISCONNECTED for t in terms)
 
 
 def _branch(
